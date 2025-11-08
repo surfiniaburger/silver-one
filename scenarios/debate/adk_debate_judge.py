@@ -102,21 +102,25 @@ class DebateJudgeADK(GreenAgent):
             )
             response_text = response.choices[0].message.content.strip()
             
-            # Extract JSON from markdown code block if present
-            if response_text.startswith("```json"):
-                response_text = response_text.removeprefix("```json").strip()
-            if response_text.endswith("```"):
-                response_text = response_text.removesuffix("```").strip()
-            
-            debate_eval = DebateEval.model_validate_json(response_text)
+            # Extract JSON from the response, which may be wrapped in markdown or conversational text
+            json_start = response_text.find('{')
+            json_end = response_text.rfind('}')
+            if json_start == -1 or json_end == -1:
+                raise ValueError(f"No JSON object found in the LLM response. Response: \n{response_text}")
+
+            json_str = response_text[json_start:json_end+1]
+            try:
+                debate_eval = DebateEval.model_validate_json(json_str)
+            except Exception as e:
+                raise ValueError(f"Failed to parse JSON from LLM response. Error: {e}. Response: \n{response_text}") from e
 
             logger.info(f"Debate Evaluation:\n{debate_eval.model_dump_json()}")
 
             result = EvalResult(winner=debate_eval.winner, detail=debate_eval.model_dump())
             await updater.add_artifact(
                 parts=[
-                    Part(root=TextPart(text=debate_eval.reason)),
-                    Part(root=TextPart(text=result.model_dump_json())),
+                    TextPart(text=debate_eval.reason),
+                    TextPart(text=result.model_dump_json()),
                 ],
                 name="Result",
             )
