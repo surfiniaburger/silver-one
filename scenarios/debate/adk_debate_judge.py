@@ -103,16 +103,16 @@ class DebateJudgeADK(GreenAgent):
             response_text = response.choices[0].message.content.strip()
             
             # Extract JSON from the response, which may be wrapped in markdown or conversational text
+            json_start = response_text.find('{')
+            json_end = response_text.rfind('}')
+            if json_start == -1 or json_end == -1:
+                raise ValueError(f"No JSON object found in the LLM response. Response: \n{response_text}")
+
+            json_str = response_text[json_start:json_end+1]
             try:
-                json_start = response_text.find('{')
-                json_end = response_text.rfind('}')
-                if json_start != -1 and json_end != -1:
-                    json_str = response_text[json_start:json_end+1]
-                    debate_eval = DebateEval.model_validate_json(json_str)
-                else:
-                    raise ValueError("No JSON object found in the LLM response.")
+                debate_eval = DebateEval.model_validate_json(json_str)
             except Exception as e:
-                raise ValueError(f"Failed to parse LLM response. Error: {e}. Response: \n{response_text}") from e
+                raise ValueError(f"Failed to parse JSON from LLM response. Error: {e}. Response: \n{response_text}") from e
 
             logger.info(f"Debate Evaluation:\n{debate_eval.model_dump_json()}")
 
