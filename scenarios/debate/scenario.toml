@@ -1,6 +1,6 @@
 [green_agent]
 endpoint = "http://127.0.0.1:9009"
-cmd = "python scenarios/debate/debate_judge.py --host 127.0.0.1 --port 9009"
+cmd = "python scenarios/debate/adk_debate_judge.py --host 127.0.0.1 --port 9009"
 
 [[participants]]
 role = "pro_debater"

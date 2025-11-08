@@ -26,7 +26,7 @@ from a2a.utils import (
 from agentbeats.green_executor import GreenAgent, GreenExecutor
 from agentbeats.models import EvalRequest, EvalResult
 from agentbeats.tool_provider import ToolProvider
-
+from google.adk.models.lite_llm import LiteLlm
 from debate_judge_common import DebateEval, debate_judge_agent_card
 
 
@@ -168,7 +168,7 @@ class DebateJudge(GreenAgent):
         """
 
         response = self._client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=LiteLlm(model="ollama/gpt-oss:120b-cloud"),
             config=genai.types.GenerateContentConfig(
                     system_instruction=system_prompt,
                     response_mime_type="application/json",

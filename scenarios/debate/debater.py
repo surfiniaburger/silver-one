@@ -5,6 +5,7 @@ load_dotenv()
 
 from google.adk.agents import Agent
 from google.adk.a2a.utils.agent_to_a2a import to_a2a
+from google.adk.models.lite_llm import LiteLlm
 
 from a2a.types import (
     AgentCapabilities,
@@ -20,7 +21,7 @@ def main():
 
     root_agent = Agent(
         name="debater",
-        model="gemini-2.0-flash",
+        model=LiteLlm(model="ollama/gpt-oss:20b-cloud"),
         description="Participates in a debate.",
         instruction="You are a professional debater.",
     )
