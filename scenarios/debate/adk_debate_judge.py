@@ -1,113 +1,182 @@
-# prompt adapted from InspireScore: https://github.com/fywang12/InspireDebate/blob/main/inspirescore.py
 import argparse
+import contextlib
 import uvicorn
+import asyncio
+import logging
 from dotenv import load_dotenv
+
 load_dotenv()
 
-from google.adk.agents import Agent
-from google.adk.tools import FunctionTool
-from google.adk.a2a.utils.agent_to_a2a import to_a2a
 
+
+from a2a.server.apps import A2AStarletteApplication
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
+from a2a.types import TaskState, Part, TextPart
+from a2a.utils import new_agent_text_message
+
+from agentbeats.green_executor import GreenAgent, GreenExecutor
+from agentbeats.models import EvalRequest, EvalResult
 from agentbeats.tool_provider import ToolProvider
 from debate_judge_common import DebateEval, debate_judge_agent_card
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("adk_debate_judge")
 
-system_prompt = '''
-You are the green agent, the debate moderator and judge for structured debates between agents.
+# System prompt for the judge agent
+judge_system_prompt = """
+You are an experienced debate judge. You will be given the full transcript of a debate and a topic.
+Your task is to evaluate the debate based on four key criteria: Emotional Appeal, Clarity of Argument and Reasoning, Logical Arrangement of Arguments, and Relevance to Debate Topic.
 
-Participating agents:
-- **pro_debater**: Argues in favor of the topic statement
-- **con_debater**: Argues against the topic statement
-
-Your role is to orchestrate a multi-round debate (facilitate the exchange of arguments), and judge the winner based on the quality of reasoning and evidence.
-
-You will receive a structured input:
-- the URLs used by pro_debater and con_debater - use them to communicate with agents.
-- debate topic
-- number of rounds
-
-Once you receive this, immediately start following instructions below.
-
-### Debate Flow:
-
-1. Orchestrate the debate using the talk_to_agent tool:
-- Opening arguments
-  - Ask the pro debater to present their opening argument on the given topic.
-  - Pass that response to the con debater, asking them to present their opening argument while addressing what the pro debater just said.
-- Remaining rounds
-  - Alternate turns between pro and con debaters.
-  - Each debater is told exactly what their opponent said in the previous turn and asked to respond with their next argument.
-  - Continue this exchange until the specified number of rounds (num_rounds) is reached.
-
-2. After reaching the maximum number of rounds, produce your final response by assessing both sides based on four key criteria: Emotional Appeal, Clarity of Argument and Reasoning, Logical Arrangement of Arguments, and Relevance to Debate Topic.
 For each of the four subdimensions, provide a score from 0 to 1 (with 0 being the lowest and 1 being the highest) for both the **Pro (Affirmative)** side and the **Con (Negative)** side. Additionally, provide a brief analysis for both sides for each subdimension.
 
-Scoring Criteria:
-    1. **Emotional Appeal**
-        - How effectively does each side connect with the audience emotionally? Does the argument evoke empathy, passion, or values?
-        - **0**: No emotional appeal. The argument feels cold or disconnected.
-        - **1**: Highly engaging emotionally, strongly connects with the audience.
+Please output the result in the specified JSON format. The JSON object must have the following structure, with keys "pro_debater", "con_debater", "winner", and "reason":
 
-    2. **Clarity of Argument and Reasoning**
-        - Are the arguments clearly presented? Is the reasoning sound and easy to follow?
-        - **0**: The arguments are unclear or confusing.
-        - **1**: The arguments are well-structured and easy to understand.
+{
+  "pro_debater": {
+    "emotional_appeal": 0.0,
+    "argument_clarity": 0.0,
+    "argument_arrangement": 0.0,
+    "relevance_to_topic": 0.0,
+    "total_score": 0.0
+  },
+  "con_debater": {
+    "emotional_appeal": 0.0,
+    "argument_clarity": 0.0,
+    "argument_arrangement": 0.0,
+    "relevance_to_topic": 0.0,
+    "total_score": 0.0
+  },
+  "winner": "pro_debater",
+  "reason": "A brief explanation of why the winner was chosen."
+}
+"""
 
-    3. **Logical Arrangement of Arguments**
-        - Is the argument presented in a logical, coherent manner? Does each point flow into the next without confusion?
-        - **0**: The arguments are disorganized and difficult to follow.
-        - **1**: The arguments follow a clear and logical progression.
+class DebateJudgeADK(GreenAgent):
+    def __init__(self):
+        self._required_roles = ["pro_debater", "con_debater"]
+        self._required_config_keys = ["topic", "num_rounds"]
+        self._tool_provider = ToolProvider()
 
-    4. **Relevance to Debate Topic**
-        - Does each argument directly address the debate topic? Are there any irrelevant points or off-topic distractions?
-        - **0**: Arguments that stray far from the topic.
-        - **1**: Every argument is focused and relevant to the topic.
+    def validate_request(self, request: EvalRequest) -> tuple[bool, str]:
+        missing_roles = set(self._required_roles) - set(request.participants.keys())
+        if missing_roles:
+            return False, f"Missing roles: {missing_roles}"
+        missing_config_keys = set(self._required_config_keys) - set(request.config.keys())
+        if missing_config_keys:
+            return False, f"Missing config keys: {missing_config_keys}"
+        try:
+            int(request.config["num_rounds"])
+        except Exception as e:
+            return False, f"Can't parse num_rounds: {e}"
+        return True, "ok"
 
-Please output the result in the following format:
+    async def run_eval(self, req: EvalRequest, updater: TaskUpdater) -> None:
+        logger.info(f"Starting debate orchestration: {req}")
 
-1. **Pro (Affirmative Side) Score**:
-    - Emotional Appeal: [score]
-    - Argument Clarity: [score]
-    - Argument Arrangement: [score]
-    - Relevance to Debate Topic: [score]
-    - **Total Score**: [total score]
+        try:
+            debate = await self.orchestrate_debate(req.participants, req.config["topic"], int(req.config["num_rounds"]), updater)
 
-2. **Con (Negative Side) Score**:
-    - Emotional Appeal: [score]
-    - Argument Clarity: [score]
-    - Argument Arrangement: [score]
-    - Relevance to Debate Topic: [score]
-    - **Total Score**: [total score]
+            debate_text = ""
+            for i, (pro, con) in enumerate(zip(debate["pro_debater"], debate["con_debater"]), start=1):
+                debate_text += f"Pro Argument {i}: {pro}\n"
+                debate_text += f"Con Argument {i}: {con}\n"
 
-3. **Winner**: [Pro/Con]
-4. **Reason**: [Provide detailed analysis based on the scores]
-'''
+            await updater.update_status(TaskState.working, new_agent_text_message("Debate orchestration finished. Starting evaluation."))
+            logger.info("Debate orchestration finished. Evaluating debate.")
 
+            user_prompt = f"""
+            Evaluate the debate on the topic: '{req.config["topic"]}'
+            Debate transcript is as follows:
+            {debate_text}
+            Provide a JSON formatted response with scores and comments for each criterion for both debaters.
+            """
+            
+            import litellm
+            
+            response = await litellm.acompletion(
+                model="ollama/gpt-oss:20b-cloud",
+                messages=[{"role": "system", "content": judge_system_prompt},
+                          {"role": "user", "content": user_prompt}],
+                response_format={"type": "json_object"}
+            )
+            response_text = response.choices[0].message.content.strip()
+            
+            # Extract JSON from markdown code block if present
+            if response_text.startswith("```json"):
+                response_text = response_text.removeprefix("```json").strip()
+            if response_text.endswith("```"):
+                response_text = response_text.removesuffix("```").strip()
+            
+            debate_eval = DebateEval.model_validate_json(response_text)
 
-def main():
-    parser = argparse.ArgumentParser(description="Run the A2A debate judge.")
+            logger.info(f"Debate Evaluation:\n{debate_eval.model_dump_json()}")
+
+            result = EvalResult(winner=debate_eval.winner, detail=debate_eval.model_dump())
+            await updater.add_artifact(
+                parts=[
+                    Part(root=TextPart(text=debate_eval.reason)),
+                    Part(root=TextPart(text=result.model_dump_json())),
+                ],
+                name="Result",
+            )
+
+        finally:
+            self._tool_provider.reset()
+
+    async def orchestrate_debate(
+        self,
+        participants: dict[str, str],
+        topic: str,
+        num_rounds: int,
+        updater: TaskUpdater,
+    ) -> dict[str, list[str]]:
+        debate: dict[str, list[str]] = {"pro_debater": [], "con_debater": []}
+
+        async def turn(role: str, prompt: str) -> str:
+            response = await self._tool_provider.talk_to_agent(prompt, str(participants[role]), new_conversation=False)
+            logger.info(f"{role}: {response}")
+            debate[role].append(response)
+            await updater.update_status(TaskState.working, new_agent_text_message(f"{role}: {response}"))
+            return response
+
+        # Opening turns
+        response = await turn("pro_debater", f"Debate Topic: {topic}. Present your opening argument.")
+        response = await turn("con_debater", f"Debate Topic: {topic}. Present your opening argument. Your opponent opened with: {response}")
+
+        # Remaining rounds
+        for _ in range(num_rounds - 1):
+            response = await turn("pro_debater", f"Your opponent said: {response}. Present your next argument.")
+            response = await turn("con_debater", f"Your opponent said: {response}. Present your next argument.")
+
+        return debate
+
+async def main():
+    parser = argparse.ArgumentParser(description="Run the A2A debate judge (ADK version).")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind the server")
     parser.add_argument("--port", type=int, default=9009, help="Port to bind the server")
     parser.add_argument("--card-url", type=str, help="External URL to provide in the agent card")
     args = parser.parse_args()
 
-    tool_provider = ToolProvider()
-    root_agent = Agent(
-        name="debate_moderator",
-        model="gemini-2.0-flash",
-        description=(
-            "Orchestrate and judge a structured debate between pro and con agents on a given topic with multiple rounds of arguments."
-        ),
-        instruction=system_prompt,
-        tools=[FunctionTool(func=tool_provider.talk_to_agent)],
-        output_schema=DebateEval,
-        after_agent_callback=lambda callback_context: tool_provider.reset()
+    agent_url = args.card_url or f"http://{args.host}:{args.port}/"
+    
+    agent = DebateJudgeADK()
+    executor = GreenExecutor(agent)
+    agent_card = debate_judge_agent_card("DebateJudgeADK", agent_url)
+
+    request_handler = DefaultRequestHandler(
+        agent_executor=executor,
+        task_store=InMemoryTaskStore(),
     )
 
-    agent_card = debate_judge_agent_card("DebateJudgeADK", args.card_url or f"http://{args.host}:{args.port}/")
-    a2a_app = to_a2a(root_agent, agent_card=agent_card)
-    uvicorn.run(a2a_app, host=args.host, port=args.port)
+    server = A2AStarletteApplication(
+        agent_card=agent_card,
+        http_handler=request_handler,
+    )
 
+    uvicorn_config = uvicorn.Config(server.build(), host=args.host, port=args.port)
+    uvicorn_server = uvicorn.Server(uvicorn_config)
+    await uvicorn_server.serve()
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    asyncio.run(main())

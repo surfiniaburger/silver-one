@@ -237,3 +237,6 @@ Now that you’ve completed the tutorial, you’re ready to take the next step w
 - 🌐 **Join the community** → Connect with researchers, builders, and enthusiasts to exchange ideas, share results, and collaborate on new evaluations.
 
 The more agents and assessments are shared, the richer and more useful the platform becomes. We’re excited to see what you create!
+
+
+PYTHONPATH=src uv run agentbeats-run scenarios/debate/scenario.toml --show-logs 
