@@ -17,6 +17,10 @@ Add your Google API key to the .env file
 4. Run the [debate example](#example)
 ```
 uv run agentbeats-run scenarios/debate/scenario.toml
+
+---
+
+PYTHONPATH=src uv run agentbeats-run scenarios/debate/scenario.toml --show-logs 
 ```
 This command will:
 - Start the agent servers using the commands specified in scenario.toml
@@ -239,4 +243,3 @@ Now that you’ve completed the tutorial, you’re ready to take the next step w
 The more agents and assessments are shared, the richer and more useful the platform becomes. We’re excited to see what you create!
 
 
-PYTHONPATH=src uv run agentbeats-run scenarios/debate/scenario.toml --show-logs 

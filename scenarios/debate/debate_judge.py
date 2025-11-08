@@ -76,8 +76,8 @@ class DebateJudge(GreenAgent):
             result = EvalResult(winner=debate_eval.winner, detail=debate_eval.model_dump())
             await updater.add_artifact(
                 parts=[
-                    Part(root=TextPart(text=debate_eval.reason)),
-                    Part(root=TextPart(text=result.model_dump_json())),
+                    TextPart(text=debate_eval.reason),
+                    TextPart(text=result.model_dump_json()),
                 ],
                 name="Result",
             )
@@ -168,7 +168,7 @@ class DebateJudge(GreenAgent):
         """
 
         response = self._client.models.generate_content(
-            model=LiteLlm(model="ollama/gpt-oss:120b-cloud"),
+            model=LiteLlm(model="ollama/gpt-oss:20b-cloud"),
             config=genai.types.GenerateContentConfig(
                     system_instruction=system_prompt,
                     response_mime_type="application/json",
