@@ -15,12 +15,37 @@ cp sample.env .env
 Add your Google API key to the .env file
 
 4. Run the [debate example](#example)
-```
+```bash
 uv run agentbeats-run scenarios/debate/scenario.toml
+
+JUDGE_MODEL="ollama/qwen2.5-coder:7b" DEBATER_MODEL="ollama/qwen2.5-coder:7b" uv run agentbeats-run scenarios/debate/scenario.toml
 
 # Or to view agent logs:
 PYTHONPATH=src uv run agentbeats-run scenarios/debate/scenario.toml --show-logs
 ```
+
+### Configuring the Judge Model
+By default, the debate scenarios use `ollama/gpt-oss:20b-cloud`. You can configure the model used by the Debate Judge (powered by LiteLLM) by simply setting the `JUDGE_MODEL` environment variable before running the command. You do not need to modify any files.
+```bash
+# Example: Run locally using a smaller model
+JUDGE_MODEL="ollama/llama3:8b" uv run agentbeats-run scenarios/debate/scenario.toml
+```
+
+### Running on Kaggle (Free GPU)
+If you want to run this debate scenario locally on a Kaggle Notebook using the free GPU, you must start the Ollama server in the background before running the `agentbeats-run` command. Execute this script in your first notebook cell:
+```python
+import subprocess
+import time
+
+!curl -fsSL https://ollama.com/install.sh | sh
+print("Starting Ollama server...")
+subprocess.Popen(["nohup", "ollama", "serve"], stdout=open('ollama.log', 'w'), stderr=subprocess.STDOUT)
+time.sleep(5)
+!ollama pull llama3:8b
+print("Ready! LiteLLM can now connect to localhost:11434")
+```
+Once the model is pulled, ensure your `scenario.toml` uses `--model ollama/llama3:8b` and run the `agentbeats-run` command.
+
 This command will:
 - Start the agent servers using the commands specified in scenario.toml
 - Construct an `assessment_request` message containing the participant's role-endpoint mapping and the assessment config
