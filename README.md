@@ -1,13 +1,14 @@
 ## Quickstart
 1. Clone (or fork) the repo:
 ```
-git clone git@github.com:agentbeats/tutorial
-cd agentbeats-tutorial
+git clone git@github.com:surfiniaburger/silver-one.git
+cd silver-one
 ```
 2. Install dependencies
 ```
 uv sync
-```
+```                         
+
 3. Set environment variables
 ```
 cp sample.env .env
@@ -41,12 +42,12 @@ import time
 print("Starting Ollama server...")
 subprocess.Popen(["nohup", "ollama", "serve"], stdout=open('ollama.log', 'w'), stderr=subprocess.STDOUT)
 time.sleep(5)
-!ollama pull llama3:8b
+!ollama pull qwen2.5-coder:7b
 print("Ready! LiteLLM can now connect to localhost:11434")
 ```
 Once the model is pulled, run the `agentbeats-run` command. You can specify the model using environment variables (e.g., `JUDGE_MODEL="ollama/llama3:8b"`).
 ```bash
-JUDGE_MODEL="ollama/llama3:8b" DEBATER_MODEL="ollama/llama3:8b" uv run agentbeats-run scenarios/debate/scenario.toml
+JUDGE_MODEL="ollama/qwen2.5-coder:7b" DEBATER_MODEL="ollama/qwen2.5-coder:7b" uv run agentbeats-run scenarios/debate/scenario.toml
 ```
 
 This command will:
