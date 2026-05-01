@@ -1,8 +1,8 @@
 ## Quickstart
 1. Clone (or fork) the repo:
 ```
-git clone git@github.com:surfiniaburger/silver-one.git
-cd silver-one
+git clone git@github.com:agentbeats/tutorial
+cd agentbeats-tutorial
 ```
 2. Install dependencies
 ```
