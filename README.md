@@ -44,7 +44,10 @@ time.sleep(5)
 !ollama pull llama3:8b
 print("Ready! LiteLLM can now connect to localhost:11434")
 ```
-Once the model is pulled, ensure your `scenario.toml` uses `--model ollama/llama3:8b` and run the `agentbeats-run` command.
+Once the model is pulled, run the `agentbeats-run` command. You can specify the model using environment variables (e.g., `JUDGE_MODEL="ollama/llama3:8b"`).
+```bash
+JUDGE_MODEL="ollama/llama3:8b" DEBATER_MODEL="ollama/llama3:8b" uv run agentbeats-run scenarios/debate/scenario.toml
+```
 
 This command will:
 - Start the agent servers using the commands specified in scenario.toml

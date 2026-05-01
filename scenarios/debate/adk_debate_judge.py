@@ -4,6 +4,8 @@ import uvicorn
 import asyncio
 import logging
 import os
+import re
+import litellm
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -103,8 +105,6 @@ class DebateJudgeADK(GreenAgent):
                 response_format={"type": "json_object"}
             )
             response_text = response.choices[0].message.content.strip()
-            
-            import re
             
             # Remove <think> blocks entirely (common in DeepSeek/Qwen models)
             cleaned_text = re.sub(r'<think>.*?</think>', '', response_text, flags=re.DOTALL)
