@@ -38,6 +38,8 @@ If you want to run this debate scenario locally on a Kaggle Notebook using the f
 import subprocess
 import time
 
+# Install missing dependencies for the Kaggle environment
+!apt-get update && apt-get install -y zstd pciutils
 !curl -fsSL https://ollama.com/install.sh | sh
 print("Starting Ollama server...")
 subprocess.Popen(["nohup", "ollama", "serve"], stdout=open('ollama.log', 'w'), stderr=subprocess.STDOUT)
