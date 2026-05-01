@@ -3,6 +3,9 @@ import contextlib
 import uvicorn
 import asyncio
 import logging
+import os
+import re
+import litellm
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -53,7 +56,8 @@ Please output the result in the specified JSON format. The JSON object must have
 """
 
 class DebateJudgeADK(GreenAgent):
-    def __init__(self):
+    def __init__(self, model: str = "ollama/gpt-oss:20b-cloud"):
+        self.model = model
         self._required_roles = ["pro_debater", "con_debater"]
         self._required_config_keys = ["topic", "num_rounds"]
         self._tool_provider = ToolProvider()
@@ -95,20 +99,30 @@ class DebateJudgeADK(GreenAgent):
             import litellm
             
             response = await litellm.acompletion(
-                model="ollama/gpt-oss:20b-cloud",
+                model=self.model,
                 messages=[{"role": "system", "content": judge_system_prompt},
                           {"role": "user", "content": user_prompt}],
                 response_format={"type": "json_object"}
             )
             response_text = response.choices[0].message.content.strip()
             
-            # Extract JSON from the response, which may be wrapped in markdown or conversational text
-            json_start = response_text.find('{')
-            json_end = response_text.rfind('}')
-            if json_start == -1 or json_end == -1:
-                raise ValueError(f"No JSON object found in the LLM response. Response: \n{response_text}")
-
-            json_str = response_text[json_start:json_end+1]
+            # Remove <think> blocks entirely (common in DeepSeek/Qwen models)
+            cleaned_text = re.sub(r'<think>.*?</think>', '', response_text, flags=re.DOTALL)
+            
+            # Try to extract from ```json ... ``` markdown block
+            json_str = ""
+            match = re.search(r'```(?:json)?\s*(.*?)\s*```', cleaned_text, re.DOTALL)
+            if match:
+                json_str = match.group(1).strip()
+            else:
+                # Fallback to greedy '{ ... }'
+                json_start = cleaned_text.find('{')
+                json_end = cleaned_text.rfind('}')
+                if json_start != -1 and json_end != -1:
+                    json_str = cleaned_text[json_start:json_end+1]
+                else:
+                    raise ValueError(f"No JSON object found in the LLM response. Response: \n{response_text}")
+            
             try:
                 debate_eval = DebateEval.model_validate_json(json_str)
             except Exception as e:
@@ -160,11 +174,12 @@ async def main():
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind the server")
     parser.add_argument("--port", type=int, default=9009, help="Port to bind the server")
     parser.add_argument("--card-url", type=str, help="External URL to provide in the agent card")
+    parser.add_argument("--model", type=str, default=os.getenv("JUDGE_MODEL", "ollama/gpt-oss:20b-cloud"), help="LiteLLM model string to use for the judge")
     args = parser.parse_args()
 
     agent_url = args.card_url or f"http://{args.host}:{args.port}/"
     
-    agent = DebateJudgeADK()
+    agent = DebateJudgeADK(model=args.model)
     executor = GreenExecutor(agent)
     agent_card = debate_judge_agent_card("DebateJudgeADK", agent_url)
 

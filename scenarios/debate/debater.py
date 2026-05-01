@@ -1,5 +1,6 @@
 import argparse
 import uvicorn
+import os
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -17,11 +18,12 @@ def main():
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind the server")
     parser.add_argument("--port", type=int, default=9019, help="Port to bind the server")
     parser.add_argument("--card-url", type=str, help="External URL to provide in the agent card")
+    parser.add_argument("--model", type=str, default=os.getenv("DEBATER_MODEL", "ollama/gpt-oss:20b-cloud"), help="LiteLLM model string to use for the debater")
     args = parser.parse_args()
 
     root_agent = Agent(
         name="debater",
-        model=LiteLlm(model="ollama/gpt-oss:20b-cloud"),
+        model=LiteLlm(model=args.model),
         description="Participates in a debate.",
         instruction="You are a professional debater.",
     )

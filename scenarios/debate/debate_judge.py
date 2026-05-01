@@ -3,6 +3,7 @@ import contextlib
 import uvicorn
 import asyncio
 import logging
+import os
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from typing import Literal
@@ -35,7 +36,8 @@ logger = logging.getLogger("debate_judge")
 
 
 class DebateJudge(GreenAgent):
-    def __init__(self):
+    def __init__(self, model: str = "ollama/gpt-oss:20b-cloud"):
+        self.model = model
         self._required_roles = ["pro_debater", "con_debater"]
         self._required_config_keys = ["topic", "num_rounds"]
         self._client = genai.Client()
@@ -168,7 +170,7 @@ class DebateJudge(GreenAgent):
         """
 
         response = self._client.models.generate_content(
-            model=LiteLlm(model="ollama/gpt-oss:20b-cloud"),
+            model=LiteLlm(model=self.model),
             config=genai.types.GenerateContentConfig(
                     system_instruction=system_prompt,
                     response_mime_type="application/json",
@@ -185,6 +187,7 @@ async def main():
     parser.add_argument("--port", type=int, default=9019, help="Port to bind the server")
     parser.add_argument("--card-url", type=str, help="External URL to provide in the agent card")
     parser.add_argument("--cloudflare-quick-tunnel", action="store_true", help="Use a Cloudflare quick tunnel. Requires cloudflared. This will override --card-url")
+    parser.add_argument("--model", type=str, default=os.getenv("JUDGE_MODEL", "ollama/gpt-oss:20b-cloud"), help="LiteLLM model string to use for the judge")
     args = parser.parse_args()
 
     if args.cloudflare_quick_tunnel:
@@ -194,7 +197,7 @@ async def main():
         agent_url_cm = contextlib.nullcontext(args.card_url or f"http://{args.host}:{args.port}/")
 
     async with agent_url_cm as agent_url:
-        agent = DebateJudge()
+        agent = DebateJudge(model=args.model)
         executor = GreenExecutor(agent)
         agent_card = debate_judge_agent_card("DebateJudge", agent_url)
 
