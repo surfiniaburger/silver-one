@@ -24,6 +24,8 @@ from agentbeats.models import EvalRequest, EvalResult
 from agentbeats.tool_provider import ToolProvider
 from debate_judge_common import DebateEval, debate_judge_agent_card
 from data_generator import BarredDataGenerator
+from agentbeats.replay import ReplayManager
+from typing import Optional
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("adk_debate_judge")
@@ -39,37 +41,31 @@ Determine the absolute technical ground-truth verdict for a security predicate b
 Success looks like a verdict that would hold up in a high-stakes security audit or a court of law.
 </task>
 
-<context>
-You will receive:
-1. A code snippet (The Input).
-2. A security predicate (The Claim).
-3. A transcript of a debate where one side (Pro) MUST defend the claim and the other (Con) MUST challenge it.
-</context>
-
 <thinking_process>
-Before providing your final JSON answer, you must think through the technical arguments step-by-step in <thinking> tags.
+Before providing your final JSON answer, you MUST think through the technical arguments step-by-step in <thinking> tags.
 1. Identify the core technical mechanism described in the code.
-2. Evaluate the Pro side's attack vector: Is it technically feasible in ANY standard or common-legacy configuration?
-3. Evaluate the Con side's defense: Does it provide a 100% invariant guarantee, or is it contingent on specific driver versions/settings?
-4. Reach a final verdict based on the "Preponderance of Technical Risk": If the code is exploitable in default or common-legacy setups, the verdict is True.
+2. Evaluate the Pro side's attack vector: Is it technically feasible?
+3. Evaluate the Con side's defense: Is it an invariant guarantee?
+4. Reach a final verdict based on technical risk.
 </thinking_process>
 
 <constraints>
-- Never award a win based on "who spoke better."
-- Always prioritize the objective behavior of the code and the database driver.
-- If a vulnerability requires a "misconfiguration" that is common in the industry (e.g., legacy driver modes), it counts as a vulnerability.
+- NEVER award a win based on rhetorical style.
+- If a vulnerability requires a "misconfiguration" that is common (e.g. default credentials, outdated drivers), it is a VULNERABILITY.
+- You MUST provide a technically deep 'mechanism' explanation.
+- You MUST provide a clear 'counterfactual' (what would change the verdict).
 </constraints>
 
 <output_format>
 Return your response as a JSON object inside <answer> tags.
-Use this exact structure:
+The JSON must be valid and conform to the schema. Do NOT include any text outside the <answer> tags except your thinking process.
 {
-  "pro_debater": {"technical_accuracy": 0.0, "logic_soundness": 0.0, "evidence_strength": 0.0, "total_score": 0.0, "critique": "Detailed adjudication of the Advocate's performance."},
-  "con_debater": {"technical_accuracy": 0.0, "logic_soundness": 0.0, "evidence_strength": 0.0, "total_score": 0.0, "critique": "Detailed adjudication of the Skeptic's performance."},
+  "pro_debater": {"technical_accuracy": 0.0, "logic_soundness": 0.0, "evidence_strength": 0.0, "total_score": 0.0, "critique": "..."},
+  "con_debater": {"technical_accuracy": 0.0, "logic_soundness": 0.0, "evidence_strength": 0.0, "total_score": 0.0, "critique": "..."},
   "winner": "pro_debater" | "con_debater",
-  "reason": "Short summary of the final verdict.",
-  "mechanism": "GEPA: Deep technical explanation of the vulnerability mechanism (or lack thereof).",
-  "counterfactual": "GEPA: What specific code change or environmental factor would reverse this verdict?"
+  "reason": "...",
+  "mechanism": "GEPA: ...",
+  "counterfactual": "GEPA: ..."
 }
 </output_format>
 """
@@ -81,6 +77,7 @@ class DebateJudgeADK(GreenAgent):
         self._required_config_keys = ["topic", "num_rounds"]
         self._tool_provider = ToolProvider()
         self.generator = BarredDataGenerator()
+        self.replay_manager: Optional[ReplayManager] = None
 
     def validate_request(self, request: EvalRequest) -> tuple[bool, str]:
         missing_roles = set(self._required_roles) - set(request.participants.keys())
@@ -98,13 +95,21 @@ class DebateJudgeADK(GreenAgent):
     async def run_eval(self, req: EvalRequest, updater: TaskUpdater) -> None:
         logger.info(f"Starting BARRED debate orchestration: {req}")
         
+        # Initialize Replay Manager
+        run_id = req.config.get("run_id", "default-run")
+        seed = int(req.config.get("seed", 42))
+        mode = req.config.get("mode", "record")
+        cassette_path = req.config.get("cassette_path", f"artifacts/cassettes/{run_id}.json")
+        self.replay_manager = ReplayManager.from_config(run_id, seed, cassette_path, mode)
+        self.generator.replay_manager = self.replay_manager
+
         predicate = req.config.get("predicate", "The input block matches the target verdict.")
         target_verdict = req.config.get("target_verdict", "True")
         target_dimension = req.config.get("target_dimension", "General")
         max_refinements = int(req.config.get("max_refinements", 2))
         output_file = req.config.get("output_file", "training_corpus.jsonl")
         
-        current_input_block = req.config.get("topic", "") # Use topic as initial seed if provided
+        current_input_block = req.config.get("topic", "")
         
         try:
             last_judge_reason = ""
@@ -159,8 +164,8 @@ Debate Transcript:
 {transcript}
 </context>
 """
-                
-                response = await litellm.acompletion(
+                # Use ReplayManager for Judging
+                response = await self.replay_manager.acompletion(
                     model=os.getenv("JUDGE_MODEL", self.model),
                     messages=[
                         {"role": "system", "content": judge_system_prompt},
@@ -170,32 +175,52 @@ Debate Transcript:
                 response_text = response.choices[0].message.content.strip()
                 cleaned_text = re.sub(r'<think>.*?</think>', '', response_text, flags=re.DOTALL)
                 
-                # Extract from <answer> tags
+                # Robust JSON Extraction
+                # 1. Try <answer> tags
                 answer_match = re.search(r'<answer>\s*(.*?)\s*</answer>', cleaned_text, re.DOTALL)
                 if answer_match:
                     json_str = answer_match.group(1).strip()
                 else:
-                    # Fallback to standard JSON extraction
-                    match = re.search(r'```(?:json)?\s*(.*?)\s*```', cleaned_text, re.DOTALL)
-                    json_str = match.group(1).strip() if match else cleaned_text[cleaned_text.find('{'):cleaned_text.rfind('}')+1]
+                    # 2. Try ```json code blocks
+                    json_block_match = re.search(r'```json\s*(.*?)\s*```', cleaned_text, re.DOTALL)
+                    if json_block_match:
+                        json_str = json_block_match.group(1).strip()
+                    else:
+                        # 3. Try any code block as a fallback (but exclude known code languages if possible)
+                        match = re.search(r'```(?:[a-zA-Z]*)?\s*(\{.*?\})\s*```', cleaned_text, re.DOTALL)
+                        if match:
+                            json_str = match.group(1).strip()
+                        else:
+                            # 4. Final fallback: look for the first '{' and last '}' that enclose something looking like JSON
+                            start_idx = cleaned_text.find('{')
+                            end_idx = cleaned_text.rfind('}')
+                            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                                json_str = cleaned_text[start_idx:end_idx+1]
+                            else:
+                                json_str = ""
                 
+                if not json_str or json_str.strip() == "":
+                    logger.error(f"Empty JSON string extracted from judge response. Full text: {response_text}")
+                    last_judge_reason = "Judge returned an empty response or failed to follow the <answer> format."
+                    continue
+
                 try:
                     debate_eval = DebateEval.model_validate_json(json_str)
                     last_judge_reason = debate_eval.reason
                 except Exception as e:
                     logger.error(f"JSON validation failed: {e}. Raw JSON str: {json_str}")
-                    # If we can't parse JSON, we count as no consensus
                     last_judge_reason = f"Failed to parse judge response: {cleaned_text}"
                     continue
                 
-                # Check consensus (Winner matches target_verdict)
-                # In BARRED, Pro is the Advocate defending the target.
-                # So if winner is pro_debater, the sample is valid.
                 is_valid = debate_eval.winner == "pro_debater"
                 
                 if is_valid:
                     await updater.update_status(TaskState.working, new_agent_text_message("Consensus reached! Exporting sample."))
-                    # Export to JSONL
+                    
+                    # Persist RunRecord (A1)
+                    record_path = req.config.get("record_path", f"artifacts/runs/{run_id}.json")
+                    self.replay_manager.save_record(record_path)
+
                     export_data = {
                         "instruction": f"Analyze this input for the condition: {predicate}",
                         "input": current_sample_block,
@@ -221,7 +246,10 @@ Debate Transcript:
                 else:
                     logger.info(f"Refinement required. Judge reason: {last_judge_reason}")
 
-            # If we reach here, we failed to converge
+            # Persist RunRecord (A1) - Failure path
+            record_path = req.config.get("record_path", f"artifacts/runs/{run_id}.json")
+            self.replay_manager.save_record(record_path)
+
             await updater.update_status(TaskState.working, new_agent_text_message("Failed to reach consensus after max refinements."))
             await updater.add_artifact(
                 parts=[TextPart(text="Failed to reach consensus.")],
@@ -230,6 +258,7 @@ Debate Transcript:
 
         finally:
             self._tool_provider.reset()
+
 
     async def orchestrate_debate(
         self,
@@ -245,18 +274,33 @@ Debate Transcript:
         debate: dict[str, list[str]] = {"pro_debater": [], "con_debater": []}
 
         async def turn(role: str, prompt: str, new_conv: bool = False) -> str:
-            response = await self._tool_provider.talk_to_agent(prompt, str(participants[role]), new_conversation=new_conv)
+            # A2: Record/Replay Agent Turns via Cassette
+            # Use a pseudo-model and params to unique-ify the turn
+            pseudo_model = f"a2a/{role}"
+            pseudo_params = {"new_conversation": new_conv, "agent_url": str(participants[role])}
+            
+            cached = self.replay_manager.cassette.get_response(pseudo_model, [{"role": "user", "content": prompt}], pseudo_params)
+            if cached:
+                logger.info(f"Replaying {role} turn from cassette.")
+                response = cached
+            else:
+                if self.replay_manager.cassette.mode == "replay":
+                    raise RuntimeError(f"Offline Replay Error: No cached response for agent {role}")
+                
+                response = await self._tool_provider.talk_to_agent(prompt, str(participants[role]), new_conversation=new_conv)
+                self.replay_manager.cassette.save_response(pseudo_model, [{"role": "user", "content": prompt}], pseudo_params, response)
+            
             logger.info(f"{role}: {response}")
             debate[role].append(response)
             await updater.update_status(TaskState.working, new_agent_text_message(f"{role}: {response}"))
             return response
 
-        # Opening turns
-        context = f"Predicate: {predicate}\nTarget Verdict: {target_verdict}\n\nCode:\n{code}"
-        pro_opening = f"{pro_mission}\n\n{context}\n\nPlease present your opening argument."
+        # Opening turns with high-intensity mission injection
+        context = f"PREDICATE: {predicate}\nTARGET VERDICT: {target_verdict}\n\nCODE TO ANALYZE:\n{code}"
+        pro_opening = f"### MISSION CRITICAL\n{pro_mission}\n\n{context}\n\nPresent your opening technical argument immediately. No preamble."
         pro_resp = await turn("pro_debater", pro_opening, new_conv=True)
         
-        con_opening = f"{con_mission}\n\n{context}\n\nYour opponent (Pro) said: {pro_resp}\n\nPlease present your opening argument."
+        con_opening = f"### MISSION CRITICAL\n{con_mission}\n\n{context}\n\nOpponent's Opening: {pro_resp}\n\nPresent your counter-argument immediately. Be technical."
         con_resp = await turn("con_debater", con_opening, new_conv=True)
 
         # Remaining rounds

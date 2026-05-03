@@ -52,6 +52,33 @@ Once the model is pulled, run the `agentbeats-run` command. You can specify the 
 JUDGE_MODEL="ollama/qwen2.5-coder:7b" DEBATER_MODEL="ollama/qwen2.5-coder:7b" uv run agentbeats-run scenarios/debate/scenario.toml
 ```
 
+#### Kaggle: BARRED batch runner (configurable)
+Use `kaggle_notebooks/run_barred_kaggle.py` to run BARRED in record or replay mode without editing the script.
+
+```bash
+uv run python kaggle_notebooks/run_barred_kaggle.py \
+  --scenario scenarios/debate/barred_test.toml \
+  --run-id pilot-v1 \
+  --mode record \
+  --seed 42 \
+  --seeds scenarios/debate/cve_seeds_50.jsonl \
+  --output /kaggle/working/training_corpus.jsonl \
+  --judge-model ollama/qwen2.5-coder:7b \
+  --debater-model ollama/qwen2.5-coder:7b \
+  --generator-model ollama/qwen2.5-coder:7b
+```
+
+Replay (no model-provider calls expected; requires an existing cassette for the run):
+```bash
+uv run python kaggle_notebooks/run_barred_kaggle.py \
+  --scenario scenarios/debate/barred_test.toml \
+  --run-id pilot-v1 \
+  --mode replay \
+  --seed 42 \
+  --seeds scenarios/debate/cve_seeds_50.jsonl \
+  --output /kaggle/working/training_corpus_replayed.jsonl
+```
+
 This command will:
 - Start the agent servers using the commands specified in scenario.toml
 - Construct an `assessment_request` message containing the participant's role-endpoint mapping and the assessment config
@@ -147,6 +174,12 @@ Below are some common patterns to help guide your assessment design.
 
 #### Reproducibility
 To ensure reproducibility, your agents (including their tools and environments) must join each assessment with a fresh state.
+
+##### Determinism Mantra (Farley-style)
+If it can change, it must be an input; if it’s an input, it must be recorded.
+
+##### “A Is Done” (Determinism) Definition
+We consider determinism complete when a run can be reproduced from immutable artifacts (a run record + cassettes + inputs) such that replay produces the exact same output artifact(s) without contacting model providers.
 
 ### Example
 To make things concrete, we will use a debate scenario as our toy example:
@@ -273,3 +306,62 @@ Now that you’ve completed the tutorial, you’re ready to take the next step w
 The more agents and assessments are shared, the richer and more useful the platform becomes. We’re excited to see what you create!
 
 
+
+How to run it correctly (silver-one folder)
+
+Terminal 1 (start servers from the scenario TOML):
+cd /Users/surfiniaburger/Desktop/modular-metacog-swarm-v3/agent_training/silver-one
+uv run agentbeats-run scenarios/debate/barred_test.toml --serve-only
+or use scenarios/debate/scenario.toml if that’s your intended judge/debater config.
+Terminal 2 (run the batch client):
+cd /Users/surfiniaburger/Desktop/modular-metacog-swarm-v3/agent_training/silver-one
+uv run python scenarios/debate/run_batch.py --run-id pilot-v1 --mode record
+
+
+```bash
+cd /Users/surfiniaburger/Desktop/modular-metacog-swarm-v3/agent_training/silver-one
+uv run agentbeats-run scenarios/debate/barred_test.toml --serve-only
+
+JUDGE_MODEL="ollama/qwen2.5-coder:7b" DEBATER_MODEL="ollama/qwen2.5-coder:7b" uv run agentbeats-run scenarios/debate/barred_test.toml --serve-only
+
+cd /Users/surfiniaburger/Desktop/modular-metacog-swarm-v3/agent_training/silver-one
+uv run python scenarios/debate/run_batch.py --run-id pilot-v1 --mode record --seed 42
+
+
+cd /Users/surfiniaburger/Desktop/modular-metacog-swarm-v3/agent_training/silver-one
+uv run python scenarios/debate/run_batch.py --run-id pilot-v1 --mode replay --seed 42
+
+
+lsof -ti:9009,9018,9019 | xargs kill -9 || true
+
+# Terminal 1: Start Servers (Already running in your environment)
+JUDGE_MODEL="ollama/qwen2.5-coder:7b" DEBATER_MODEL="ollama/qwen2.5-coder:7b" \
+uv run agentbeats-run scenarios/debate/barred_test.toml --serve-only
+
+# Terminal 2: Run Batch in Record mode
+uv run python scenarios/debate/run_batch.py \
+  --run-id pilot-v1 \
+  --mode record \
+  --seed 42 \
+  --seeds scenarios/debate/cve_seeds_test.jsonl \
+  --output training_corpus.jsonl
+
+
+
+# Delete the old output to ensure we aren't just reading old data
+rm training_corpus.jsonl
+
+# Run the same command with --mode replay
+uv run python scenarios/debate/run_batch.py \
+  --run-id pilot-v1 \
+  --mode replay \
+  --seed 42 \
+  --seeds scenarios/debate/cve_seeds_test.jsonl \
+  --output training_corpus_replayed.jsonl
+
+# Verify byte-identical results
+diff training_corpus.jsonl training_corpus_replayed.jsonl && echo "✅ SUCCESS: Replay is identical."
+
+
+
+```
