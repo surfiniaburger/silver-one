@@ -19,13 +19,14 @@ def main():
     parser.add_argument("--port", type=int, default=9019, help="Port to bind the server")
     parser.add_argument("--card-url", type=str, help="External URL to provide in the agent card")
     parser.add_argument("--model", type=str, default=os.getenv("DEBATER_MODEL", "ollama/gpt-oss:20b-cloud"), help="LiteLLM model string to use for the debater")
+    parser.add_argument("--instruction", type=str, default="You are a professional debater.", help="System instruction for the debater agent")
     args = parser.parse_args()
 
     root_agent = Agent(
         name="debater",
         model=LiteLlm(model=args.model),
         description="Participates in a debate.",
-        instruction="You are a professional debater.",
+        instruction=args.instruction,
     )
 
     agent_card = AgentCard(

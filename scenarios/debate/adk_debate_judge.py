@@ -1,4 +1,5 @@
 import argparse
+import json
 import contextlib
 import uvicorn
 import asyncio
@@ -22,37 +23,51 @@ from agentbeats.green_executor import GreenAgent, GreenExecutor
 from agentbeats.models import EvalRequest, EvalResult
 from agentbeats.tool_provider import ToolProvider
 from debate_judge_common import DebateEval, debate_judge_agent_card
+from data_generator import BarredDataGenerator
+from agentbeats.replay import ReplayManager
+from typing import Optional
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("adk_debate_judge")
 
 # System prompt for the judge agent
 judge_system_prompt = """
-You are an experienced debate judge. You will be given the full transcript of a debate and a topic.
-Your task is to evaluate the debate based on four key criteria: Emotional Appeal, Clarity of Argument and Reasoning, Logical Arrangement of Arguments, and Relevance to Debate Topic.
+<role>
+You are a Senior Security Architect and Impartial Adjudicator. Your tone is clinical, technical, and immune to rhetorical flourishes.
+</role>
 
-For each of the four subdimensions, provide a score from 0 to 1 (with 0 being the lowest and 1 being the highest) for both the **Pro (Affirmative)** side and the **Con (Negative)** side. Additionally, provide a brief analysis for both sides for each subdimension.
+<task>
+Determine the absolute technical ground-truth verdict for a security predicate based on a code snippet and an adversarial debate. 
+Success looks like a verdict that would hold up in a high-stakes security audit or a court of law.
+</task>
 
-Please output the result in the specified JSON format. The JSON object must have the following structure, with keys "pro_debater", "con_debater", "winner", and "reason":
+<thinking_process>
+Before providing your final JSON answer, you MUST think through the technical arguments step-by-step in <thinking> tags.
+1. Identify the core technical mechanism described in the code.
+2. Evaluate the Pro side's attack vector: Is it technically feasible?
+3. Evaluate the Con side's defense: Is it an invariant guarantee?
+4. Reach a final verdict based on technical risk.
+</thinking_process>
 
+<constraints>
+- NEVER award a win based on rhetorical style.
+- If a vulnerability requires a "misconfiguration" that is common (e.g. default credentials, outdated drivers), it is a VULNERABILITY.
+- You MUST provide a technically deep 'mechanism' explanation.
+- You MUST provide a clear 'counterfactual' (what would change the verdict).
+</constraints>
+
+<output_format>
+Return your response as a JSON object inside <answer> tags.
+The JSON must be valid and conform to the schema. Do NOT include any text outside the <answer> tags except your thinking process.
 {
-  "pro_debater": {
-    "emotional_appeal": 0.0,
-    "argument_clarity": 0.0,
-    "argument_arrangement": 0.0,
-    "relevance_to_topic": 0.0,
-    "total_score": 0.0
-  },
-  "con_debater": {
-    "emotional_appeal": 0.0,
-    "argument_clarity": 0.0,
-    "argument_arrangement": 0.0,
-    "relevance_to_topic": 0.0,
-    "total_score": 0.0
-  },
-  "winner": "pro_debater",
-  "reason": "A brief explanation of why the winner was chosen."
+  "pro_debater": {"technical_accuracy": 0.0, "logic_soundness": 0.0, "evidence_strength": 0.0, "total_score": 0.0, "critique": "..."},
+  "con_debater": {"technical_accuracy": 0.0, "logic_soundness": 0.0, "evidence_strength": 0.0, "total_score": 0.0, "critique": "..."},
+  "winner": "pro_debater" | "con_debater",
+  "reason": "...",
+  "mechanism": "GEPA: ...",
+  "counterfactual": "GEPA: ..."
 }
+</output_format>
 """
 
 class DebateJudgeADK(GreenAgent):
@@ -61,6 +76,8 @@ class DebateJudgeADK(GreenAgent):
         self._required_roles = ["pro_debater", "con_debater"]
         self._required_config_keys = ["topic", "num_rounds"]
         self._tool_provider = ToolProvider()
+        self.generator = BarredDataGenerator()
+        self.replay_manager: Optional[ReplayManager] = None
 
     def validate_request(self, request: EvalRequest) -> tuple[bool, str]:
         missing_roles = set(self._required_roles) - set(request.participants.keys())
@@ -76,96 +93,220 @@ class DebateJudgeADK(GreenAgent):
         return True, "ok"
 
     async def run_eval(self, req: EvalRequest, updater: TaskUpdater) -> None:
-        logger.info(f"Starting debate orchestration: {req}")
+        logger.info(f"Starting BARRED debate orchestration: {req}")
+        
+        # Initialize Replay Manager
+        run_id = req.config.get("run_id", "default-run")
+        seed = int(req.config.get("seed", 42))
+        mode = req.config.get("mode", "record")
+        cassette_path = req.config.get("cassette_path", f"artifacts/cassettes/{run_id}.json")
+        self.replay_manager = ReplayManager.from_config(run_id, seed, cassette_path, mode)
+        self.generator.replay_manager = self.replay_manager
 
+        predicate = req.config.get("predicate", "The input block matches the target verdict.")
+        target_verdict = req.config.get("target_verdict", "True")
+        target_dimension = req.config.get("target_dimension", "General")
+        max_refinements = int(req.config.get("max_refinements", 2))
+        output_file = req.config.get("output_file", "training_corpus.jsonl")
+        
+        current_input_block = req.config.get("topic", "")
+        
         try:
-            debate = await self.orchestrate_debate(req.participants, req.config["topic"], int(req.config["num_rounds"]), updater)
-
-            debate_text = ""
-            for i, (pro, con) in enumerate(zip(debate["pro_debater"], debate["con_debater"]), start=1):
-                debate_text += f"Pro Argument {i}: {pro}\n"
-                debate_text += f"Con Argument {i}: {con}\n"
-
-            await updater.update_status(TaskState.working, new_agent_text_message("Debate orchestration finished. Starting evaluation."))
-            logger.info("Debate orchestration finished. Evaluating debate.")
-
-            user_prompt = f"""
-            Evaluate the debate on the topic: '{req.config["topic"]}'
-            Debate transcript is as follows:
-            {debate_text}
-            Provide a JSON formatted response with scores and comments for each criterion for both debaters.
-            """
-            
-            import litellm
-            
-            response = await litellm.acompletion(
-                model=self.model,
-                messages=[{"role": "system", "content": judge_system_prompt},
-                          {"role": "user", "content": user_prompt}],
-                response_format={"type": "json_object"}
-            )
-            response_text = response.choices[0].message.content.strip()
-            
-            # Remove <think> blocks entirely (common in DeepSeek/Qwen models)
-            cleaned_text = re.sub(r'<think>.*?</think>', '', response_text, flags=re.DOTALL)
-            
-            # Try to extract from ```json ... ``` markdown block
-            json_str = ""
-            match = re.search(r'```(?:json)?\s*(.*?)\s*```', cleaned_text, re.DOTALL)
-            if match:
-                json_str = match.group(1).strip()
-            else:
-                # Fallback to greedy '{ ... }'
-                json_start = cleaned_text.find('{')
-                json_end = cleaned_text.rfind('}')
-                if json_start != -1 and json_end != -1:
-                    json_str = cleaned_text[json_start:json_end+1]
+            last_judge_reason = ""
+            for i in range(max_refinements + 1):
+                await updater.update_status(TaskState.working, new_agent_text_message(f"Refinement Round {i+1}/{max_refinements + 1}"))
+                
+                # Step 1: Generate/Refine the sample
+                if i == 0:
+                    await updater.update_status(TaskState.working, new_agent_text_message("Generating initial boundary sample..."))
+                    sample_data = await self.generator.generate_boundary_sample(current_input_block, predicate, target_dimension, target_verdict)
                 else:
-                    raise ValueError(f"No JSON object found in the LLM response. Response: \n{response_text}")
-            
-            try:
-                debate_eval = DebateEval.model_validate_json(json_str)
-            except Exception as e:
-                raise ValueError(f"Failed to parse JSON from LLM response. Error: {e}. Response: \n{response_text}") from e
+                    await updater.update_status(TaskState.working, new_agent_text_message(f"Refining sample based on judge feedback..."))
+                    sample_data = await self.generator.refine_sample(current_input_block, predicate, target_dimension, target_verdict, sample_data.get("revised_input_block", ""), last_judge_reason)
 
-            logger.info(f"Debate Evaluation:\n{debate_eval.model_dump_json()}")
+                current_sample_block = sample_data.get("revised_input_block", current_input_block)
+                
+                # Step 2: Orchestrate Debate
+                opposite_verdict = "False" if target_verdict == "True" else "True"
+                pro_mission = f"PRO MISSION: Prove that the predicate '{predicate}' is {target_verdict} for the given code."
+                con_mission = f"CON MISSION: Prove that the predicate '{predicate}' is {opposite_verdict} (i.e., disprove the target verdict)."
+                
+                debate = await self.orchestrate_debate(
+                    req.participants, 
+                    current_sample_block, 
+                    int(req.config["num_rounds"]), 
+                    updater,
+                    pro_mission=pro_mission,
+                    con_mission=con_mission,
+                    predicate=predicate,
+                    target_verdict=target_verdict
+                )
 
-            result = EvalResult(winner=debate_eval.winner, detail=debate_eval.model_dump())
+                transcript = ""
+                for j, (pro, con) in enumerate(zip(debate["pro_debater"], debate["con_debater"]), start=1):
+                    transcript += f"pro_debater (Round {j}): {pro}\n"
+                    transcript += f"con_debater (Round {j}): {con}\n"
+
+                await updater.update_status(TaskState.working, new_agent_text_message("Debate finished. Judging..."))
+
+                # Step 3: Judge
+                judge_prompt = f"""
+<context>
+Predicate: {predicate}
+Target Verdict: {target_verdict}
+The side 'pro_debater' is the ADVOCATE and MUST prove the Target Verdict is {target_verdict}.
+The side 'con_debater' is the SKEPTIC and MUST prove the verdict is {opposite_verdict}.
+
+Code Snippet:
+{current_sample_block}
+
+Debate Transcript:
+{transcript}
+</context>
+"""
+                # Use ReplayManager for Judging
+                response = await self.replay_manager.acompletion(
+                    model=os.getenv("JUDGE_MODEL", self.model),
+                    messages=[
+                        {"role": "system", "content": judge_system_prompt},
+                        {"role": "user", "content": judge_prompt}
+                    ]
+                )
+                response_text = response.choices[0].message.content.strip()
+                cleaned_text = re.sub(r'<think>.*?</think>', '', response_text, flags=re.DOTALL)
+                
+                # Robust JSON Extraction
+                # 1. Try <answer> tags
+                answer_match = re.search(r'<answer>\s*(.*?)\s*</answer>', cleaned_text, re.DOTALL)
+                if answer_match:
+                    json_str = answer_match.group(1).strip()
+                else:
+                    # 2. Try ```json code blocks
+                    json_block_match = re.search(r'```json\s*(.*?)\s*```', cleaned_text, re.DOTALL)
+                    if json_block_match:
+                        json_str = json_block_match.group(1).strip()
+                    else:
+                        # 3. Try any code block as a fallback (but exclude known code languages if possible)
+                        match = re.search(r'```(?:[a-zA-Z]*)?\s*(\{.*?\})\s*```', cleaned_text, re.DOTALL)
+                        if match:
+                            json_str = match.group(1).strip()
+                        else:
+                            # 4. Final fallback: look for the first '{' and last '}' that enclose something looking like JSON
+                            start_idx = cleaned_text.find('{')
+                            end_idx = cleaned_text.rfind('}')
+                            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                                json_str = cleaned_text[start_idx:end_idx+1]
+                            else:
+                                json_str = ""
+                
+                if not json_str or json_str.strip() == "":
+                    logger.error(f"Empty JSON string extracted from judge response. Full text: {response_text}")
+                    last_judge_reason = "Judge returned an empty response or failed to follow the <answer> format."
+                    continue
+
+                try:
+                    debate_eval = DebateEval.model_validate_json(json_str)
+                    last_judge_reason = debate_eval.reason
+                except Exception as e:
+                    logger.error(f"JSON validation failed: {e}. Raw JSON str: {json_str}")
+                    last_judge_reason = f"Failed to parse judge response: {cleaned_text}"
+                    continue
+                
+                is_valid = debate_eval.winner == "pro_debater"
+                
+                if is_valid:
+                    await updater.update_status(TaskState.working, new_agent_text_message("Consensus reached! Exporting sample."))
+                    
+                    # Persist RunRecord (A1)
+                    record_path = req.config.get("record_path", f"artifacts/runs/{run_id}.json")
+                    self.replay_manager.save_record(record_path)
+
+                    export_data = {
+                        "instruction": f"Analyze this input for the condition: {predicate}",
+                        "input": current_sample_block,
+                        "output": {
+                            "verdict": "1" if target_verdict == "True" else "0",
+                            "reasoning": debate_eval.reason,
+                            "mechanism": debate_eval.mechanism,
+                            "counterfactual": debate_eval.counterfactual,
+                            "adjudication": {
+                                "pro": debate_eval.pro_debater.critique,
+                                "con": debate_eval.con_debater.critique
+                            }
+                        }
+                    }
+                    with open(output_file, "a") as f:
+                        f.write(json.dumps(export_data) + "\n")
+                    
+                    await updater.add_artifact(
+                        parts=[TextPart(text=f"Sample Accepted and saved to {output_file}"), TextPart(text=debate_eval.reason)],
+                        name="Result",
+                    )
+                    return
+                else:
+                    logger.info(f"Refinement required. Judge reason: {last_judge_reason}")
+
+            # Persist RunRecord (A1) - Failure path
+            record_path = req.config.get("record_path", f"artifacts/runs/{run_id}.json")
+            self.replay_manager.save_record(record_path)
+
+            await updater.update_status(TaskState.working, new_agent_text_message("Failed to reach consensus after max refinements."))
             await updater.add_artifact(
-                parts=[
-                    TextPart(text=debate_eval.reason),
-                    TextPart(text=result.model_dump_json()),
-                ],
+                parts=[TextPart(text="Failed to reach consensus.")],
                 name="Result",
             )
 
         finally:
             self._tool_provider.reset()
 
+
     async def orchestrate_debate(
         self,
         participants: dict[str, str],
-        topic: str,
+        code: str,
         num_rounds: int,
         updater: TaskUpdater,
+        pro_mission: str,
+        con_mission: str,
+        predicate: str,
+        target_verdict: str
     ) -> dict[str, list[str]]:
         debate: dict[str, list[str]] = {"pro_debater": [], "con_debater": []}
 
-        async def turn(role: str, prompt: str) -> str:
-            response = await self._tool_provider.talk_to_agent(prompt, str(participants[role]), new_conversation=False)
+        async def turn(role: str, prompt: str, new_conv: bool = False) -> str:
+            # A2: Record/Replay Agent Turns via Cassette
+            # Use a pseudo-model and params to unique-ify the turn
+            pseudo_model = f"a2a/{role}"
+            pseudo_params = {"new_conversation": new_conv, "agent_url": str(participants[role])}
+            
+            cached = self.replay_manager.cassette.get_response(pseudo_model, [{"role": "user", "content": prompt}], pseudo_params)
+            if cached:
+                logger.info(f"Replaying {role} turn from cassette.")
+                response = cached
+            else:
+                if self.replay_manager.cassette.mode == "replay":
+                    raise RuntimeError(f"Offline Replay Error: No cached response for agent {role}")
+                
+                response = await self._tool_provider.talk_to_agent(prompt, str(participants[role]), new_conversation=new_conv)
+                self.replay_manager.cassette.save_response(pseudo_model, [{"role": "user", "content": prompt}], pseudo_params, response)
+            
             logger.info(f"{role}: {response}")
             debate[role].append(response)
             await updater.update_status(TaskState.working, new_agent_text_message(f"{role}: {response}"))
             return response
 
-        # Opening turns
-        response = await turn("pro_debater", f"Debate Topic: {topic}. Present your opening argument.")
-        response = await turn("con_debater", f"Debate Topic: {topic}. Present your opening argument. Your opponent opened with: {response}")
+        # Opening turns with high-intensity mission injection
+        context = f"PREDICATE: {predicate}\nTARGET VERDICT: {target_verdict}\n\nCODE TO ANALYZE:\n{code}"
+        pro_opening = f"### MISSION CRITICAL\n{pro_mission}\n\n{context}\n\nPresent your opening technical argument immediately. No preamble."
+        pro_resp = await turn("pro_debater", pro_opening, new_conv=True)
+        
+        con_opening = f"### MISSION CRITICAL\n{con_mission}\n\n{context}\n\nOpponent's Opening: {pro_resp}\n\nPresent your counter-argument immediately. Be technical."
+        con_resp = await turn("con_debater", con_opening, new_conv=True)
 
         # Remaining rounds
-        for _ in range(num_rounds - 1):
-            response = await turn("pro_debater", f"Your opponent said: {response}. Present your next argument.")
-            response = await turn("con_debater", f"Your opponent said: {response}. Present your next argument.")
+        for r in range(num_rounds - 1):
+            pro_resp = await turn("pro_debater", f"Your opponent said: {con_resp}. Present your next argument.")
+            con_resp = await turn("con_debater", f"Your opponent said: {pro_resp}. Present your next argument.")
 
         return debate
 

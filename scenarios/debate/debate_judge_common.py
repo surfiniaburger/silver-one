@@ -9,17 +9,19 @@ from a2a.types import (
 
 
 class DebaterScore(BaseModel):
-    emotional_appeal: float
-    argument_clarity: float
-    argument_arrangement: float
-    relevance_to_topic: float
+    technical_accuracy: float
+    logic_soundness: float
+    evidence_strength: float
     total_score: float
+    critique: str # GEPA: Adjudication of debater performance
 
 class DebateEval(BaseModel):
     pro_debater: DebaterScore
     con_debater: DebaterScore
     winner: Literal["pro_debater", "con_debater"]
-    reason: str
+    reason: str # Short summary
+    mechanism: str # GEPA: Technical mechanism of the bug
+    counterfactual: str # GEPA: What would change the verdict?
 
 
 def debate_judge_agent_card(agent_name: str, card_url: str) -> AgentCard:
