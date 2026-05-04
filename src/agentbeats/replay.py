@@ -82,12 +82,20 @@ class LLMCassette:
             
             # Atomic write via temp file
             temp_dir = os.path.dirname(self.path)
-            with tempfile.NamedTemporaryFile(mode="w", dir=temp_dir, delete=False, suffix=".tmp") as tf:
-                json.dump(self.data, tf, indent=2)
-                tempname = tf.name
-            
-            os.replace(tempname, self.path)
-            self._unlock(lock_file)
+            tempname = None
+            try:
+                with tempfile.NamedTemporaryFile(mode="w", dir=temp_dir, delete=False, suffix=".tmp") as tf:
+                    json.dump(self.data, tf, indent=2)
+                    tempname = tf.name
+                os.replace(tempname, self.path)
+                tempname = None
+            finally:
+                if tempname and os.path.exists(tempname):
+                    try:
+                        os.remove(tempname)
+                    except Exception:
+                        pass
+                self._unlock(lock_file)
 
 class ReplayManager:
     """Global manager for determinism state (A1, A5)."""
