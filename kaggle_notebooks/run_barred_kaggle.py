@@ -4,11 +4,14 @@ import time
 import sys
 import argparse
 from pathlib import Path
+import shlex
 
 
-def run_command(cmd, shell=True):
+def run_command(cmd):
     print(f"Executing: {cmd}")
-    process = subprocess.Popen(cmd, shell=shell, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if isinstance(cmd, str):
+        cmd = shlex.split(cmd)
+    process = subprocess.Popen(cmd, shell=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     for line in process.stdout:
         print(line, end="")
     process.wait()

@@ -12,6 +12,7 @@ class BarredDataGenerator:
     """
     def __init__(self, model: str = None):
         self.model = model or os.getenv("GENERATOR_MODEL", "ollama/qwen2.5-coder:7b")
+        self.replay_manager = None
 
     async def _call_llm(self, system_prompt: str, user_prompt: str, response_format: dict = None) -> str:
         kwargs = {
@@ -24,7 +25,11 @@ class BarredDataGenerator:
         if response_format:
             kwargs["response_format"] = response_format
             
-        response = await litellm.acompletion(**kwargs)
+        if self.replay_manager:
+            response = await self.replay_manager.acompletion(self.model, kwargs["messages"], **{k:v for k,v in kwargs.items() if k not in ["model", "messages"]})
+        else:
+            response = await litellm.acompletion(**kwargs)
+            
         return response.choices[0].message.content.strip()
 
     async def extract_dimensions(self, predicate: str, input_block: str) -> list[str]:
@@ -57,7 +62,7 @@ Return a JSON object with a single key "dimensions" containing a list of strings
         res = await self._call_llm(system_prompt, user_prompt, {"type": "json_object"})
         
         import re
-        cleaned_text = re.sub(r'<think>.*?</think>', '', res, flags=re.DOTALL)
+        cleaned_text = re.sub(r'<(?:think|thinking)>.*?</(?:think|thinking)>', '', res, flags=re.DOTALL)
         
         try:
             data = json.loads(cleaned_text)
@@ -116,7 +121,7 @@ JSON object with: "revised_input_block", "verdict", "reasoning".
         
         res = await self._call_llm(system_prompt, user_prompt, {"type": "json_object"})
         import re
-        cleaned_text = re.sub(r'<think>.*?</think>', '', res, flags=re.DOTALL)
+        cleaned_text = re.sub(r'<(?:think|thinking)>.*?</(?:think|thinking)>', '', res, flags=re.DOTALL)
         
         try:
             return json.loads(cleaned_text)
@@ -160,7 +165,7 @@ JSON object with: "revised_input_block", "verdict", "reasoning".
         
         res = await self._call_llm(system_prompt, user_prompt, {"type": "json_object"})
         import re
-        cleaned_text = re.sub(r'<think>.*?</think>', '', res, flags=re.DOTALL)
+        cleaned_text = re.sub(r'<(?:think|thinking)>.*?</(?:think|thinking)>', '', res, flags=re.DOTALL)
         
         try:
             return json.loads(cleaned_text)

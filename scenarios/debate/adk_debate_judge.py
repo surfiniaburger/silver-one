@@ -173,7 +173,7 @@ Debate Transcript:
                     ]
                 )
                 response_text = response.choices[0].message.content.strip()
-                cleaned_text = re.sub(r'<think>.*?</think>', '', response_text, flags=re.DOTALL)
+                cleaned_text = re.sub(r'<(?:think|thinking)>.*?</(?:think|thinking)>', '', response_text, flags=re.DOTALL)
                 
                 # Robust JSON Extraction
                 # 1. Try <answer> tags
