@@ -1,0 +1,185 @@
+import json
+import hashlib
+import logging
+from typing import Any, Optional, Type, TypeVar
+
+from pydantic import BaseModel
+
+logger = logging.getLogger("agentbeats.structured_output")
+
+T = TypeVar("T", bound=BaseModel)
+
+
+def _schema_dict(schema_name: str, model: Type[BaseModel], strict: bool = True) -> dict[str, Any]:
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": schema_name,
+            "schema": model.model_json_schema(),
+            "strict": strict,
+        },
+    }
+
+
+def _schema_fingerprint(schema: dict[str, Any]) -> str:
+    return hashlib.sha256(json.dumps(schema, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def _stringify_exc(exc: BaseException) -> str:
+    try:
+        return str(exc)
+    except Exception:
+        return repr(exc)
+
+
+def _likely_schema_unsupported(exc: BaseException) -> bool:
+    """
+    Best-effort heuristic: some providers reject `response_format={"type":"json_schema",...}`.
+    When that happens we fall back to "JSON-only" prompting (still validated by Pydantic)
+    and we record the event for auditability.
+    """
+    msg = _stringify_exc(exc).lower()
+    return any(
+        needle in msg
+        for needle in (
+            "response_format",
+            "json_schema",
+            "unsupported",
+            "not supported",
+            "badrequest",
+            "invalid request",
+        )
+    )
+
+
+def _safe_record_event(
+    replay_manager: Any,
+    *,
+    model: str,
+    name: str,
+    params: dict[str, Any],
+    payload: dict[str, Any],
+) -> None:
+    try:
+        cassette = getattr(replay_manager, "cassette", None)
+        if not cassette:
+            return
+        cassette.save_response(
+            model=f"event/{name}",
+            messages=[{"role": "user", "content": json.dumps({"name": name})}],
+            params={"target_model": model, **params},
+            response=payload,
+        )
+    except Exception:
+        logger.exception("Failed to record structured-output event %s.", name)
+
+
+async def call_structured(
+    *,
+    replay_manager: Any,
+    model: str,
+    messages: list[dict[str, str]],
+    schema_name: str,
+    schema_model: Type[T],
+    strict: bool = True,
+    repair_on_fail: bool = True,
+    repair_model: Optional[str] = None,
+) -> T:
+    """
+    Structured output helper with *recorded* fallback.
+
+    Behavior:
+    - Primary call: request strict JSON via `response_format` and validate with Pydantic.
+    - If the provider rejects `response_format`:
+      - record an event
+      - retry without `response_format` but with JSON-only instructions, then validate/repair
+    - On validation failure:
+      - emit a deterministic failure event into the cassette
+      - optionally run a second "repair" call that converts raw text to valid JSON for the same schema
+
+    Determinism rules:
+    - In replay mode, any cache miss is a hard failure (handled by ReplayManager).
+    - Both primary and repair calls go through ReplayManager, so they are recorded/replayed.
+    - Failure events are written to the cassette as data (no side effects beyond recording).
+    """
+    schema = _schema_dict(schema_name, schema_model, strict=strict)
+    schema_fp = _schema_fingerprint(schema)
+
+    raw_text: str
+    try:
+        response = await replay_manager.acompletion(
+            model=model,
+            messages=messages,
+            response_format=schema,
+        )
+        raw_text = response.choices[0].message.content.strip()
+    except Exception as e:
+        if not _likely_schema_unsupported(e):
+            raise
+
+        _safe_record_event(
+            replay_manager,
+            model=model,
+            name="structured_output_response_format_rejected",
+            params={"schema_fp": schema_fp, "schema_name": schema_name, "strict": strict},
+            payload={"error": _stringify_exc(e)},
+        )
+
+        # Retry without response_format, but demand JSON only.
+        retry_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Output MUST be a single valid JSON object and NOTHING else. "
+                    "Do not wrap in markdown. Do not include any non-JSON text."
+                ),
+            },
+            *messages,
+        ]
+        response = await replay_manager.acompletion(model=model, messages=retry_messages)
+        raw_text = response.choices[0].message.content.strip()
+
+    try:
+        return schema_model.model_validate_json(raw_text)
+    except Exception as e:
+        _safe_record_event(
+            replay_manager,
+            model=model,
+            name="structured_output_validation_error",
+            params={"schema_fp": schema_fp, "schema_name": schema_name, "strict": strict},
+            payload={
+                "error": _stringify_exc(e),
+                "schema_fp": schema_fp,
+                "schema_name": schema_name,
+                "raw_text": raw_text,
+            },
+        )
+
+        if not repair_on_fail:
+            raise
+
+        # Repair: ask for JSON matching the same schema, with no extra text.
+        repair_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a JSON repair tool. Convert the input text into a single valid JSON object "
+                    "that conforms EXACTLY to the provided JSON schema. Output ONLY JSON. No markdown."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"JSON Schema (strict={strict}):\n{json.dumps(schema_model.model_json_schema(), indent=2)}\n\n"
+                    f"Text to convert:\n{raw_text}"
+                ),
+            },
+        ]
+
+        response2 = await replay_manager.acompletion(
+            model=repair_model or model,
+            messages=repair_messages,
+            response_format=schema,
+        )
+        raw_text2 = response2.choices[0].message.content.strip()
+        return schema_model.model_validate_json(raw_text2)

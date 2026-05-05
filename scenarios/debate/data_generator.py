@@ -2,8 +2,19 @@ import os
 import json
 import logging
 import litellm
+from pydantic import BaseModel
+from agentbeats.structured_output import call_structured
 
 logger = logging.getLogger("barred_generator")
+
+class Dimensions(BaseModel):
+    dimensions: list[str]
+
+class BoundarySample(BaseModel):
+    revised_input_block: str
+    verdict: str
+    reasoning: str
+
 
 class BarredDataGenerator:
     """
@@ -26,7 +37,7 @@ class BarredDataGenerator:
             kwargs["response_format"] = response_format
             
         if self.replay_manager:
-            response = await self.replay_manager.acompletion(self.model, kwargs["messages"], **{k:v for k,v in kwargs.items() if k not in ["model", "messages"]})
+            response = await self.replay_manager.acompletion(**kwargs)
         else:
             response = await litellm.acompletion(**kwargs)
             
@@ -59,16 +70,24 @@ Return a JSON object with a single key "dimensions" containing a list of strings
         </INPUT_BLOCK>
         """
         
-        res = await self._call_llm(system_prompt, user_prompt, {"type": "json_object"})
-        
-        import re
-        cleaned_text = re.sub(r'<(?:think|thinking)>.*?</(?:think|thinking)>', '', res, flags=re.DOTALL)
-        
         try:
-            data = json.loads(cleaned_text)
-            return data.get("dimensions", [])
+            if not self.replay_manager:
+                raise RuntimeError("ReplayManager is required for structured output calls.")
+            data = await call_structured(
+                replay_manager=self.replay_manager,
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                schema_name="dimensions",
+                schema_model=Dimensions,
+                strict=True,
+                repair_on_fail=True,
+            )
+            return data.dimensions
         except Exception as e:
-            logger.error(f"Failed to parse dimensions: {e}. Raw: {res}")
+            logger.error(f"Failed to parse dimensions: {e}.")
             return []
 
     async def generate_boundary_sample(self, input_block: str, predicate: str, target_dimension: str, target_verdict: str) -> dict:
@@ -119,14 +138,24 @@ JSON object with: "revised_input_block", "verdict", "reasoning".
         Target Verdict: {target_verdict}
         """
         
-        res = await self._call_llm(system_prompt, user_prompt, {"type": "json_object"})
-        import re
-        cleaned_text = re.sub(r'<(?:think|thinking)>.*?</(?:think|thinking)>', '', res, flags=re.DOTALL)
-        
         try:
-            return json.loads(cleaned_text)
+            if not self.replay_manager:
+                raise RuntimeError("ReplayManager is required for structured output calls.")
+            data = await call_structured(
+                replay_manager=self.replay_manager,
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                schema_name="boundary_sample",
+                schema_model=BoundarySample,
+                strict=True,
+                repair_on_fail=True,
+            )
+            return data.model_dump()
         except Exception as e:
-            logger.error(f"Failed to parse boundary sample: {e}. Raw: {res}")
+            logger.error(f"Failed to parse boundary sample: {e}.")
             return {}
 
     async def refine_sample(self, input_block: str, predicate: str, target_dimension: str, target_verdict: str, previous_block: str, dissenting_reasoning: str) -> dict:
@@ -163,12 +192,22 @@ JSON object with: "revised_input_block", "verdict", "reasoning".
         {dissenting_reasoning}
         """
         
-        res = await self._call_llm(system_prompt, user_prompt, {"type": "json_object"})
-        import re
-        cleaned_text = re.sub(r'<(?:think|thinking)>.*?</(?:think|thinking)>', '', res, flags=re.DOTALL)
-        
         try:
-            return json.loads(cleaned_text)
+            if not self.replay_manager:
+                raise RuntimeError("ReplayManager is required for structured output calls.")
+            data = await call_structured(
+                replay_manager=self.replay_manager,
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                schema_name="boundary_sample",
+                schema_model=BoundarySample,
+                strict=True,
+                repair_on_fail=True,
+            )
+            return data.model_dump()
         except Exception as e:
-            logger.error(f"Failed to parse refined sample: {e}. Raw: {res}")
+            logger.error(f"Failed to parse refined sample: {e}.")
             return {}

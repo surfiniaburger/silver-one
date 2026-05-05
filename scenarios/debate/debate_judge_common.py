@@ -16,6 +16,7 @@ class DebaterScore(BaseModel):
     critique: str # GEPA: Adjudication of debater performance
 
 class DebateEval(BaseModel):
+    thinking_process: str # GEPA: Step-by-step thinking before concluding
     pro_debater: DebaterScore
     con_debater: DebaterScore
     winner: Literal["pro_debater", "con_debater"]
