@@ -22,6 +22,7 @@ from a2a.utils import new_agent_text_message
 from agentbeats.green_executor import GreenAgent, GreenExecutor
 from agentbeats.models import EvalRequest, EvalResult
 from agentbeats.tool_provider import ToolProvider
+from agentbeats.structured_output import call_structured
 from debate_judge_common import DebateEval, debate_judge_agent_card
 from data_generator import BarredDataGenerator
 from agentbeats.replay import ReplayManager
@@ -41,32 +42,20 @@ Determine the absolute technical ground-truth verdict for a security predicate b
 Success looks like a verdict that would hold up in a high-stakes security audit or a court of law.
 </task>
 
-<thinking_process>
-Before providing your final JSON answer, you MUST think through the technical arguments step-by-step in <thinking> tags.
-1. Identify the core technical mechanism described in the code.
-2. Evaluate the Pro side's attack vector: Is it technically feasible?
-3. Evaluate the Con side's defense: Is it an invariant guarantee?
-4. Reach a final verdict based on technical risk.
-</thinking_process>
-
 <constraints>
 - NEVER award a win based on rhetorical style.
 - If a vulnerability requires a "misconfiguration" that is common (e.g. default credentials, outdated drivers), it is a VULNERABILITY.
 - You MUST provide a technically deep 'mechanism' explanation.
 - You MUST provide a clear 'counterfactual' (what would change the verdict).
+- You MUST think through the technical arguments step-by-step in the `thinking_process` field before providing your final scores.
+  1. Identify the core technical mechanism described in the code.
+  2. Evaluate the Pro side's attack vector: Is it technically feasible?
+  3. Evaluate the Con side's defense: Is it an invariant guarantee?
+  4. Reach a final verdict based on technical risk.
 </constraints>
 
 <output_format>
-Return your response as a JSON object inside <answer> tags.
-The JSON must be valid and conform to the schema. Do NOT include any text outside the <answer> tags except your thinking process.
-{
-  "pro_debater": {"technical_accuracy": 0.0, "logic_soundness": 0.0, "evidence_strength": 0.0, "total_score": 0.0, "critique": "..."},
-  "con_debater": {"technical_accuracy": 0.0, "logic_soundness": 0.0, "evidence_strength": 0.0, "total_score": 0.0, "critique": "..."},
-  "winner": "pro_debater" | "con_debater",
-  "reason": "...",
-  "mechanism": "GEPA: ...",
-  "counterfactual": "GEPA: ..."
-}
+Return your response ONLY as a valid JSON object conforming to the schema. Do not wrap the JSON in tags like <answer> or markdown formatting.
 </output_format>
 """
 
@@ -164,52 +153,25 @@ Debate Transcript:
 {transcript}
 </context>
 """
-                # Use ReplayManager for Judging
-                response = await self.replay_manager.acompletion(
-                    model=os.getenv("JUDGE_MODEL", self.model),
-                    messages=[
-                        {"role": "system", "content": judge_system_prompt},
-                        {"role": "user", "content": judge_prompt}
-                    ]
-                )
-                response_text = response.choices[0].message.content.strip()
-                cleaned_text = re.sub(r'<(?:think|thinking)>.*?</(?:think|thinking)>', '', response_text, flags=re.DOTALL)
-                
-                # Robust JSON Extraction
-                # 1. Try <answer> tags
-                answer_match = re.search(r'<answer>\s*(.*?)\s*</answer>', cleaned_text, re.DOTALL)
-                if answer_match:
-                    json_str = answer_match.group(1).strip()
-                else:
-                    # 2. Try ```json code blocks
-                    json_block_match = re.search(r'```json\s*(.*?)\s*```', cleaned_text, re.DOTALL)
-                    if json_block_match:
-                        json_str = json_block_match.group(1).strip()
-                    else:
-                        # 3. Try any code block as a fallback (but exclude known code languages if possible)
-                        match = re.search(r'```(?:[a-zA-Z]*)?\s*(\{.*?\})\s*```', cleaned_text, re.DOTALL)
-                        if match:
-                            json_str = match.group(1).strip()
-                        else:
-                            # 4. Final fallback: look for the first '{' and last '}' that enclose something looking like JSON
-                            start_idx = cleaned_text.find('{')
-                            end_idx = cleaned_text.rfind('}')
-                            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-                                json_str = cleaned_text[start_idx:end_idx+1]
-                            else:
-                                json_str = ""
-                
-                if not json_str or json_str.strip() == "":
-                    logger.error(f"Empty JSON string extracted from judge response. Full text: {response_text}")
-                    last_judge_reason = "Judge returned an empty response or failed to follow the <answer> format."
-                    continue
-
                 try:
-                    debate_eval = DebateEval.model_validate_json(json_str)
+                    judge_model = os.getenv("JUDGE_MODEL", self.model)
+                    debate_eval = await call_structured(
+                        replay_manager=self.replay_manager,
+                        model=judge_model,
+                        messages=[
+                            {"role": "system", "content": judge_system_prompt},
+                            {"role": "user", "content": judge_prompt},
+                        ],
+                        schema_name="debate_eval",
+                        schema_model=DebateEval,
+                        strict=True,
+                        repair_on_fail=True,
+                        repair_model=judge_model,
+                    )
                     last_judge_reason = debate_eval.reason
                 except Exception as e:
-                    logger.error(f"JSON validation failed: {e}. Raw JSON str: {json_str}")
-                    last_judge_reason = f"Failed to parse judge response: {cleaned_text}"
+                    logger.error(f"Judge structured output failed: {e}")
+                    last_judge_reason = f"Failed to parse judge response: {e}"
                     continue
                 
                 is_valid = debate_eval.winner == "pro_debater"

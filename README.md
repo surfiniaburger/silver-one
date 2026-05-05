@@ -63,9 +63,10 @@ uv run python kaggle_notebooks/run_barred_kaggle.py \
   --seed 42 \
   --seeds scenarios/debate/cve_seeds_50.jsonl \
   --output /kaggle/working/training_corpus.jsonl \
-  --judge-model ollama/qwen2.5-coder:7b \
-  --debater-model ollama/qwen2.5-coder:7b \
-  --generator-model ollama/qwen2.5-coder:7b
+  --judge-model ollama/gemma4:31b-cloud  \
+  --debater-model ollama/gemma4:31b-cloud  \
+  --generator-model ollama/gemma4:31b-cloud \
+   --ollama-pull gemma4:26b
 ```
 
 Replay (no model-provider calls expected; requires an existing cassette for the run):
@@ -335,8 +336,11 @@ uv run python scenarios/debate/run_batch.py --run-id pilot-v1 --mode replay --se
 lsof -ti:9009,9018,9019 | xargs kill -9 || true
 
 # Terminal 1: Start Servers (Already running in your environment)
-JUDGE_MODEL="ollama/qwen2.5-coder:7b" DEBATER_MODEL="ollama/qwen2.5-coder:7b" \
+JUDGE_MODEL="ollama/gemma4:latest" \
+DEBATER_MODEL="ollama/gemma4:latest" \
+GENERATOR_MODEL="ollama/gemma4:latest" \
 uv run agentbeats-run scenarios/debate/barred_test.toml --serve-only
+
 
 # Terminal 2: Run Batch in Record mode
 uv run python scenarios/debate/run_batch.py \

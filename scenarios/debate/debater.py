@@ -22,6 +22,7 @@ def main():
     parser.add_argument("--instruction", type=str, default="You are a professional debater.", help="System instruction for the debater agent")
     args = parser.parse_args()
 
+    print(f"Starting debater with instruction: {args.instruction}")
     root_agent = Agent(
         name="debater",
         model=LiteLlm(model=args.model),
