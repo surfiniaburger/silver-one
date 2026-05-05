@@ -6,7 +6,6 @@ import random
 import re
 import asyncio
 import logging
-import litellm
 import argparse
 from typing import Set, List, Dict, Optional
 from agentbeats.replay import ReplayManager
@@ -100,39 +99,21 @@ Return a JSON object:
 </output_format>
 """
         user_prompt = f"Language: {language}\n\nCode:\n{code}"
-        params = {"response_format": {"type": "json_object"}}
-        
-        # Replay Check
-        cached = self.replay_manager.cassette.get_response(
-            self.explainer_model, 
-            [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-            params
-        )
-        if cached:
-            logger.info("Using cached GEPA response.")
-            return cached
 
         try:
-            response = await litellm.acompletion(
+            response = await self.replay_manager.acompletion(
                 model=self.explainer_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                **params
+                response_format={"type": "json_object"},
             )
             res_content = response.choices[0].message.content.strip()
             if "```" in res_content:
                 res_content = re.sub(r'```(?:json)?\s*(.*?)\s*```', r'\1', res_content, flags=re.DOTALL).strip()
             
-            res_data = json.loads(res_content)
-            self.replay_manager.cassette.save_response(
-                self.explainer_model,
-                [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-                params,
-                res_data
-            )
-            return res_data
+            return json.loads(res_content)
         except Exception as e:
             logger.error(f"GEPA Explainer failed: {e}")
             return {"predicate": "Vulnerability suspected.", "evidence_hooks": []}
@@ -214,4 +195,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
