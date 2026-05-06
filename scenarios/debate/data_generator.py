@@ -143,7 +143,7 @@ Note: Use the `thinking_process` field strictly for your internal, step-by-step 
 </thinking_process>
 
 <output_format>
-Return your response ONLY as a valid JSON object conforming to the schema.
+Return your response ONLY as a valid JSON object with the following fields: "thinking_process", "revised_input_block", "verdict", "reasoning".
 </output_format>
 """
         
