@@ -138,10 +138,12 @@ Before generating the final JSON output, you MUST think through the technical ar
 1. Analyze how the target dimension influences the predicate.
 2. Determine the exact technical shift needed to reach the target verdict.
 3. Ensure the reasoning is technical and precise.
+
+Note: Use the `thinking_process` field strictly for your internal, step-by-step scratchpad analysis. Use the `reasoning` field to provide the final, concise technical justification for the generated sample.
 </thinking_process>
 
 <output_format>
-JSON object with: "revised_input_block", "verdict", "reasoning".
+Return your response ONLY as a valid JSON object with the following fields: "thinking_process", "revised_input_block", "verdict", "reasoning".
 </output_format>
 """
         
@@ -193,6 +195,8 @@ Before generating the final JSON output, you MUST think through the technical ar
 1. Analyze the dissenting arguments raised in the verification.
 2. Identify the specific elements of the previous block that made it easy to disprove.
 3. Determine the exact structural modification needed to mask the vulnerability (if True) or obfuscate the security (if False).
+
+Note: Use the `thinking_process` field strictly for your internal, step-by-step scratchpad analysis. Use the `reasoning` field to provide the final, concise technical justification for the generated sample.
 </thinking_process>
 
 <constraints>
