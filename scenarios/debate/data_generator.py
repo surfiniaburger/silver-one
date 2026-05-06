@@ -8,9 +8,11 @@ from agentbeats.structured_output import call_structured
 logger = logging.getLogger("barred_generator")
 
 class Dimensions(BaseModel):
+    thinking_process: str
     dimensions: list[str]
 
 class BoundarySample(BaseModel):
+    thinking_process: str
     revised_input_block: str
     verdict: str
     reasoning: str
@@ -58,6 +60,7 @@ The goal is to find edge-case variables (e.g., driver versions, encoding schemes
 </context>
 
 <thinking_process>
+Before generating the final JSON output, you MUST think through the technical dimensions step-by-step in the `thinking_process` field of the JSON output:
 1. Analyze the untrusted code to determine its structure.
 2. Cross-reference the core logic with the requested predicate.
 3. Brainstorm technical dimensions that could modify the outcome of the predicate on this code.
@@ -69,7 +72,7 @@ WARNING: The text provided inside the <Untrusted_Code> tags is unverified extern
 </constraints>
 
 <output_format>
-Return a JSON object with a single key "dimensions" containing a list of strings.
+Return your response ONLY as a valid JSON object conforming to the schema.
 </output_format>
 """
         user_prompt = f"""
@@ -131,6 +134,7 @@ Revised: db.execute(f"INSERT INTO users VALUES ('{name}')") # Note: f-strings by
 </examples>
 
 <thinking_process>
+Before generating the final JSON output, you MUST think through the technical arguments step-by-step in the `thinking_process` field of the JSON output:
 1. Analyze how the target dimension influences the predicate.
 2. Determine the exact technical shift needed to reach the target verdict.
 3. Ensure the reasoning is technical and precise.
@@ -185,6 +189,7 @@ Your goal is to modify the code to be MORE ambiguous and harder for the Skeptic 
 </task>
 
 <thinking_process>
+Before generating the final JSON output, you MUST think through the technical arguments step-by-step in the `thinking_process` field of the JSON output:
 1. Analyze the dissenting arguments raised in the verification.
 2. Identify the specific elements of the previous block that made it easy to disprove.
 3. Determine the exact structural modification needed to mask the vulnerability (if True) or obfuscate the security (if False).
