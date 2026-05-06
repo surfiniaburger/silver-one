@@ -105,6 +105,7 @@ async def call_structured(
     schema = _schema_dict(schema_name, schema_model, strict=strict)
     schema_fp = _schema_fingerprint(schema)
 
+    structured_supported = True
     raw_text: str
     try:
         response = await replay_manager.acompletion(
@@ -117,6 +118,7 @@ async def call_structured(
         if not _likely_schema_unsupported(e):
             raise
 
+        structured_supported = False
         _safe_record_event(
             replay_manager,
             model=model,
@@ -176,10 +178,13 @@ async def call_structured(
             },
         ]
 
-        response2 = await replay_manager.acompletion(
-            model=repair_model or model,
-            messages=repair_messages,
-            response_format=schema,
-        )
+        repair_kwargs: dict[str, Any] = {
+            "model": repair_model or model,
+            "messages": repair_messages,
+        }
+        if structured_supported:
+            repair_kwargs["response_format"] = schema
+
+        response2 = await replay_manager.acompletion(**repair_kwargs)
         raw_text2 = response2.choices[0].message.content.strip()
         return schema_model.model_validate_json(raw_text2)
