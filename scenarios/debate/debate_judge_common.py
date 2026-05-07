@@ -22,6 +22,7 @@ class DebateEval(BaseModel):
     winner: Literal["pro_debater", "con_debater"]
     reason: str # Short summary
     mechanism: str # GEPA: Technical mechanism of the bug
+    anchors: list[str] # GEPA: Concrete evidence hooks
     counterfactual: str # GEPA: What would change the verdict?
 
 

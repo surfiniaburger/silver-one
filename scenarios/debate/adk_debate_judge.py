@@ -54,6 +54,7 @@ Before generating the final JSON output, you MUST think through the technical ar
 - NEVER award a win based on rhetorical style.
 - If a vulnerability requires a "misconfiguration" that is common (e.g. default credentials, outdated drivers), it is a VULNERABILITY.
 - You MUST provide a technically deep 'mechanism' explanation.
+- You MUST provide concrete 'anchors' (evidence hooks like specific function or variable names).
 - You MUST provide a clear 'counterfactual' (what would change the verdict).
 
 INSTRUCTION HIERARCHY:
@@ -197,10 +198,14 @@ Debate Transcript:
                         "instruction": f"Analyze this input for the condition: {predicate}",
                         "input": current_sample_block,
                         "output": {
+                            "predicate": predicate,
+                            "anchors": debate_eval.anchors,
                             "verdict": "1" if target_verdict == "True" else "0",
                             "reasoning": debate_eval.reason,
                             "mechanism": debate_eval.mechanism,
                             "counterfactual": debate_eval.counterfactual,
+                            "verifier_report": "not_applicable",
+                            "support_level": "supported",
                             "adjudication": {
                                 "pro": debate_eval.pro_debater.critique,
                                 "con": debate_eval.con_debater.critique
