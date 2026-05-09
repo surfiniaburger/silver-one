@@ -31,6 +31,46 @@ from typing import Optional
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("adk_debate_judge")
 
+_CODE_MARKERS = (
+    "{",
+    "}",
+    ";",
+    "#include",
+    "def ",
+    "class ",
+    "return",
+    "=>",
+    "function ",
+    "public ",
+    "private ",
+    "protected ",
+)
+
+
+def _is_code_like(text: str) -> bool:
+    if not isinstance(text, str):
+        return False
+    s = text.strip()
+    if len(s) < 40:
+        return False
+    lowered = s.lower()
+    if any(m in lowered for m in _CODE_MARKERS):
+        return True
+    punctuation_hits = sum(ch in s for ch in "{}();[]<>")
+    newline_hits = s.count("\n")
+    return punctuation_hits >= 2 and newline_hits >= 2
+
+
+def _any_anchor_matches_input(anchors: list[str], input_text: str) -> bool:
+    if not isinstance(input_text, str):
+        return False
+    haystack = input_text
+    for a in anchors or []:
+        if isinstance(a, str) and a.strip() and a in haystack:
+            return True
+    return False
+
+
 # System prompt for the judge agent
 judge_system_prompt = """
 <role>
@@ -125,6 +165,12 @@ class DebateJudgeADK(GreenAgent):
                     sample_data = await self.generator.refine_sample(current_input_block, predicate, target_dimension, target_verdict, sample_data.get("revised_input_block", ""), last_judge_reason)
 
                 current_sample_block = sample_data.get("revised_input_block", current_input_block)
+
+                # Phase B guardrail: reject non-code-like samples (prevents repeatable hallucination).
+                if not _is_code_like(current_sample_block):
+                    last_judge_reason = "Rejected: generated sample is not code-like."
+                    logger.warning(last_judge_reason)
+                    continue
                 
                 # Step 2: Orchestrate Debate
                 opposite_verdict = "False" if target_verdict == "True" else "True"
@@ -187,6 +233,12 @@ Debate Transcript:
                 except Exception as e:
                     logger.error(f"Judge structured output failed: {e}")
                     last_judge_reason = f"Failed to parse judge response: {e}"
+                    continue
+
+                # Phase B anchor enforcement: at least one anchor must be a verbatim substring of the code snippet.
+                if not _any_anchor_matches_input(debate_eval.anchors, current_sample_block):
+                    last_judge_reason = "Rejected: judge anchors did not match the code snippet (verbatim substring check failed)."
+                    logger.info(last_judge_reason)
                     continue
                 
                 is_valid = debate_eval.winner == "pro_debater"
