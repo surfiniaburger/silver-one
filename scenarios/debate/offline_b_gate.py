@@ -81,6 +81,7 @@ class BGateConfig:
 def compute_b_metrics(
     *,
     input_path: str,
+    attempts_path: Optional[str] = None,
     config: BGateConfig,
 ) -> Dict[str, Any]:
     total = 0
@@ -183,24 +184,51 @@ def compute_b_metrics(
         anchors_generic_total += sum(1 for a in anchors if _is_generic_anchor(str(a)))
 
     accepted_samples = max(accepted, 1)
+
+    attempts_total = 0
+    attempts_unsupported = 0
+    attempts_inconclusive = 0
+    if attempts_path:
+        for _, attempt in _iter_jsonl(attempts_path):
+            attempts_total += 1
+            lvl = attempt.get("support_level")
+            if lvl == "unsupported":
+                attempts_unsupported += 1
+            elif lvl == "inconclusive":
+                attempts_inconclusive += 1
+
     metrics: Dict[str, Any] = {
         "input_path": input_path,
+        "attempts_path": attempts_path,
         "total_rows": total,
         "accepted_rows": accepted,
         "failures": failures,
         "b0_structural_completeness_pass_rate": (accepted / total) if total else 0.0,
         "b1_unsupported_in_accepted_rate": unsupported / accepted_samples,
         "b1_inconclusive_in_accepted_rate": inconclusive / accepted_samples,
+        "b1_unsupported_predicate_rate": (attempts_unsupported / max(attempts_total, 1)) if attempts_path else None,
+        "b1_inconclusive_predicate_rate": (attempts_inconclusive / max(attempts_total, 1)) if attempts_path else None,
+        "attempts_total": attempts_total if attempts_path else None,
         "b2_anchor_match_rate": anchors_with_match / max(anchors_rows_total, 1),
         "b2_generic_anchor_fraction": anchors_generic_total / max(anchors_items_total, 1),
     }
 
     thresholds = config.thresholds
     if thresholds:
+        unsupported_rate_for_check = (
+            metrics["b1_unsupported_predicate_rate"]
+            if attempts_path
+            else metrics["b1_unsupported_in_accepted_rate"]
+        )
+        inconclusive_rate_for_check = (
+            metrics["b1_inconclusive_predicate_rate"]
+            if attempts_path
+            else metrics["b1_inconclusive_in_accepted_rate"]
+        )
         checks = {
-            "max_unsupported_in_accepted_rate": metrics["b1_unsupported_in_accepted_rate"]
+            "max_unsupported_in_accepted_rate": unsupported_rate_for_check
             <= thresholds.max_unsupported_in_accepted_rate,
-            "max_inconclusive_in_accepted_rate": metrics["b1_inconclusive_in_accepted_rate"]
+            "max_inconclusive_in_accepted_rate": inconclusive_rate_for_check
             <= thresholds.max_inconclusive_in_accepted_rate,
             "min_anchor_match_rate": metrics["b2_anchor_match_rate"]
             >= thresholds.min_anchor_match_rate,
@@ -221,6 +249,7 @@ def compute_b_metrics(
 def main() -> int:
     p = argparse.ArgumentParser(description="Offline B Gate (Grounding) for training_corpus.jsonl")
     p.add_argument("--input", required=True, help="Path to training_corpus.jsonl")
+    p.add_argument("--attempts", default=None, help="Optional attempts.jsonl to compute true B1 (unsupported/total_attempts)")
     p.add_argument("--metrics-out", default=None, help="Write metrics JSON to this path")
     p.add_argument("--fail", action="store_true", help="Exit non-zero if gate fails")
 
@@ -251,7 +280,7 @@ def main() -> int:
         thresholds=thresholds,
     )
 
-    metrics = compute_b_metrics(input_path=args.input, config=config)
+    metrics = compute_b_metrics(input_path=args.input, attempts_path=args.attempts, config=config)
 
     if args.metrics_out:
         os.makedirs(os.path.dirname(args.metrics_out) or ".", exist_ok=True)

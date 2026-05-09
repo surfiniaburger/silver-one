@@ -19,6 +19,7 @@ async def run_batch():
     parser.add_argument("--mode", choices=["record", "replay"], default="record")
     parser.add_argument("--cassette-path", default="", help="Optional cassette path for the judge (defaults to artifacts/cassettes/<run-id>.json)")
     parser.add_argument("--record-path", default="", help="Optional run record path for the judge (defaults to artifacts/runs/<run-id>.json)")
+    parser.add_argument("--attempts-out", default="", help="Optional attempts log path (defaults to artifacts/attempts/<run-id>.jsonl)")
     args = parser.parse_args()
 
     judge_url = "http://127.0.0.1:9009"
@@ -63,6 +64,7 @@ async def run_batch():
                 "mode": args.mode,
                 **({"cassette_path": args.cassette_path} if args.cassette_path else {}),
                 **({"record_path": args.record_path} if args.record_path else {}),
+                **({"attempts_path": args.attempts_out} if args.attempts_out else {}),
                 "topic": seed["topic"],
                 "predicate": seed["predicate"],
                 "target_verdict": "True",
@@ -81,4 +83,3 @@ async def run_batch():
 
 if __name__ == "__main__":
     asyncio.run(run_batch())
-

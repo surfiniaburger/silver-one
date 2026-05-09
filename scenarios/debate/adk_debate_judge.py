@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import re
+import hashlib
 import litellm
 from dotenv import load_dotenv
 
@@ -69,6 +70,18 @@ def _any_anchor_matches_input(anchors: list[str], input_text: str) -> bool:
         if isinstance(a, str) and a.strip() and a in haystack:
             return True
     return False
+
+
+def _append_jsonl(path: str, obj: dict) -> None:
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(obj, sort_keys=True) + "\n")
+
+
+def _sha256_text(text: str) -> str:
+    if not isinstance(text, str):
+        text = str(text)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 # System prompt for the judge agent
@@ -148,6 +161,7 @@ class DebateJudgeADK(GreenAgent):
         target_dimension = req.config.get("target_dimension", "General")
         max_refinements = int(req.config.get("max_refinements", 2))
         output_file = req.config.get("output_file", "training_corpus.jsonl")
+        attempts_path = req.config.get("attempts_path", f"artifacts/attempts/{run_id}.jsonl")
         
         current_input_block = req.config.get("topic", "")
         
@@ -170,6 +184,22 @@ class DebateJudgeADK(GreenAgent):
                 if not _is_code_like(current_sample_block):
                     last_judge_reason = "Rejected: generated sample is not code-like."
                     logger.warning(last_judge_reason)
+                    _append_jsonl(
+                        attempts_path,
+                        {
+                            "run_id": run_id,
+                            "seed": seed,
+                            "mode": mode,
+                            "refinement_round": i,
+                            "predicate": predicate,
+                            "target_verdict": target_verdict,
+                            "target_dimension": target_dimension,
+                            "decision": "rejected",
+                            "reject_reason": "not_code_like",
+                            "sample_sha256": _sha256_text(current_sample_block),
+                            "support_level": "inconclusive",
+                        },
+                    )
                     continue
                 
                 # Step 2: Orchestrate Debate
@@ -233,12 +263,52 @@ Debate Transcript:
                 except Exception as e:
                     logger.error(f"Judge structured output failed: {e}")
                     last_judge_reason = f"Failed to parse judge response: {e}"
+                    _append_jsonl(
+                        attempts_path,
+                        {
+                            "run_id": run_id,
+                            "seed": seed,
+                            "mode": mode,
+                            "refinement_round": i,
+                            "predicate": predicate,
+                            "target_verdict": target_verdict,
+                            "target_dimension": target_dimension,
+                            "decision": "rejected",
+                            "reject_reason": "judge_parse_failed",
+                            "error": str(e),
+                            "sample_sha256": _sha256_text(current_sample_block),
+                            "support_level": "inconclusive",
+                        },
+                    )
                     continue
 
                 # Phase B anchor enforcement: at least one anchor must be a verbatim substring of the code snippet.
                 if not _any_anchor_matches_input(debate_eval.anchors, current_sample_block):
                     last_judge_reason = "Rejected: judge anchors did not match the code snippet (verbatim substring check failed)."
                     logger.info(last_judge_reason)
+                    _append_jsonl(
+                        attempts_path,
+                        {
+                            "run_id": run_id,
+                            "seed": seed,
+                            "mode": mode,
+                            "refinement_round": i,
+                            "predicate": predicate,
+                            "target_verdict": target_verdict,
+                            "target_dimension": target_dimension,
+                            "decision": "rejected",
+                            "reject_reason": "anchors_no_match",
+                            "sample_sha256": _sha256_text(current_sample_block),
+                            "judge_eval": {
+                                "predicate": debate_eval.predicate,
+                                "anchors": debate_eval.anchors,
+                                "support_level": debate_eval.support_level,
+                                "verifier_report": debate_eval.verifier_report,
+                                "winner": debate_eval.winner,
+                            },
+                            "support_level": debate_eval.support_level,
+                        },
+                    )
                     continue
                 
                 is_valid = debate_eval.winner == "pro_debater"
@@ -270,6 +340,29 @@ Debate Transcript:
                     }
                     with open(output_file, "a") as f:
                         f.write(json.dumps(export_data) + "\n")
+
+                    _append_jsonl(
+                        attempts_path,
+                        {
+                            "run_id": run_id,
+                            "seed": seed,
+                            "mode": mode,
+                            "refinement_round": i,
+                            "predicate": predicate,
+                            "target_verdict": target_verdict,
+                            "target_dimension": target_dimension,
+                            "decision": "accepted",
+                            "sample_sha256": _sha256_text(current_sample_block),
+                            "judge_eval": {
+                                "predicate": debate_eval.predicate,
+                                "anchors": debate_eval.anchors,
+                                "support_level": debate_eval.support_level,
+                                "verifier_report": debate_eval.verifier_report,
+                                "winner": debate_eval.winner,
+                            },
+                            "support_level": debate_eval.support_level,
+                        },
+                    )
                     
                     await updater.add_artifact(
                         parts=[TextPart(text=f"Sample Accepted and saved to {output_file}"), TextPart(text=debate_eval.reason)],
@@ -278,6 +371,29 @@ Debate Transcript:
                     return
                 else:
                     logger.info(f"Refinement required. Judge reason: {last_judge_reason}")
+                    _append_jsonl(
+                        attempts_path,
+                        {
+                            "run_id": run_id,
+                            "seed": seed,
+                            "mode": mode,
+                            "refinement_round": i,
+                            "predicate": predicate,
+                            "target_verdict": target_verdict,
+                            "target_dimension": target_dimension,
+                            "decision": "rejected",
+                            "reject_reason": "judge_rejected",
+                            "sample_sha256": _sha256_text(current_sample_block),
+                            "judge_eval": {
+                                "predicate": debate_eval.predicate,
+                                "anchors": debate_eval.anchors,
+                                "support_level": debate_eval.support_level,
+                                "verifier_report": debate_eval.verifier_report,
+                                "winner": debate_eval.winner,
+                            },
+                            "support_level": debate_eval.support_level,
+                        },
+                    )
 
             # Persist RunRecord (A1) - Failure path
             record_path = req.config.get("record_path", f"artifacts/runs/{run_id}.json")
