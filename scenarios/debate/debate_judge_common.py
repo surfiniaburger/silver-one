@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Literal
 
 from a2a.types import (
@@ -22,8 +22,11 @@ class DebateEval(BaseModel):
     winner: Literal["pro_debater", "con_debater"]
     reason: str # Short summary
     mechanism: str # GEPA: Technical mechanism of the bug
-    anchors: list[str] = [] # GEPA: Concrete evidence hooks
     counterfactual: str # GEPA: What would change the verdict?
+    predicate: str # The claim being judged (must match the run predicate)
+    anchors: list[str] = Field(min_length=2) # Concrete evidence hooks (must appear in code)
+    verifier_report: str = "not_applicable"
+    support_level: Literal["supported", "unsupported", "inconclusive"] = "supported"
 
 
 def debate_judge_agent_card(agent_name: str, card_url: str) -> AgentCard:

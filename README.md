@@ -182,6 +182,17 @@ If it can change, it must be an input; if it’s an input, it must be recorded.
 ##### “A Is Done” (Determinism) Definition
 We consider determinism complete when a run can be reproduced from immutable artifacts (a run record + cassettes + inputs) such that replay produces the exact same output artifact(s) without contacting model providers.
 
+##### B Gates (Offline Grounding Gate)
+Run the offline grounding gate (Phase B) on an existing `training_corpus.jsonl`. This computes metrics and exits non-zero if the gate fails.
+
+```bash
+cd /Users/surfiniaburger/Desktop/modular-metacog-swarm-v3/agent_training/silver-one
+UV_CACHE_DIR=/tmp/uv-cache uv run python scenarios/debate/offline_b_gate.py \
+  --input training_corpus.jsonl \
+  --metrics-out artifacts/metrics/b_gate.json \
+  --fail
+```
+
 ### Example
 To make things concrete, we will use a debate scenario as our toy example:
 - Green agent (`DebateJudge`) orchestrates a debate between two agents by using an A2A client to alternate turns between participants. Each participant's response is forwarded to the caller as a task update. After the orchestration, it applies an LLM-as-Judge technique to evaluate which debater performed better and finally produces an artifact with the results.
