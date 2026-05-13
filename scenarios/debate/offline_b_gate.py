@@ -188,6 +188,10 @@ def compute_b_metrics(
     attempts_total = 0
     attempts_unsupported = 0
     attempts_inconclusive = 0
+    attempts_soft_aboutness_total = 0
+    attempts_soft_aboutness_fail = 0
+    attempts_soft_mech_total = 0
+    attempts_soft_mech_fail = 0
     if attempts_path:
         for _, attempt in _iter_jsonl(attempts_path):
             attempts_total += 1
@@ -196,6 +200,20 @@ def compute_b_metrics(
                 attempts_unsupported += 1
             elif lvl == "inconclusive":
                 attempts_inconclusive += 1
+
+            soft = attempt.get("soft_checks") if isinstance(attempt, dict) else None
+            if isinstance(soft, dict):
+                pa = soft.get("predicate_aboutness")
+                if isinstance(pa, dict) and "pass" in pa:
+                    attempts_soft_aboutness_total += 1
+                    if not bool(pa.get("pass")):
+                        attempts_soft_aboutness_fail += 1
+
+                mg = soft.get("mechanism_grounding")
+                if isinstance(mg, dict) and "pass" in mg:
+                    attempts_soft_mech_total += 1
+                    if not bool(mg.get("pass")):
+                        attempts_soft_mech_fail += 1
 
     metrics: Dict[str, Any] = {
         "input_path": input_path,
@@ -209,6 +227,16 @@ def compute_b_metrics(
         "b1_unsupported_predicate_rate": (attempts_unsupported / max(attempts_total, 1)) if attempts_path else None,
         "b1_inconclusive_predicate_rate": (attempts_inconclusive / max(attempts_total, 1)) if attempts_path else None,
         "attempts_total": attempts_total if attempts_path else None,
+        "b2_predicate_aboutness_fail_rate": (
+            attempts_soft_aboutness_fail / max(attempts_soft_aboutness_total, 1)
+            if attempts_path
+            else None
+        ),
+        "b2_predicate_aboutness_total": attempts_soft_aboutness_total if attempts_path else None,
+        "b2_mechanism_grounding_fail_rate": (
+            attempts_soft_mech_fail / max(attempts_soft_mech_total, 1) if attempts_path else None
+        ),
+        "b2_mechanism_grounding_total": attempts_soft_mech_total if attempts_path else None,
         "b2_anchor_match_rate": anchors_with_match / max(anchors_rows_total, 1),
         "b2_generic_anchor_fraction": anchors_generic_total / max(anchors_items_total, 1),
     }

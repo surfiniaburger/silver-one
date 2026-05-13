@@ -84,6 +84,129 @@ def _sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+_PREDICATE_STOPWORDS = {
+    "the",
+    "code",
+    "is",
+    "are",
+    "to",
+    "a",
+    "an",
+    "in",
+    "of",
+    "and",
+    "or",
+    "because",
+    "when",
+    "while",
+    "via",
+    "with",
+    "without",
+    "can",
+    "may",
+    "allow",
+    "allows",
+    "leading",
+    "lead",
+    "cause",
+    "causes",
+    "vulnerable",
+    "vulnerability",
+    "buffer",
+    "overflow",
+    "out",
+    "bounds",
+    "read",
+    "write",
+    "memory",
+    "logic",
+    "errors",
+    "race",
+    "condition",
+    "null",
+    "pointer",
+    "dereference",
+    "integer",
+    "heap",
+    "stack",
+    "attack",
+    "attacker",
+    "denial",
+    "service",
+    "dos",
+    "use",
+    "after",
+    "free",
+    "privilege",
+    "escalation",
+}
+
+
+def _extract_predicate_symbols(predicate: str) -> list[str]:
+    """
+    Extract candidate identifiers from predicate text.
+    Priority:
+    - backticked identifiers: `foo_bar`
+    - bare identifiers: foo_bar, FooBar, fooBar (min length 3)
+    """
+    if not isinstance(predicate, str) or not predicate.strip():
+        return []
+
+    symbols: list[str] = []
+    symbols.extend(re.findall(r"`([^`]{1,64})`", predicate))
+    symbols.extend(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]{2,63}\b", predicate))
+
+    cleaned: list[str] = []
+    seen = set()
+    for s in symbols:
+        s2 = s.strip()
+        if not s2:
+            continue
+        if s2.lower() in _PREDICATE_STOPWORDS:
+            continue
+        if s2 in seen:
+            continue
+        seen.add(s2)
+        cleaned.append(s2)
+    return cleaned
+
+
+def _predicate_aboutness(predicate: str, code: str) -> dict:
+    """
+    Soft-check: does at least one predicate-named identifier appear in the code snippet in a code-like context?
+    """
+    candidates = _extract_predicate_symbols(predicate)
+    if not isinstance(code, str) or not code.strip() or not candidates:
+        return {"pass": False, "candidates": candidates, "hits": []}
+
+    hits: list[str] = []
+    for sym in candidates:
+        # Code-ish contexts: foo(, ->foo, .foo, foo::, #define foo
+        patterns = [
+            rf"\b{re.escape(sym)}\s*\(",
+            rf"->\s*{re.escape(sym)}\b",
+            rf"\.\s*{re.escape(sym)}\b",
+            rf"\b{re.escape(sym)}\s*::",
+            rf"#\s*define\s+{re.escape(sym)}\b",
+        ]
+        if any(re.search(p, code) for p in patterns) or re.search(rf"\b{re.escape(sym)}\b", code):
+            hits.append(sym)
+    return {"pass": len(hits) > 0, "candidates": candidates, "hits": hits}
+
+
+def _mechanism_grounding(mechanism: str, anchors: list[str]) -> dict:
+    """
+    Soft-check: does the mechanism cite any verbatim evidence from the code via anchors?
+    """
+    if not isinstance(mechanism, str) or not mechanism.strip():
+        return {"pass": False, "hits": []}
+    hits: list[str] = []
+    for a in anchors or []:
+        if isinstance(a, str) and a.strip() and a in mechanism:
+            hits.append(a)
+    return {"pass": len(hits) > 0, "hits": hits}
+
+
 # System prompt for the judge agent
 judge_system_prompt = """
 <role>
@@ -282,6 +405,10 @@ Debate Transcript:
                     )
                     continue
 
+                # Soft checks (log-only): predicate aboutness + mechanism grounding.
+                aboutness = _predicate_aboutness(predicate, current_sample_block)
+                mech_grounding = _mechanism_grounding(debate_eval.mechanism, debate_eval.anchors)
+
                 # Phase B anchor enforcement: at least one anchor must be a verbatim substring of the code snippet.
                 if not _any_anchor_matches_input(debate_eval.anchors, current_sample_block):
                     last_judge_reason = "Rejected: judge anchors did not match the code snippet (verbatim substring check failed)."
@@ -305,6 +432,10 @@ Debate Transcript:
                                 "support_level": debate_eval.support_level,
                                 "verifier_report": debate_eval.verifier_report,
                                 "winner": debate_eval.winner,
+                            },
+                            "soft_checks": {
+                                "predicate_aboutness": aboutness,
+                                "mechanism_grounding": mech_grounding,
                             },
                             "support_level": debate_eval.support_level,
                         },
@@ -360,6 +491,10 @@ Debate Transcript:
                                 "verifier_report": debate_eval.verifier_report,
                                 "winner": debate_eval.winner,
                             },
+                            "soft_checks": {
+                                "predicate_aboutness": aboutness,
+                                "mechanism_grounding": mech_grounding,
+                            },
                             "support_level": debate_eval.support_level,
                         },
                     )
@@ -390,6 +525,10 @@ Debate Transcript:
                                 "support_level": debate_eval.support_level,
                                 "verifier_report": debate_eval.verifier_report,
                                 "winner": debate_eval.winner,
+                            },
+                            "soft_checks": {
+                                "predicate_aboutness": aboutness,
+                                "mechanism_grounding": mech_grounding,
                             },
                             "support_level": debate_eval.support_level,
                         },

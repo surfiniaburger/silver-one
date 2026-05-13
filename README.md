@@ -344,7 +344,7 @@ cd /Users/surfiniaburger/Desktop/modular-metacog-swarm-v3/agent_training/silver-
 uv run python scenarios/debate/run_batch.py --run-id pilot-v1 --mode replay --seed 42
 
 
-lsof -ti:9009,9018,9019 | xargs kill -9 || true
+lsof -ti:9009,9018,9019,9020 | xargs kill -9 || true
 
 # Terminal 1: Start Servers (Already running in your environment)
 JUDGE_MODEL="ollama/gemma4:latest" \
@@ -352,14 +352,24 @@ DEBATER_MODEL="ollama/gemma4:latest" \
 GENERATOR_MODEL="ollama/gemma4:latest" \
 uv run agentbeats-run scenarios/debate/barred_test.toml --serve-only
 
+VERIFIER_MODEL="ollama/deepseek-v3.1:671b-cloud" \
+uv run python scenarios/debate/adk_debate_verifier.py --port 9020
 
-# Terminal 2: Run Batch in Record mode
+# Re-run a record run to generate attempts with soft_checks
 uv run python scenarios/debate/run_batch.py \
-  --run-id pilot-v1 \
+  --run-id pilot-v1-softchecks \
   --mode record \
   --seed 42 \
   --seeds scenarios/debate/cve_seeds_test.jsonl \
-  --output training_corpus.jsonl
+  --output training_corpus.jsonl \
+  --attempts-out artifacts/attempts/pilot-v1-softchecks.jsonl
+
+# Compute B metrics + soft-check rates
+UV_CACHE_DIR=/tmp/uv-cache uv run python scenarios/debate/offline_b_gate.py \
+  --input training_corpus.jsonl \
+  --attempts artifacts/attempts/pilot-v1-softchecks.jsonl \
+  --metrics-out artifacts/metrics/b_gate.json
+
 
 
 
