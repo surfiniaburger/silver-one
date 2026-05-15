@@ -12,6 +12,11 @@ role = "con_debater"
 endpoint = "http://127.0.0.1:9018"
 cmd = "python scenarios/debate/debater.py --host 127.0.0.1 --port 9018 --instruction \"<role>You are a Skeptical Security Auditor.</role><task>Disprove the predicate at all costs.</task><constraints>Be rigorous. NO SMALL TALK. Do not say 'Great' or 'Thank you'. Start your argument IMMEDIATELY. Be technical and concise. MAX 150 words.</constraints>\""
 
+[[participants]]
+role = "verifier"
+endpoint = "http://127.0.0.1:9020"
+cmd = "python scenarios/debate/adk_debate_verifier.py --host 127.0.0.1 --port 9020"
+
 
 [config]
 topic = "def register_user(username, password):\n    db.execute(f'INSERT INTO users VALUES (\"{username}\", \"{password}\")')"

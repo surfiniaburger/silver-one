@@ -101,8 +101,39 @@ def test_response_format_rejected_retry():
     )
 
 
+def test_markdown_fenced_json_parses():
+    rm = _DummyReplayManager(first='```json\n{"answer":"ok"}\n```')
+    result = asyncio.run(
+        call_structured(
+            replay_manager=rm,
+            model="dummy",
+            messages=[{"role": "user", "content": "hi"}],
+            schema_name="mini",
+            schema_model=MiniModel,
+            strict=True,
+            repair_on_fail=False,
+        )
+    )
+    assert result.answer == "ok"
+
+
+def test_invalid_escape_json_parses():
+    rm = _DummyReplayManager(first='{"answer":"IP\\-Header"}')
+    result = asyncio.run(
+        call_structured(
+            replay_manager=rm,
+            model="dummy",
+            messages=[{"role": "user", "content": "hi"}],
+            schema_name="mini",
+            schema_model=MiniModel,
+            strict=True,
+            repair_on_fail=False,
+        )
+    )
+    assert result.answer == "IP\\-Header"
+
+
 if __name__ == "__main__":
     test_validation_failure_repair()
     test_response_format_rejected_retry()
     print("ok")
-

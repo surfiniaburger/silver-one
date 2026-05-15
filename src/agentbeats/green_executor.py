@@ -36,6 +36,10 @@ class GreenExecutor(AgentExecutor):
     def __init__(self, green_agent: GreenAgent):
         self.agent = green_agent
 
+    @staticmethod
+    def _is_terminal_state_error(exc: BaseException) -> bool:
+        return "terminal state" in str(exc).lower()
+
     async def execute(
         self,
         context: RequestContext,
@@ -65,10 +69,18 @@ class GreenExecutor(AgentExecutor):
 
         try:
             await self.agent.run_eval(req, updater)
-            await updater.complete()
+            try:
+                await updater.complete()
+            except RuntimeError as complete_err:
+                if not self._is_terminal_state_error(complete_err):
+                    raise
         except Exception as e:
             print(f"Agent error: {e}")
-            await updater.failed(new_agent_text_message(f"Agent error: {e}", context_id=context.context_id))
+            try:
+                await updater.failed(new_agent_text_message(f"Agent error: {e}", context_id=context.context_id))
+            except RuntimeError as failed_err:
+                if not self._is_terminal_state_error(failed_err):
+                    raise
             raise ServerError(error=InternalError(message=str(e)))
 
     async def cancel(

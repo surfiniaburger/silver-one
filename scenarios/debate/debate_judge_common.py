@@ -21,7 +21,12 @@ class DebateEval(BaseModel):
     con_debater: DebaterScore
     winner: Literal["pro_debater", "con_debater"]
     reason: str # Short summary
-    mechanism: str # GEPA: Technical mechanism of the bug
+    mechanism: str = Field(
+        description=(
+            "Technical mechanism of the bug. Must include three lines: "
+            "'Source anchor: ...', 'Sink anchor: ...', 'Missing guard anchor: ...'"
+        )
+    )
     counterfactual: str # GEPA: What would change the verdict?
     predicate: str # The claim being judged (must match the run predicate)
     anchors: list[str] = Field(min_length=2) # Concrete evidence hooks (must appear in code)

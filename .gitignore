@@ -8,3 +8,4 @@ artifacts/
 training_corpus*.jsonl
 *_corpus*.jsonl
 todo.md
+doc.md
