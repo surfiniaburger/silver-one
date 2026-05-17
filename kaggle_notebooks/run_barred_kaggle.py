@@ -69,6 +69,9 @@ def main():
     parser.add_argument("--judge-model", default=os.getenv("JUDGE_MODEL", "ollama/qwen2.5-coder:7b"))
     parser.add_argument("--debater-model", default=os.getenv("DEBATER_MODEL", "ollama/qwen2.5-coder:7b"))
     parser.add_argument("--generator-model", default=os.getenv("GENERATOR_MODEL", "ollama/qwen2.5-coder:7b"))
+    parser.add_argument("--verifier-model", default=os.getenv("VERIFIER_MODEL", "ollama/qwen2.5-coder:7b"))
+    parser.add_argument("--attempts-out", default=os.getenv("ATTEMPTS_OUT_PATH", "/kaggle/working/attempts.jsonl"))
+    parser.add_argument("--metrics-out", default=os.getenv("METRICS_OUT_PATH", "/kaggle/working/b_gate.json"))
     parser.add_argument("--gepa-model", default=os.getenv("GEPA_MODEL", ""), help="Optional GEPA model for seed loader runs")
     parser.add_argument("--ollama-pull", default=os.getenv("OLLAMA_PULL", "qwen2.5-coder:7b"), help="Comma-separated model names to pull via ollama (no provider prefix)")
     parser.add_argument("--no-ollama", action="store_true", help="Skip starting/pulling ollama (use if models are remote)")
@@ -101,7 +104,7 @@ def main():
             return
 
     # 2. Start Ollama (optional)
-    if not args.no_ollama and any(m.startswith("ollama/") for m in [args.judge_model, args.debater_model, args.generator_model] if m):
+    if not args.no_ollama and any(m.startswith("ollama/") for m in [args.judge_model, args.debater_model, args.generator_model, args.verifier_model] if m):
         pull_models = [m.strip() for m in args.ollama_pull.split(",") if m.strip()]
         start_ollama(pull_models)
     
@@ -111,13 +114,14 @@ def main():
     env["JUDGE_MODEL"] = args.judge_model
     env["DEBATER_MODEL"] = args.debater_model
     env["GENERATOR_MODEL"] = args.generator_model
+    env["VERIFIER_MODEL"] = args.verifier_model
     if args.gepa_model:
         env["GEPA_MODEL"] = args.gepa_model
     
     judge_proc = subprocess.Popen(["uv", "run", "agentbeats-run", "--serve-only", args.scenario],
                                   env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     
-    endpoints = ["http://127.0.0.1:9009", "http://127.0.0.1:9018", "http://127.0.0.1:9019"]
+    endpoints = ["http://127.0.0.1:9009", "http://127.0.0.1:9018", "http://127.0.0.1:9019", "http://127.0.0.1:9020"]
     print(f"Waiting for agents to initialize ({args.agents_timeout}s)...")
     if not _wait_for_agent_cards(endpoints, args.agents_timeout):
         print("Error: agents did not become ready in time.")
@@ -136,6 +140,7 @@ def main():
             f"--seed {args.seed}",
             f"--seeds {args.seeds}",
             f"--output {args.output}",
+            f"--attempts-out {args.attempts_out}",
             cassette_flag,
             record_flag,
         ]).strip()
@@ -143,6 +148,20 @@ def main():
     
     print(f"Pilot run complete. Results should be in {args.output}")
     
+    # 5. Compute B metrics + soft-check rates
+    print("Computing B metrics...")
+    os.environ["UV_CACHE_DIR"] = "/tmp/uv-cache"
+    run_command(
+        " ".join([
+            "uv run python scenarios/debate/offline_b_gate.py",
+            f"--input {args.output}",
+            f"--attempts {args.attempts_out}",
+            f"--metrics-out {args.metrics_out}"
+        ]).strip()
+    )
+
+    print(f"B metrics complete. Results should be in {args.metrics_out}")
+
     judge_proc.terminate()
 
 if __name__ == "__main__":

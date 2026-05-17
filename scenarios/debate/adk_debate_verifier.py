@@ -1,0 +1,192 @@
+import argparse
+import json
+import uvicorn
+import asyncio
+import logging
+import os
+from typing import Optional
+from pydantic import BaseModel, Field
+from dotenv import load_dotenv
+
+load_dotenv()
+
+from a2a.server.apps import A2AStarletteApplication
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
+from a2a.types import Part, TextPart
+
+from agentbeats.green_executor import GreenAgent, GreenExecutor
+from agentbeats.models import EvalRequest, EvalResult
+from agentbeats.tool_provider import ToolProvider
+from agentbeats.structured_output import call_structured
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("adk_debate_verifier")
+
+# --- Determinism Mock ---
+
+class BareReplayManager:
+    """A minimal ReplayManager that calls LiteLLM directly without caching."""
+    def __init__(self):
+        self.cassette = None  # Prevents safe_record_event from trying to save
+
+    async def acompletion(self, **kwargs):
+        import litellm
+        if hasattr(litellm, "acompletion"):
+            try:
+                return await litellm.acompletion(**kwargs)
+            except Exception:
+                logger.exception("litellm.acompletion failed in verifier; trying sync fallback.")
+        # Fallback for providers/transports that break on async path.
+        return await asyncio.to_thread(litellm.completion, **kwargs)
+
+_BARE_REPLAY = BareReplayManager()
+
+# --- Schemas ---
+
+class VerifierReport(BaseModel):
+    thinking_process: str = Field(description="Step-by-step symbolic trace of the vulnerability mechanism.")
+    passes_audit: bool = Field(description="True if the mechanism is technically grounded in the anchors and code.")
+    anchor_analysis: str = Field(description="Verification of each anchor's role in the exploit (e.g. Source, Sink, Guard).")
+    logic_error: Optional[str] = Field(description="Detailed explanation of any hallucination or logical leap found.")
+    suggested_correction: Optional[str] = Field(description="Technical advice for the Generator to fix the grounding gap.")
+
+# --- System Prompt ---
+
+verifier_system_prompt = """
+<role>
+You are an Elite Predictive Security Auditor and Symbolic Execution Specialist. 
+Your goal is to be a technical skeptic. You do not care about the "story" of the debate; you only care about the bit-level truth of the code.
+</role>
+
+<task>
+Perform a "Counterfactual Audit" on a proposed security vulnerability. 
+You must verify if the 'Mechanism' described is actually possible given the 'Code Snippet' and the 'Anchors' provided.
+</task>
+
+<thinking_process>
+1. **Anchor Scan**: Verify that every anchor provided exists verbatim in the code.
+2. **Variable Mapping**: Identify the key variables and their types.
+3. **Data-Flow Trace**: Map the path from Input (Source) to the Vulnerable Operation (Sink).
+4. **Invariant Check**: Identify which security invariant (e.g., "bounds check", "NULL check") is missing.
+5. **Counterfactual Test**: If the anchors were patched or the input was changed, would the vulnerability still exist?
+</thinking_process>
+
+<constraints>
+- You MUST fail the audit if the mechanism relies on "imaginary" code not present in the snippet.
+- You MUST fail the audit if the anchors are "narrative" (comments) rather than "functional" (operations).
+- You MUST be clinical and technically precise. Use terms like 'integer wrap-around', 'pointer aliasing', or 'race window'.
+- If the mechanism is a hallucination (e.g. it claims an overflow on a 64-bit size_t that can't realistically overflow), you MUST call it out.
+</constraints>
+
+<output_format>
+Return your response ONLY as a valid JSON object conforming to the VerifierReport schema.
+DO NOT use markdown code blocks.
+</output_format>
+"""
+
+class DebateVerifierADK(GreenAgent):
+    def __init__(self, model: str = "ollama/deepseek-v3.1:671b-cloud"):
+        self.model = model
+        self._tool_provider = ToolProvider()
+
+    def validate_request(self, request: EvalRequest) -> tuple[bool, str]:
+        if "code" not in request.config:
+            return False, "Missing 'code' in config"
+        if "mechanism" not in request.config:
+            return False, "Missing 'mechanism' in config"
+        if "anchors" not in request.config:
+            return False, "Missing 'anchors' in config"
+        return True, "ok"
+
+    async def run_eval(self, req: EvalRequest, updater: TaskUpdater) -> None:
+        logger.info(f"Starting Predictive Verification: {req}")
+        
+        code = req.config["code"]
+        mechanism = req.config["mechanism"]
+        anchors = req.config["anchors"]
+        predicate = req.config.get("predicate", "")
+
+        verifier_prompt = f"""
+<context>
+Code Snippet:
+<Untrusted_Code>
+{code}
+</Untrusted_Code>
+
+Proposed Predicate: {predicate}
+Proposed Mechanism: {mechanism}
+Proposed Anchors: {json.dumps(anchors)}
+</context>
+
+AUDIT TASK:
+Does the Code Snippet actually support the Mechanism via these Anchors? 
+Perform a bit-level data-flow trace to confirm or debunk the claim.
+"""
+
+        try:
+            verifier_model = os.getenv("VERIFIER_MODEL", self.model)
+            report = await call_structured(
+                replay_manager=_BARE_REPLAY,
+                model=verifier_model,
+                messages=[
+                    {"role": "system", "content": verifier_system_prompt},
+                    {"role": "user", "content": verifier_prompt},
+                ],
+                schema_name="verifier_report",
+                schema_model=VerifierReport,
+                strict=True,
+                repair_on_fail=True,
+                repair_model=verifier_model,
+            )
+            
+            # Export the report as the result
+            await updater.add_artifact(
+                parts=[
+                    TextPart(text=json.dumps(report.model_dump(), ensure_ascii=False)),
+                    TextPart(text=f"Verification Result: {'PASSED' if report.passes_audit else 'FAILED'}"),
+                    TextPart(text=report.thinking_process),
+                    TextPart(text=f"Logic Audit: {report.logic_error or 'None'}")
+                ],
+                name="VerifierReport",
+            )
+            
+            # Return the structured data
+            # Note: In the ADK framework, we can return JSON in the final response
+            logger.info(f"Verification complete. Pass: {report.passes_audit}")
+            
+        except Exception as e:
+            logger.exception("Verifier failed during structured call.")
+            raise RuntimeError(f"Verification error: {e}") from e
+
+async def main():
+    parser = argparse.ArgumentParser(description="Run the In-Varia Predictive Verifier Agent.")
+    parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind the server")
+    parser.add_argument("--port", type=int, default=9020, help="Port to bind the server")
+    parser.add_argument("--model", type=str, default=os.getenv("VERIFIER_MODEL", "ollama/deepseek-v3.1:671b-cloud"), help="Model to use for verification")
+    args = parser.parse_args()
+
+    agent = DebateVerifierADK(model=args.model)
+    executor = GreenExecutor(agent)
+    
+    # Simple card for discovery
+    from debate_judge_common import debate_judge_agent_card
+    agent_url = f"http://{args.host}:{args.port}/"
+    agent_card = debate_judge_agent_card("DebateVerifierADK", agent_url)
+
+    request_handler = DefaultRequestHandler(
+        agent_executor=executor,
+        task_store=InMemoryTaskStore(),
+    )
+
+    server = A2AStarletteApplication(
+        agent_card=agent_card,
+        http_handler=request_handler,
+    )
+
+    uvicorn_config = uvicorn.Config(server.build(), host=args.host, port=args.port)
+    uvicorn_server = uvicorn.Server(uvicorn_config)
+    await uvicorn_server.serve()
+
+if __name__ == '__main__':
+    asyncio.run(main())

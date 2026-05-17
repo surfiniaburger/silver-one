@@ -1,6 +1,7 @@
 import json
 import hashlib
 import logging
+import re
 from typing import Any, Optional, Type, TypeVar
 
 from pydantic import BaseModel
@@ -8,6 +9,62 @@ from pydantic import BaseModel
 logger = logging.getLogger("agentbeats.structured_output")
 
 T = TypeVar("T", bound=BaseModel)
+
+
+def _strip_markdown_fence(text: str) -> str:
+    s = text.strip()
+    if not s.startswith("```"):
+        return s
+    lines = s.splitlines()
+    if len(lines) >= 2 and lines[0].startswith("```"):
+        if lines[-1].strip() == "```":
+            return "\n".join(lines[1:-1]).strip()
+    return s
+
+
+def _extract_first_json_object(text: str) -> str:
+    start = text.find("{")
+    if start < 0:
+        return text
+    in_string = False
+    escaped = False
+    depth = 0
+    for idx in range(start, len(text)):
+        ch = text[idx]
+        if escaped:
+            escaped = False
+            continue
+        if ch == "\\":
+            escaped = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : idx + 1]
+    return text[start:]
+
+
+def _escape_invalid_backslashes(text: str) -> str:
+    return re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", text)
+
+
+def _json_candidates(raw_text: str) -> list[str]:
+    s0 = raw_text.strip()
+    s1 = _strip_markdown_fence(s0)
+    s2 = _extract_first_json_object(s1)
+    s3 = _escape_invalid_backslashes(s2)
+    out: list[str] = []
+    for candidate in (s0, s1, s2, s3):
+        if candidate and candidate not in out:
+            out.append(candidate)
+    return out
 
 
 def _schema_dict(schema_name: str, model: Type[BaseModel], strict: bool = True) -> dict[str, Any]:
@@ -141,6 +198,12 @@ async def call_structured(
         response = await replay_manager.acompletion(model=model, messages=retry_messages)
         raw_text = response.choices[0].message.content.strip()
 
+    for candidate in _json_candidates(raw_text):
+        try:
+            return schema_model.model_validate_json(candidate)
+        except Exception:
+            pass
+
     try:
         return schema_model.model_validate_json(raw_text)
     except Exception as e:
@@ -187,4 +250,9 @@ async def call_structured(
 
         response2 = await replay_manager.acompletion(**repair_kwargs)
         raw_text2 = response2.choices[0].message.content.strip()
+        for candidate in _json_candidates(raw_text2):
+            try:
+                return schema_model.model_validate_json(candidate)
+            except Exception:
+                pass
         return schema_model.model_validate_json(raw_text2)

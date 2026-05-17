@@ -44,6 +44,14 @@ def _is_nonempty_str(value: Any) -> bool:
     return isinstance(value, str) and value.strip() != ""
 
 
+def _valid_verifier_report(value: Any) -> bool:
+    if isinstance(value, dict):
+        return len(value) > 0
+    if isinstance(value, str):
+        return value.strip() != ""
+    return False
+
+
 def _anchor_matches_input(anchor: str, input_text: str, *, case_insensitive: bool) -> bool:
     if not _is_nonempty_str(anchor) or not _is_nonempty_str(input_text):
         return False
@@ -67,6 +75,8 @@ class BGateThresholds:
     max_unsupported_in_accepted_rate: float = 0.05
     max_inconclusive_in_accepted_rate: float = 0.20
     min_anchor_match_rate: float = 0.80
+    min_verifier_pass_rate: float = 0.0
+    min_verifier_parse_ok_rate: float = 0.0
 
 
 @dataclass
@@ -121,6 +131,9 @@ def compute_b_metrics(
                 val = _get(row, fpath)
                 if fpath == "output.anchors":
                     if not isinstance(val, list):
+                        missing_fields.append(fpath)
+                elif fpath == "output.verifier_report":
+                    if not _valid_verifier_report(val):
                         missing_fields.append(fpath)
                 elif not _is_nonempty_str(val):
                     missing_fields.append(fpath)
@@ -192,6 +205,19 @@ def compute_b_metrics(
     attempts_soft_aboutness_fail = 0
     attempts_soft_mech_total = 0
     attempts_soft_mech_fail = 0
+    verifier_called = 0
+    verifier_parse_ok = 0
+    verifier_pass = 0
+    prowin_total = 0
+    verifier_called_on_prowin = 0
+    accepted_with_not_applicable = 0
+    disagreement_missing_or_parse_fail = 0
+    disagreement_verifier_pass_anchor_strict_fail = 0
+    attempts_b2_strict_total = 0
+    attempts_b2_strict_fail = 0
+    attempts_anchor_too_few = 0
+    attempts_anchor_no_match = 0
+    attempts_mechanism_evidence_failed = 0
     if attempts_path:
         for _, attempt in _iter_jsonl(attempts_path):
             attempts_total += 1
@@ -215,6 +241,64 @@ def compute_b_metrics(
                     if not bool(mg.get("pass")):
                         attempts_soft_mech_fail += 1
 
+            verifier = attempt.get("verifier") if isinstance(attempt, dict) else None
+            if isinstance(verifier, dict):
+                if bool(verifier.get("called")):
+                    verifier_called += 1
+                if bool(verifier.get("parse_ok")):
+                    verifier_parse_ok += 1
+                if verifier.get("passes_audit") is True:
+                    verifier_pass += 1
+
+            judge_eval = attempt.get("judge_eval") if isinstance(attempt, dict) else None
+            if isinstance(judge_eval, dict) and judge_eval.get("winner") == "pro_debater":
+                prowin_total += 1
+                if isinstance(verifier, dict) and bool(verifier.get("called")):
+                    verifier_called_on_prowin += 1
+
+            # Disagreement audit #1: judge accepted while verifier is missing/failed parse.
+            if attempt.get("decision") == "accepted":
+                parse_ok = bool(verifier.get("parse_ok")) if isinstance(verifier, dict) else False
+                called = bool(verifier.get("called")) if isinstance(verifier, dict) else False
+                if (not called) or (not parse_ok):
+                    disagreement_missing_or_parse_fail += 1
+
+            # Disagreement audit #2: verifier passes but strict anchor gate fails.
+            if attempt.get("reject_reason") == "anchors_no_match":
+                v_pass = False
+                if isinstance(verifier, dict):
+                    v_pass = verifier.get("passes_audit") is True
+                if v_pass:
+                    disagreement_verifier_pass_anchor_strict_fail += 1
+
+            # Runtime-strict B2 from judge outcomes (attempt-level).
+            # Only count attempts that reached judge output checks.
+            reason = attempt.get("reject_reason")
+            decision = attempt.get("decision")
+            judge_eval = attempt.get("judge_eval")
+            if isinstance(judge_eval, dict) or decision == "accepted":
+                attempts_b2_strict_total += 1
+                if reason in (
+                    "anchors_too_few_after_normalization",
+                    "anchors_no_match",
+                    "mechanism_evidence_failed",
+                ):
+                    attempts_b2_strict_fail += 1
+                if reason == "anchors_too_few_after_normalization":
+                    attempts_anchor_too_few += 1
+                elif reason == "anchors_no_match":
+                    attempts_anchor_no_match += 1
+                elif reason == "mechanism_evidence_failed":
+                    attempts_mechanism_evidence_failed += 1
+
+        # accepted_with_not_applicable_rate comes from training rows
+        for _, row in _iter_jsonl(input_path):
+            out = _get(row, "output")
+            if not isinstance(out, dict):
+                continue
+            if out.get("verifier_report") == "not_applicable":
+                accepted_with_not_applicable += 1
+
     metrics: Dict[str, Any] = {
         "input_path": input_path,
         "attempts_path": attempts_path,
@@ -237,6 +321,33 @@ def compute_b_metrics(
             attempts_soft_mech_fail / max(attempts_soft_mech_total, 1) if attempts_path else None
         ),
         "b2_mechanism_grounding_total": attempts_soft_mech_total if attempts_path else None,
+        "verifier_called_rate": (verifier_called / max(attempts_total, 1)) if attempts_path else None,
+        "verifier_called_on_prowin_rate": (
+            verifier_called_on_prowin / max(prowin_total, 1) if attempts_path else None
+        ),
+        "prowin_total": prowin_total if attempts_path else None,
+        "verifier_parse_ok_rate": (verifier_parse_ok / max(verifier_called, 1)) if attempts_path else None,
+        "verifier_pass_rate": (verifier_pass / max(verifier_parse_ok, 1)) if attempts_path else None,
+        "accepted_with_not_applicable_rate": (
+            accepted_with_not_applicable / max(accepted, 1) if attempts_path else None
+        ),
+        "disagreement_judge_accept_but_verifier_missing_or_parse_fail_count": (
+            disagreement_missing_or_parse_fail if attempts_path else None
+        ),
+        "disagreement_verifier_pass_but_anchor_strict_fail_count": (
+            disagreement_verifier_pass_anchor_strict_fail if attempts_path else None
+        ),
+        "b2_strict_fail_rate": (
+            attempts_b2_strict_fail / max(attempts_b2_strict_total, 1) if attempts_path else None
+        ),
+        "b2_strict_total": attempts_b2_strict_total if attempts_path else None,
+        "b2_strict_failures": {
+            "anchors_too_few_after_normalization": attempts_anchor_too_few,
+            "anchors_no_match": attempts_anchor_no_match,
+            "mechanism_evidence_failed": attempts_mechanism_evidence_failed,
+        }
+        if attempts_path
+        else None,
         "b2_anchor_match_rate": anchors_with_match / max(anchors_rows_total, 1),
         "b2_generic_anchor_fraction": anchors_generic_total / max(anchors_items_total, 1),
     }
@@ -258,13 +369,36 @@ def compute_b_metrics(
             <= thresholds.max_unsupported_in_accepted_rate,
             "max_inconclusive_in_accepted_rate": inconclusive_rate_for_check
             <= thresholds.max_inconclusive_in_accepted_rate,
-            "min_anchor_match_rate": metrics["b2_anchor_match_rate"]
-            >= thresholds.min_anchor_match_rate,
+            "min_anchor_match_rate": (
+                # When attempts are present, use runtime strict B2 signal:
+                # pass if strict fail-rate is within inverse of desired anchor match.
+                (metrics["b2_strict_fail_rate"] <= (1.0 - thresholds.min_anchor_match_rate))
+                if attempts_path
+                else (metrics["b2_anchor_match_rate"] >= thresholds.min_anchor_match_rate)
+            ),
+            "min_verifier_pass_rate": (
+                True
+                if not attempts_path
+                else (
+                    metrics["verifier_pass_rate"] is not None
+                    and metrics["verifier_pass_rate"] >= thresholds.min_verifier_pass_rate
+                )
+            ),
+            "min_verifier_parse_ok_rate": (
+                True
+                if not attempts_path
+                else (
+                    metrics["verifier_parse_ok_rate"] is not None
+                    and metrics["verifier_parse_ok_rate"] >= thresholds.min_verifier_parse_ok_rate
+                )
+            ),
         }
         metrics["thresholds"] = {
             "max_unsupported_in_accepted_rate": thresholds.max_unsupported_in_accepted_rate,
             "max_inconclusive_in_accepted_rate": thresholds.max_inconclusive_in_accepted_rate,
             "min_anchor_match_rate": thresholds.min_anchor_match_rate,
+            "min_verifier_pass_rate": thresholds.min_verifier_pass_rate,
+            "min_verifier_parse_ok_rate": thresholds.min_verifier_parse_ok_rate,
         }
         metrics["checks"] = checks
         metrics["pass"] = all(checks.values()) and len(failures) == 0
@@ -291,6 +425,8 @@ def main() -> int:
     p.add_argument("--max-unsupported-rate", type=float, default=0.05)
     p.add_argument("--max-inconclusive-rate", type=float, default=0.20)
     p.add_argument("--min-anchor-match-rate", type=float, default=0.80)
+    p.add_argument("--min-verifier-pass-rate", type=float, default=0.0)
+    p.add_argument("--min-verifier-parse-ok-rate", type=float, default=0.0)
     args = p.parse_args()
 
     case_insensitive = args.case_insensitive_anchor_match and not args.case_sensitive_anchor_match
@@ -300,6 +436,8 @@ def main() -> int:
         max_unsupported_in_accepted_rate=args.max_unsupported_rate,
         max_inconclusive_in_accepted_rate=args.max_inconclusive_rate,
         min_anchor_match_rate=args.min_anchor_match_rate,
+        min_verifier_pass_rate=args.min_verifier_pass_rate,
+        min_verifier_parse_ok_rate=args.min_verifier_parse_ok_rate,
     )
     config = BGateConfig(
         case_insensitive_anchor_match=case_insensitive,
