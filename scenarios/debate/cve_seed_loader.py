@@ -24,7 +24,10 @@ class CVESeedLoader:
         self.eval_csv_path = eval_csv_path
         self.source_csv_path = source_csv_path
         self.replay_manager = replay_manager
-        self.explainer_model = explainer_model or os.getenv("GEPA_MODEL", "gemini/gemini-2.0-flash-exp")
+        self.explainer_model = explainer_model or os.getenv("GEPA_MODEL", "ollama/gpt-oss:120b-cloud ")
+        self.explain_timeout_s = float(os.getenv("GEPA_EXPLAIN_TIMEOUT_S", "120"))
+        self.explain_retries = int(os.getenv("GEPA_EXPLAIN_RETRIES", "2"))
+        self.max_concurrency = int(os.getenv("GEPA_EXPLAIN_CONCURRENCY", "5"))
         self.used_exact_hashes: Set[str] = set()
         self.used_norm_hashes: Set[str] = set()
         self.used_shingles: List[Set[str]] = []
@@ -118,6 +121,32 @@ Return a JSON object:
             logger.error(f"GEPA Explainer failed: {e}")
             return {"predicate": "Vulnerability suspected.", "evidence_hooks": []}
 
+    async def gepa_explain_with_retry(self, code: str, language: str, item_idx: int, total: int) -> Dict:
+        last_err: Optional[Exception] = None
+        for attempt in range(1, self.explain_retries + 2):
+            try:
+                logger.info(f"[GEPA] item {item_idx}/{total} attempt {attempt}...")
+                return await asyncio.wait_for(
+                    self.gepa_explain(code, language),
+                    timeout=self.explain_timeout_s,
+                )
+            except Exception as e:
+                last_err = e
+                logger.warning(
+                    f"[GEPA] item {item_idx}/{total} attempt {attempt} failed: {e}"
+                )
+                if attempt <= self.explain_retries:
+                    await asyncio.sleep(min(2 * attempt, 5))
+        logger.error(
+            f"[GEPA] item {item_idx}/{total} exhausted retries; using fallback. Last error: {last_err}"
+        )
+        return {
+            "predicate": "Vulnerability suspected.",
+            "evidence_hooks": [],
+            "uncertainty": "High",
+            "proof_requirements": f"GEPA timeout/retry failure: {last_err}",
+        }
+
     async def get_seeds(self, n: int, target_lang: str = "c") -> List[Dict]:
         """Deterministic Reservoir Sampling from CSV."""
         reservoir = []
@@ -150,12 +179,14 @@ Return a JSON object:
                         reservoir[j] = (code, lang, row.get("safety"))
 
         logger.info(f"Selected {len(reservoir)} candidates. Running GEPA Explainer...")
-        semaphore = asyncio.Semaphore(5)
+        semaphore = asyncio.Semaphore(max(1, self.max_concurrency))
+        total = len(reservoir)
 
-        async def explain_task(cand):
+        async def explain_task(idx: int, cand):
             async with semaphore:
                 code, lang, safety = cand
-                gepa_info = await self.gepa_explain(code, lang)
+                gepa_info = await self.gepa_explain_with_retry(code, lang, idx, total)
+                logger.info(f"[GEPA] item {idx}/{total} complete")
                 return {
                     "topic": code,
                     "predicate": gepa_info.get("predicate", "Vulnerability suspected."),
@@ -164,7 +195,7 @@ Return a JSON object:
                     "original_safety": safety
                 }
 
-        tasks = [explain_task(c) for c in reservoir]
+        tasks = [explain_task(i + 1, c) for i, c in enumerate(reservoir)]
         seeds = await asyncio.gather(*tasks)
         return seeds
 

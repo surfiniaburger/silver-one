@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Literal
+from typing import Literal, Optional
 
 from a2a.types import (
     AgentCapabilities,
@@ -32,6 +32,14 @@ class DebateEval(BaseModel):
     anchors: list[str] = Field(min_length=2) # Concrete evidence hooks (must appear in code)
     verifier_report: str = "not_applicable"
     support_level: Literal["supported", "unsupported", "inconclusive"] = "supported"
+
+
+class VerifierReport(BaseModel):
+    thinking_process: str = Field(description="Step-by-step symbolic trace of the vulnerability mechanism.")
+    passes_audit: bool = Field(description="True if the mechanism is technically grounded in the anchors and code.")
+    anchor_analysis: str = Field(description="Verification of each anchor's role in the exploit (e.g. Source, Sink, Guard).")
+    logic_error: Optional[str] = Field(description="Detailed explanation of any hallucination or logical leap found.")
+    suggested_correction: Optional[str] = Field(description="Technical advice for the Generator to fix the grounding gap.")
 
 
 def debate_judge_agent_card(agent_name: str, card_url: str) -> AgentCard:

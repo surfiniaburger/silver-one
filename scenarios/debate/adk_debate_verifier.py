@@ -4,8 +4,7 @@ import uvicorn
 import asyncio
 import logging
 import os
-from typing import Optional
-from pydantic import BaseModel, Field
+import litellm
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -19,6 +18,7 @@ from agentbeats.green_executor import GreenAgent, GreenExecutor
 from agentbeats.models import EvalRequest, EvalResult
 from agentbeats.tool_provider import ToolProvider
 from agentbeats.structured_output import call_structured
+from debate_judge_common import VerifierReport, debate_judge_agent_card
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("adk_debate_verifier")
@@ -31,7 +31,6 @@ class BareReplayManager:
         self.cassette = None  # Prevents safe_record_event from trying to save
 
     async def acompletion(self, **kwargs):
-        import litellm
         if hasattr(litellm, "acompletion"):
             try:
                 return await litellm.acompletion(**kwargs)
@@ -41,15 +40,6 @@ class BareReplayManager:
         return await asyncio.to_thread(litellm.completion, **kwargs)
 
 _BARE_REPLAY = BareReplayManager()
-
-# --- Schemas ---
-
-class VerifierReport(BaseModel):
-    thinking_process: str = Field(description="Step-by-step symbolic trace of the vulnerability mechanism.")
-    passes_audit: bool = Field(description="True if the mechanism is technically grounded in the anchors and code.")
-    anchor_analysis: str = Field(description="Verification of each anchor's role in the exploit (e.g. Source, Sink, Guard).")
-    logic_error: Optional[str] = Field(description="Detailed explanation of any hallucination or logical leap found.")
-    suggested_correction: Optional[str] = Field(description="Technical advice for the Generator to fix the grounding gap.")
 
 # --- System Prompt ---
 
@@ -170,7 +160,6 @@ async def main():
     executor = GreenExecutor(agent)
     
     # Simple card for discovery
-    from debate_judge_common import debate_judge_agent_card
     agent_url = f"http://{args.host}:{args.port}/"
     agent_card = debate_judge_agent_card("DebateVerifierADK", agent_url)
 
