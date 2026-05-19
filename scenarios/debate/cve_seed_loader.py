@@ -24,7 +24,7 @@ class CVESeedLoader:
         self.eval_csv_path = eval_csv_path
         self.source_csv_path = source_csv_path
         self.replay_manager = replay_manager
-        self.explainer_model = explainer_model or os.getenv("GEPA_MODEL", "ollama/gpt-oss:120b-cloud ")
+        self.explainer_model = explainer_model or os.getenv("GEPA_MODEL", "ollama/gpt-oss:120b-cloud")
         self.explain_timeout_s = float(os.getenv("GEPA_EXPLAIN_TIMEOUT_S", "120"))
         self.explain_retries = int(os.getenv("GEPA_EXPLAIN_RETRIES", "2"))
         self.max_concurrency = int(os.getenv("GEPA_EXPLAIN_CONCURRENCY", "5"))
