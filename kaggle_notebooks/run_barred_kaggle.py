@@ -150,7 +150,7 @@ def main():
     
     # 5. Compute B metrics + soft-check rates
     print("Computing B metrics...")
-    os.environ["UV_CACHE_DIR"] = "/tmp/uv-cache"
+    os.environ.setdefault("UV_CACHE_DIR", "/tmp/uv-cache")
     run_command(
         " ".join([
             "uv run python scenarios/debate/offline_b_gate.py",

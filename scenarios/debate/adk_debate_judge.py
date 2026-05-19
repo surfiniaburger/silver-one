@@ -7,7 +7,6 @@ import logging
 import os
 import re
 import hashlib
-import litellm
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -24,13 +23,24 @@ from agentbeats.green_executor import GreenAgent, GreenExecutor
 from agentbeats.models import EvalRequest, EvalResult
 from agentbeats.tool_provider import ToolProvider
 from agentbeats.structured_output import call_structured
-from debate_judge_common import DebateEval, debate_judge_agent_card
+from debate_judge_common import DebateEval, VerifierReport, debate_judge_agent_card
 from data_generator import BarredDataGenerator
 from agentbeats.replay import ReplayManager
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, TypedDict
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("adk_debate_judge")
+
+
+class VerifierMeta(TypedDict):
+    called: bool
+    from_cache: bool
+    parse_ok: bool
+    passes_audit: Optional[bool]
+    error: Optional[str]
+    raw_response: Optional[str]
+    model: str
+    url: str
 
 _CODE_MARKERS = (
     "{",
@@ -370,6 +380,74 @@ def _mechanism_grounding(mechanism: str, anchors: list[str]) -> dict:
     return {"pass": len(hits) > 0, "hits": hits}
 
 
+def _strip_markdown_fence(text: str) -> str:
+    s = text.strip()
+    if not s.startswith("```"):
+        return s
+    lines = s.splitlines()
+    if len(lines) >= 2 and lines[0].startswith("```") and lines[-1].strip() == "```":
+        return "\n".join(lines[1:-1]).strip()
+    return s
+
+
+def _extract_first_json_object(text: str) -> Optional[str]:
+    start = text.find("{")
+    if start < 0:
+        return None
+    in_string = False
+    escaped = False
+    depth = 0
+    for idx in range(start, len(text)):
+        ch = text[idx]
+        if escaped:
+            escaped = False
+            continue
+        if ch == "\\":
+            escaped = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : idx + 1]
+    return None
+
+
+def _escape_invalid_backslashes(text: str) -> str:
+    return re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", text)
+
+
+def _parse_verifier_report(response_text: str) -> Optional[VerifierReport]:
+    candidates = []
+    raw = response_text.strip()
+    if raw:
+        candidates.append(raw)
+    unfenced = _strip_markdown_fence(raw)
+    if unfenced and unfenced not in candidates:
+        candidates.append(unfenced)
+    extracted = _extract_first_json_object(unfenced)
+    if extracted and extracted not in candidates:
+        candidates.append(extracted)
+    if extracted:
+        escaped = _escape_invalid_backslashes(extracted)
+        if escaped not in candidates:
+            candidates.append(escaped)
+
+    for candidate in candidates:
+        try:
+            data = json.loads(candidate)
+            return VerifierReport(**data)
+        except Exception:
+            continue
+    return None
+
+
 # System prompt for the judge agent
 judge_system_prompt = """
 <role>
@@ -422,15 +500,20 @@ class DebateJudgeADK(GreenAgent):
         self._required_config_keys = ["topic", "num_rounds"]
         self._tool_provider = ToolProvider()
         self.generator = BarredDataGenerator()
-        self.replay_manager: Optional[ReplayManager] = None
         self.verifier_url = os.getenv("VERIFIER_URL", "http://127.0.0.1:9020/")
 
-    async def _call_verifier(self, code: str, eval_obj: DebateEval, predicate: str) -> Tuple[Optional[Any], Dict[str, Any]]:
+    async def _call_verifier(
+        self,
+        replay_manager: ReplayManager,
+        code: str,
+        eval_obj: DebateEval,
+        predicate: str,
+    ) -> Tuple[Optional[VerifierReport], VerifierMeta]:
         """
         Calls the Predictive Verifier agent to audit the Judge's mechanism and anchors.
         """
         logger.info(f"Calling Verifier at {self.verifier_url}")
-        meta: Dict[str, Any] = {
+        meta: VerifierMeta = {
             "called": True,
             "from_cache": False,
             "parse_ok": False,
@@ -461,35 +544,38 @@ class DebateJudgeADK(GreenAgent):
         }
         prompt = json.dumps(eval_req)
         
-        cached = self.replay_manager.cassette.get_response(pseudo_model, [{"role": "user", "content": prompt}], pseudo_params)
+        cached = replay_manager.cassette.get_response(
+            pseudo_model,
+            [{"role": "user", "content": prompt}],
+            pseudo_params,
+        )
         if cached:
             logger.info("Replaying verifier audit from cassette.")
             response_text = cached
             meta["from_cache"] = True
         else:
-            if self.replay_manager.cassette.mode == "replay":
+            if replay_manager.cassette.mode == "replay":
                 logger.warning("No cached verifier response. Skipping audit.")
                 meta["error"] = "replay_cache_miss"
                 return None, meta
             
             try:
                 response_text = await self._tool_provider.talk_to_agent(prompt, self.verifier_url, new_conversation=True)
-                self.replay_manager.cassette.save_response(pseudo_model, [{"role": "user", "content": prompt}], pseudo_params, response_text)
+                replay_manager.cassette.save_response(
+                    pseudo_model,
+                    [{"role": "user", "content": prompt}],
+                    pseudo_params,
+                    response_text,
+                )
             except Exception as e:
                 logger.error(f"Failed to talk to Verifier: {e}")
                 meta["error"] = f"transport_error: {e}"
                 return None, meta
         meta["raw_response"] = response_text
 
-        # Parse the Verifier's response (expecting the artifact or JSON)
-        # Note: In a real implementation, we'd extract the structured VerifierReport
         try:
-            # Look for JSON in the response
-            match = re.search(r"({.*})", response_text, re.DOTALL)
-            if match:
-                data = json.loads(match.group(1))
-                from scenarios.debate.adk_debate_verifier import VerifierReport
-                report = VerifierReport(**data)
+            report = _parse_verifier_report(response_text)
+            if report is not None:
                 meta["parse_ok"] = True
                 meta["passes_audit"] = bool(report.passes_audit)
                 return report, meta
@@ -522,8 +608,8 @@ class DebateJudgeADK(GreenAgent):
         seed = int(req.config.get("seed", 42))
         mode = req.config.get("mode", "record")
         cassette_path = req.config.get("cassette_path", f"artifacts/cassettes/{run_id}.json")
-        self.replay_manager = ReplayManager.from_config(run_id, seed, cassette_path, mode)
-        self.generator.replay_manager = self.replay_manager
+        replay_manager = ReplayManager.from_config(run_id, seed, cassette_path, mode)
+        self.generator.replay_manager = replay_manager
 
         predicate = req.config.get("predicate", "The input block matches the target verdict.")
         target_verdict = req.config.get("target_verdict", "True")
@@ -577,6 +663,7 @@ class DebateJudgeADK(GreenAgent):
                 con_mission = f"CON MISSION: Prove that the predicate '{predicate}' is {opposite_verdict} (i.e., disprove the target verdict)."
                 
                 debate = await self.orchestrate_debate(
+                    replay_manager,
                     req.participants, 
                     current_sample_block, 
                     int(req.config["num_rounds"]), 
@@ -616,7 +703,7 @@ Debate Transcript:
                 try:
                     judge_model = os.getenv("JUDGE_MODEL", self.model)
                     debate_eval = await call_structured(
-                        replay_manager=self.replay_manager,
+                        replay_manager=replay_manager,
                         model=judge_model,
                         messages=[
                             {"role": "system", "content": judge_system_prompt},
@@ -814,7 +901,7 @@ Debate Transcript:
                 
                 is_valid = debate_eval.winner == "pro_debater"
                 verifier_audit = None
-                verifier_meta: Dict[str, Any] = {
+                verifier_meta: VerifierMeta = {
                     "called": False,
                     "from_cache": False,
                     "parse_ok": False,
@@ -827,7 +914,12 @@ Debate Transcript:
                 
                 if is_valid:
                     await updater.update_status(TaskState.working, new_agent_text_message("Pro win detected. Triggering Predictive Verifier audit..."))
-                    verifier_audit, verifier_meta = await self._call_verifier(current_sample_block, debate_eval, predicate)
+                    verifier_audit, verifier_meta = await self._call_verifier(
+                        replay_manager,
+                        current_sample_block,
+                        debate_eval,
+                        predicate,
+                    )
                     
                     if verifier_audit:
                         if not verifier_audit.passes_audit:
@@ -870,7 +962,7 @@ Debate Transcript:
                     
                     # Persist RunRecord (A1)
                     record_path = req.config.get("record_path", f"artifacts/runs/{run_id}.json")
-                    self.replay_manager.save_record(record_path)
+                    replay_manager.save_record(record_path)
 
                     export_data = {
                         "instruction": f"Analyze this input for the condition: {predicate}",
@@ -975,7 +1067,7 @@ Debate Transcript:
 
             # Persist RunRecord (A1) - Failure path
             record_path = req.config.get("record_path", f"artifacts/runs/{run_id}.json")
-            self.replay_manager.save_record(record_path)
+            replay_manager.save_record(record_path)
 
             await updater.update_status(TaskState.working, new_agent_text_message("Failed to reach consensus after max refinements."))
             await updater.add_artifact(
@@ -989,6 +1081,7 @@ Debate Transcript:
 
     async def orchestrate_debate(
         self,
+        replay_manager: ReplayManager,
         participants: dict[str, str],
         code: str,
         num_rounds: int,
@@ -1006,16 +1099,25 @@ Debate Transcript:
             pseudo_model = f"a2a/{role}"
             pseudo_params = {"new_conversation": new_conv, "agent_url": str(participants[role])}
             
-            cached = self.replay_manager.cassette.get_response(pseudo_model, [{"role": "user", "content": prompt}], pseudo_params)
+            cached = replay_manager.cassette.get_response(
+                pseudo_model,
+                [{"role": "user", "content": prompt}],
+                pseudo_params,
+            )
             if cached:
                 logger.info(f"Replaying {role} turn from cassette.")
                 response = cached
             else:
-                if self.replay_manager.cassette.mode == "replay":
+                if replay_manager.cassette.mode == "replay":
                     raise RuntimeError(f"Offline Replay Error: No cached response for agent {role}")
                 
                 response = await self._tool_provider.talk_to_agent(prompt, str(participants[role]), new_conversation=new_conv)
-                self.replay_manager.cassette.save_response(pseudo_model, [{"role": "user", "content": prompt}], pseudo_params, response)
+                replay_manager.cassette.save_response(
+                    pseudo_model,
+                    [{"role": "user", "content": prompt}],
+                    pseudo_params,
+                    response,
+                )
             
             logger.info(f"{role}: {response}")
             debate[role].append(response)
