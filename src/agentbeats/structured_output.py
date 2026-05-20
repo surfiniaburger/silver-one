@@ -22,15 +22,15 @@ def _strip_markdown_fence(text: str) -> str:
     return s
 
 
-def _extract_first_json_object(text: str) -> str:
-    start = text.find("{")
-    if start < 0:
-        return text
+def extract_first_json_object(text: str) -> Optional[str]:
+    """
+    Return the first complete top-level JSON object found in `text`.
+    """
     in_string = False
     escaped = False
     depth = 0
-    for idx in range(start, len(text)):
-        ch = text[idx]
+    start = -1
+    for idx, ch in enumerate(text):
         if escaped:
             escaped = False
             continue
@@ -43,12 +43,15 @@ def _extract_first_json_object(text: str) -> str:
         if in_string:
             continue
         if ch == "{":
+            if depth == 0:
+                start = idx
             depth += 1
         elif ch == "}":
-            depth -= 1
-            if depth == 0:
+            if depth > 0:
+                depth -= 1
+            if depth == 0 and start >= 0:
                 return text[start : idx + 1]
-    return text[start:]
+    return None
 
 
 def _escape_invalid_backslashes(text: str) -> str:
@@ -58,7 +61,8 @@ def _escape_invalid_backslashes(text: str) -> str:
 def _json_candidates(raw_text: str) -> list[str]:
     s0 = raw_text.strip()
     s1 = _strip_markdown_fence(s0)
-    s2 = _extract_first_json_object(s1)
+    extracted = extract_first_json_object(s1)
+    s2 = extracted if extracted is not None else s1
     s3 = _escape_invalid_backslashes(s2)
     out: list[str] = []
     for candidate in (s0, s1, s2, s3):
