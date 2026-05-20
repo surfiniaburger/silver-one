@@ -391,14 +391,11 @@ def _strip_markdown_fence(text: str) -> str:
 
 
 def _extract_first_json_object(text: str) -> Optional[str]:
-    start = text.find("{")
-    if start < 0:
-        return None
     in_string = False
     escaped = False
     depth = 0
-    for idx in range(start, len(text)):
-        ch = text[idx]
+    start = -1
+    for idx, ch in enumerate(text):
         if escaped:
             escaped = False
             continue
@@ -411,11 +408,14 @@ def _extract_first_json_object(text: str) -> Optional[str]:
         if in_string:
             continue
         if ch == "{":
+            if depth == 0:
+                start = idx
             depth += 1
         elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                return text[start : idx + 1]
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start >= 0:
+                    return text[start : idx + 1]
     return None
 
 
