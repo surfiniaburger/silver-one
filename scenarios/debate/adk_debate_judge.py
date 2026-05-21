@@ -22,7 +22,7 @@ from a2a.utils import new_agent_text_message
 from agentbeats.green_executor import GreenAgent, GreenExecutor
 from agentbeats.models import EvalRequest, EvalResult
 from agentbeats.tool_provider import ToolProvider
-from agentbeats.structured_output import call_structured
+from agentbeats.structured_output import call_structured, extract_first_json_object
 from debate_judge_common import DebateEval, VerifierReport, debate_judge_agent_card
 from data_generator import BarredDataGenerator
 from agentbeats.replay import ReplayManager
@@ -390,35 +390,6 @@ def _strip_markdown_fence(text: str) -> str:
     return s
 
 
-def _extract_first_json_object(text: str) -> Optional[str]:
-    in_string = False
-    escaped = False
-    depth = 0
-    start = -1
-    for idx, ch in enumerate(text):
-        if escaped:
-            escaped = False
-            continue
-        if ch == "\\":
-            escaped = True
-            continue
-        if ch == '"':
-            in_string = not in_string
-            continue
-        if in_string:
-            continue
-        if ch == "{":
-            if depth == 0:
-                start = idx
-            depth += 1
-        elif ch == "}":
-            if depth > 0:
-                depth -= 1
-                if depth == 0 and start >= 0:
-                    return text[start : idx + 1]
-    return None
-
-
 def _escape_invalid_backslashes(text: str) -> str:
     return re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", text)
 
@@ -431,7 +402,7 @@ def _parse_verifier_report(response_text: str) -> Optional[VerifierReport]:
     unfenced = _strip_markdown_fence(raw)
     if unfenced and unfenced not in candidates:
         candidates.append(unfenced)
-    extracted = _extract_first_json_object(unfenced)
+    extracted = extract_first_json_object(unfenced)
     if extracted and extracted not in candidates:
         candidates.append(extracted)
     if extracted:
