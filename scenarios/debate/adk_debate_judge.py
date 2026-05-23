@@ -22,7 +22,12 @@ from a2a.utils import new_agent_text_message
 from agentbeats.green_executor import GreenAgent, GreenExecutor
 from agentbeats.models import EvalRequest, EvalResult
 from agentbeats.tool_provider import ToolProvider
-from agentbeats.structured_output import call_structured, extract_first_json_object
+from agentbeats.structured_output import (
+    call_structured,
+    extract_first_json_object,
+    strip_markdown_fence,
+    escape_invalid_backslashes,
+)
 from debate_judge_common import DebateEval, VerifierReport, debate_judge_agent_card
 from data_generator import BarredDataGenerator
 from agentbeats.replay import ReplayManager
@@ -380,33 +385,19 @@ def _mechanism_grounding(mechanism: str, anchors: list[str]) -> dict:
     return {"pass": len(hits) > 0, "hits": hits}
 
 
-def _strip_markdown_fence(text: str) -> str:
-    s = text.strip()
-    if not s.startswith("```"):
-        return s
-    lines = s.splitlines()
-    if len(lines) >= 2 and lines[0].startswith("```") and lines[-1].strip() == "```":
-        return "\n".join(lines[1:-1]).strip()
-    return s
-
-
-def _escape_invalid_backslashes(text: str) -> str:
-    return re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", text)
-
-
 def _parse_verifier_report(response_text: str) -> Optional[VerifierReport]:
     candidates = []
     raw = response_text.strip()
     if raw:
         candidates.append(raw)
-    unfenced = _strip_markdown_fence(raw)
+    unfenced = strip_markdown_fence(raw)
     if unfenced and unfenced not in candidates:
         candidates.append(unfenced)
     extracted = extract_first_json_object(unfenced)
     if extracted and extracted not in candidates:
         candidates.append(extracted)
     if extracted:
-        escaped = _escape_invalid_backslashes(extracted)
+        escaped = escape_invalid_backslashes(extracted)
         if escaped not in candidates:
             candidates.append(escaped)
 

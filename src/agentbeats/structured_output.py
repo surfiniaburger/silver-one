@@ -11,7 +11,7 @@ logger = logging.getLogger("agentbeats.structured_output")
 T = TypeVar("T", bound=BaseModel)
 
 
-def _strip_markdown_fence(text: str) -> str:
+def strip_markdown_fence(text: str) -> str:
     s = text.strip()
     if not s.startswith("```"):
         return s
@@ -54,16 +54,16 @@ def extract_first_json_object(text: str) -> Optional[str]:
     return None
 
 
-def _escape_invalid_backslashes(text: str) -> str:
+def escape_invalid_backslashes(text: str) -> str:
     return re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", text)
 
 
 def _json_candidates(raw_text: str) -> list[str]:
     s0 = raw_text.strip()
-    s1 = _strip_markdown_fence(s0)
+    s1 = strip_markdown_fence(s0)
     extracted = extract_first_json_object(s1)
     s2 = extracted if extracted is not None else s1
-    s3 = _escape_invalid_backslashes(s2)
+    s3 = escape_invalid_backslashes(s2)
     out: list[str] = []
     for candidate in (s0, s1, s2, s3):
         if candidate and candidate not in out:
