@@ -51,5 +51,76 @@ To "tilt the balance" from generative hallucination to predictive grounding, we 
 *   [ ] Conduct Run 4 to measure the impact of the Verifier on the Mechanism Grounding rate.
 
 ---
+
+## Verifier-Era Update (Run 4): Achievements and Measured Improvements
+
+**Date:** May 26, 2026  
+**Run ID:** `pilot-v1-softchecks`  
+**Primary Artifacts:**  
+- `artifacts/metrics/b_gate.json`  
+- `artifacts/attempts/pilot-v1-softchecks.jsonl`  
+- `artifacts/runs/pilot-v1-softchecks.json`
+
+### Outcome Summary
+
+The Verifier-integrated pipeline passed the B-gate with **zero structural failures** and **strong grounding quality** on accepted outputs.
+
+| Metric | Value |
+| :--- | :--- |
+| **Pass** | **true** |
+| **Accepted Rows** | 43 |
+| **Total Rows** | 43 |
+| **Structural Completeness (B0)** | 1.00 |
+| **Unsupported in Accepted (B1)** | 0.00 |
+| **Inconclusive in Accepted (B1)** | 0.00 |
+| **Anchor Match Rate (B2)** | 1.00 |
+| **Generic Anchor Fraction** | 0.01 |
+| **Strict B2 Fail Rate (attempt-level)** | 0.1346 |
+| **Verifier Parse OK Rate** | 1.00 |
+| **Verifier Pass Rate** | 0.6232 |
+| **Judge/Verifier Disagreement (critical counters)** | 0 / 0 |
+
+### What Improved
+
+1. **The “Verifier Report” plan is now implemented and active.**  
+   The report previously proposed moving from `verifier_report = not_applicable` to active audit gating. Current metrics confirm this transition is operational and parse-stable (`verifier_parse_ok_rate = 1.0`).
+
+2. **Quality gates now hold at release level.**  
+   All configured checks pass (`max_unsupported`, `max_inconclusive`, `min_anchor_match`, `min_verifier_parse_ok`, `min_verifier_pass`).
+
+3. **No critical judge/verifier inconsistencies detected.**  
+   Both disagreement counters are zero:  
+   - `disagreement_judge_accept_but_verifier_missing_or_parse_fail_count = 0`  
+   - `disagreement_verifier_pass_but_anchor_strict_fail_count = 0`
+
+4. **Anchor grounding is robust in accepted corpus rows.**  
+   `b2_anchor_match_rate = 1.0` with very low generic-anchor usage (`0.01`), indicating grounded extraction rather than broad narrative anchors.
+
+### Remaining Constraint (Current Bottleneck)
+
+The dominant rejection mode in strict B2 remains:
+- `anchors_too_few_after_normalization = 21`  
+
+This is no longer a mechanism hallucination collapse; it is now primarily an **anchor sufficiency/normalization throughput issue** during attempts.
+
+### Updated Interpretation
+
+The earlier “Capability Chasm” conclusion (high mechanism hallucination despite structural hits) has materially shifted.  
+With verifier integration and structured-output hardening in place, the system now demonstrates:
+- stable parse behavior,
+- clean judge/verifier alignment,
+- and a B-gate passing corpus with full structural completeness.
+
+The next optimization frontier is not baseline truthfulness collapse, but **increasing attempt-to-accept yield by improving anchor density after normalization**.
+
+### Updated Next Steps
+
+*   [x] Implement `adk_debate_verifier.py` and wire verifier reporting.
+*   [x] Add/maintain data-flow audit constraints in judge/verifier structured outputs.
+*   [ ] Reduce `anchors_too_few_after_normalization` via prompt and normalization tuning.
+*   [ ] Raise verifier coverage (`verifier_called_rate`, currently ~43.7%) while keeping parse stability.
+*   [ ] Run a follow-up pilot to target lower strict B2 fail rate with same deterministic protocol.
+
+---
 **Lead Researcher:** Adedoyinsola Ogungbesan  
 **Unit:** In-Varia Research
