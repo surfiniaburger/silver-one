@@ -240,6 +240,13 @@ silver-one/
 └─ README.md
 ```
 
+## Architecture Diagrams and Stress-Test Playbook
+
+Use the Mermaid-based breakdown and critique flows here:
+- `docs/ARCHITECTURE_MERMAID.md`
+
+It maps Prompt Engineering, Context Engineering, and Harness Engineering directly to the `silver-one` code paths and includes stress-test/checklist flows for security and quality reviews.
+
 ## Contributing
 
 - Keep changes deterministic-friendly (record/replay aware).
