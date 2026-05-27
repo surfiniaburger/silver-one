@@ -97,6 +97,31 @@ uv run agentbeats-run scenarios/debate/scenario.toml
 
 ## BARRED Workflow
 
+## Latest Benchmark Snapshot (Run 5)
+
+Source: `artifacts/metrics/b_gate-20260527-043758.json`
+
+| Metric | Value |
+| :--- | :--- |
+| Pass | `true` |
+| Accepted Rows | `13` |
+| Attempts | `30` |
+| Verifier Parse OK Rate | `1.00` |
+| Verifier Pass Rate | `0.6842` |
+| Strict B2 Fail Rate | `0.1667` |
+| Total Tokens | `846,681` |
+| Tokens / Attempt | `28,222.7` |
+| Tokens / Accepted Row | `65,129.3` |
+| Usage Source Coverage | `provider: 101/101 (100%)` |
+
+Top token sinks by stage:
+
+| Stage | Calls | Prompt Tokens | Completion Tokens | Total Tokens | Share |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| `generator_boundary` | 21 | 407,887 | 24,539 | 432,426 | 51.1% |
+| `generator_refine` | 20 | 174,489 | 38,396 | 212,885 | 25.1% |
+| `judge_adjudication` | 60 | 121,413 | 79,957 | 201,370 | 23.8% |
+
 ### Option A: Start the full stack via helper script
 
 ```bash
@@ -153,6 +178,10 @@ uv run python scenarios/debate/run_batch.py \
   --attempts-out artifacts/attempts/pilot-v1-softchecks.jsonl
 
 # Compute B metrics + soft-check rates
+./scripts/run_b_gate.sh
+
+or
+
 UV_CACHE_DIR=/tmp/uv-cache uv run python scenarios/debate/offline_b_gate.py \
   --input training_corpus.jsonl \
   --attempts artifacts/attempts/pilot-v1-softchecks.jsonl \

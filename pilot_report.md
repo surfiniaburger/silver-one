@@ -122,5 +122,55 @@ The next optimization frontier is not baseline truthfulness collapse, but **incr
 *   [ ] Run a follow-up pilot to target lower strict B2 fail rate with same deterministic protocol.
 
 ---
+## Token Efficiency Update (Run 5): Stage Cost and Throughput
+
+**Date:** May 27, 2026  
+**Run ID:** `pilot-v1-softchecks`  
+**Primary Artifact:** `artifacts/metrics/b_gate-20260527-043758.json`
+
+### Outcome Snapshot
+
+| Metric | Value |
+| :--- | :--- |
+| **Pass** | **true** |
+| **Accepted Rows** | 13 |
+| **Attempts** | 30 |
+| **Verifier Parse OK Rate** | 1.00 |
+| **Verifier Pass Rate** | 0.6842 |
+| **Strict B2 Fail Rate** | 0.1667 |
+| **Usage Calls Total** | 101 |
+| **Total Tokens** | 846,681 |
+| **Prompt Tokens** | 703,789 |
+| **Completion Tokens** | 142,892 |
+| **Tokens / Attempt** | 28,222.7 |
+| **Tokens / Accepted Row** | 65,129.3 |
+| **Usage Source Coverage** | provider: 101/101 (100%) |
+
+### Top Token Sinks By Stage
+
+| Stage | Calls | Prompt Tokens | Completion Tokens | Total Tokens | Share of Total |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| `generator_boundary` | 21 | 407,887 | 24,539 | 432,426 | 51.1% |
+| `generator_refine` | 20 | 174,489 | 38,396 | 212,885 | 25.1% |
+| `judge_adjudication` | 60 | 121,413 | 79,957 | 201,370 | 23.8% |
+
+### Interpretation
+
+1. **Instrumentation is now complete for tracked LLM paths.**  
+   No missing usage calls (`usage_missing_usage_calls_total = 0`) and full source attribution (`provider = 1.0`).
+
+2. **Largest optimization opportunity is pre-judge generation context size.**  
+   `generator_boundary` consumes over half of total token budget.
+
+3. **Quality remains stable while usage is now measurable.**  
+   Gate pass is maintained, enabling prompt/context/harness changes to be evaluated against both quality and efficiency.
+
+### Next Optimization Targets
+
+*   [ ] Reduce `generator_boundary` prompt size (context pruning + tighter seed framing).
+*   [ ] Cap refine-loop verbosity while preserving anchor sufficiency.
+*   [ ] Add per-stage token thresholds to CI guardrails after one more calibration run.
+
+---
 **Lead Researcher:** Adedoyinsola Ogungbesan  
 **Unit:** In-Varia Research
