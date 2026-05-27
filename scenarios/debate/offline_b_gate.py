@@ -77,8 +77,6 @@ class BGateThresholds:
     min_anchor_match_rate: float = 0.80
     min_verifier_pass_rate: float = 0.0
     min_verifier_parse_ok_rate: float = 0.0
-    max_cost_per_accepted_row: Optional[float] = None
-    max_tokens_per_accepted_row: Optional[float] = None
 
 
 @dataclass
@@ -220,14 +218,6 @@ def compute_b_metrics(
     attempts_anchor_too_few = 0
     attempts_anchor_no_match = 0
     attempts_mechanism_evidence_failed = 0
-    usage_calls_total = 0
-    usage_prompt_tokens_total = 0
-    usage_completion_tokens_total = 0
-    usage_total_tokens_total = 0
-    usage_cost_usd_total = 0.0
-    usage_missing_usage_calls_total = 0
-    usage_stage_totals: Dict[str, Dict[str, float]] = {}
-    usage_source_totals: Dict[str, int] = {}
     if attempts_path:
         for _, attempt in _iter_jsonl(attempts_path):
             attempts_total += 1
@@ -301,56 +291,6 @@ def compute_b_metrics(
                 elif reason == "mechanism_evidence_failed":
                     attempts_mechanism_evidence_failed += 1
 
-            llm_usage = attempt.get("llm_usage") if isinstance(attempt, dict) else None
-            if isinstance(llm_usage, dict):
-                totals = llm_usage.get("totals")
-                if isinstance(totals, dict):
-                    usage_calls_total += int(totals.get("calls") or 0)
-                    usage_prompt_tokens_total += int(totals.get("prompt_tokens") or 0)
-                    usage_completion_tokens_total += int(totals.get("completion_tokens") or 0)
-                    usage_total_tokens_total += int(totals.get("total_tokens") or 0)
-                    usage_cost_usd_total += float(totals.get("cost_usd") or 0.0)
-                    usage_missing_usage_calls_total += int(totals.get("missing_usage_calls") or 0)
-
-                events = llm_usage.get("events")
-                if isinstance(events, list):
-                    for ev in events:
-                        if not isinstance(ev, dict):
-                            continue
-                        src = str(ev.get("usage_source", "unknown"))
-                        usage_source_totals[src] = usage_source_totals.get(src, 0) + 1
-
-                # Backward compatibility: if event-level detail does not exist,
-                # approximate source attribution from aggregate counters.
-                if not isinstance(events, list):
-                    calls = 0
-                    missing = 0
-                    if isinstance(totals, dict):
-                        calls = int(totals.get("calls") or 0)
-                        missing = int(totals.get("missing_usage_calls") or 0)
-                    estimated_or_provider = max(calls - missing, 0)
-                    if estimated_or_provider:
-                        usage_source_totals["estimated_or_provider"] = (
-                            usage_source_totals.get("estimated_or_provider", 0) + estimated_or_provider
-                        )
-                    if missing:
-                        usage_source_totals["missing"] = usage_source_totals.get("missing", 0) + missing
-
-                by_stage = llm_usage.get("by_stage")
-                if isinstance(by_stage, dict):
-                    for stage, vals in by_stage.items():
-                        if not isinstance(vals, dict):
-                            continue
-                        slot = usage_stage_totals.setdefault(
-                            str(stage),
-                            {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost_usd": 0.0},
-                        )
-                        slot["calls"] += int(vals.get("calls") or 0)
-                        slot["prompt_tokens"] += int(vals.get("prompt_tokens") or 0)
-                        slot["completion_tokens"] += int(vals.get("completion_tokens") or 0)
-                        slot["total_tokens"] += int(vals.get("total_tokens") or 0)
-                        slot["cost_usd"] += float(vals.get("cost_usd") or 0.0)
-
         # accepted_with_not_applicable_rate comes from training rows
         for _, row in _iter_jsonl(input_path):
             out = _get(row, "output")
@@ -410,40 +350,6 @@ def compute_b_metrics(
         else None,
         "b2_anchor_match_rate": anchors_with_match / max(anchors_rows_total, 1),
         "b2_generic_anchor_fraction": anchors_generic_total / max(anchors_items_total, 1),
-        "usage_calls_total": usage_calls_total if attempts_path else None,
-        "usage_prompt_tokens_total": usage_prompt_tokens_total if attempts_path else None,
-        "usage_completion_tokens_total": usage_completion_tokens_total if attempts_path else None,
-        "usage_total_tokens_total": usage_total_tokens_total if attempts_path else None,
-        "usage_cost_usd_total": usage_cost_usd_total if attempts_path else None,
-        "usage_missing_usage_calls_total": usage_missing_usage_calls_total if attempts_path else None,
-        "usage_by_stage_totals": usage_stage_totals if attempts_path else None,
-        "usage_by_source_totals": usage_source_totals if attempts_path else None,
-        "usage_by_source_rates": (
-            {
-                k: (v / max(usage_calls_total, 1))
-                for k, v in usage_source_totals.items()
-            }
-            if attempts_path
-            else None
-        ),
-        "efficiency_tokens_per_accepted_row": (
-            usage_total_tokens_total / max(accepted, 1) if attempts_path else None
-        ),
-        "efficiency_cost_per_accepted_row": (
-            usage_cost_usd_total / max(accepted, 1) if attempts_path else None
-        ),
-        "efficiency_tokens_per_attempt": (
-            usage_total_tokens_total / max(attempts_total, 1) if attempts_path else None
-        ),
-        "efficiency_cost_per_attempt": (
-            usage_cost_usd_total / max(attempts_total, 1) if attempts_path else None
-        ),
-        "efficiency_tokens_per_verifier_called_attempt": (
-            usage_total_tokens_total / max(verifier_called, 1) if attempts_path else None
-        ),
-        "efficiency_cost_per_verifier_called_attempt": (
-            usage_cost_usd_total / max(verifier_called, 1) if attempts_path else None
-        ),
     }
 
     thresholds = config.thresholds
@@ -486,22 +392,6 @@ def compute_b_metrics(
                     and metrics["verifier_parse_ok_rate"] >= thresholds.min_verifier_parse_ok_rate
                 )
             ),
-            "max_cost_per_accepted_row": (
-                True
-                if (not attempts_path or thresholds.max_cost_per_accepted_row is None)
-                else (
-                    metrics["efficiency_cost_per_accepted_row"] is not None
-                    and metrics["efficiency_cost_per_accepted_row"] <= thresholds.max_cost_per_accepted_row
-                )
-            ),
-            "max_tokens_per_accepted_row": (
-                True
-                if (not attempts_path or thresholds.max_tokens_per_accepted_row is None)
-                else (
-                    metrics["efficiency_tokens_per_accepted_row"] is not None
-                    and metrics["efficiency_tokens_per_accepted_row"] <= thresholds.max_tokens_per_accepted_row
-                )
-            ),
         }
         metrics["thresholds"] = {
             "max_unsupported_in_accepted_rate": thresholds.max_unsupported_in_accepted_rate,
@@ -509,8 +399,6 @@ def compute_b_metrics(
             "min_anchor_match_rate": thresholds.min_anchor_match_rate,
             "min_verifier_pass_rate": thresholds.min_verifier_pass_rate,
             "min_verifier_parse_ok_rate": thresholds.min_verifier_parse_ok_rate,
-            "max_cost_per_accepted_row": thresholds.max_cost_per_accepted_row,
-            "max_tokens_per_accepted_row": thresholds.max_tokens_per_accepted_row,
         }
         metrics["checks"] = checks
         metrics["pass"] = all(checks.values()) and len(failures) == 0
@@ -539,8 +427,6 @@ def main() -> int:
     p.add_argument("--min-anchor-match-rate", type=float, default=0.80)
     p.add_argument("--min-verifier-pass-rate", type=float, default=0.0)
     p.add_argument("--min-verifier-parse-ok-rate", type=float, default=0.0)
-    p.add_argument("--max-cost-per-accepted-row", type=float, default=-1.0)
-    p.add_argument("--max-tokens-per-accepted-row", type=float, default=-1.0)
     args = p.parse_args()
 
     case_insensitive = args.case_insensitive_anchor_match and not args.case_sensitive_anchor_match
@@ -552,12 +438,6 @@ def main() -> int:
         min_anchor_match_rate=args.min_anchor_match_rate,
         min_verifier_pass_rate=args.min_verifier_pass_rate,
         min_verifier_parse_ok_rate=args.min_verifier_parse_ok_rate,
-        max_cost_per_accepted_row=(
-            None if args.max_cost_per_accepted_row < 0 else args.max_cost_per_accepted_row
-        ),
-        max_tokens_per_accepted_row=(
-            None if args.max_tokens_per_accepted_row < 0 else args.max_tokens_per_accepted_row
-        ),
     )
     config = BGateConfig(
         case_insensitive_anchor_match=case_insensitive,

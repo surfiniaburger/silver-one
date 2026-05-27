@@ -581,16 +581,10 @@ class DebateJudgeADK(GreenAgent):
         attempts_path = req.config.get("attempts_path", f"artifacts/attempts/{run_id}.jsonl")
         
         current_input_block = req.config.get("topic", "")
-
-        def _append_attempt(obj: dict) -> None:
-            enriched = dict(obj)
-            enriched["llm_usage"] = replay_manager.get_usage_summary()
-            _append_jsonl(attempts_path, enriched)
         
         try:
             last_judge_reason = ""
             for i in range(max_refinements + 1):
-                replay_manager.reset_usage_events()
                 await updater.update_status(TaskState.working, new_agent_text_message(f"Refinement Round {i+1}/{max_refinements + 1}"))
                 
                 # Step 1: Generate/Refine the sample
@@ -607,7 +601,8 @@ class DebateJudgeADK(GreenAgent):
                 if not _is_code_like(current_sample_block):
                     last_judge_reason = "Rejected: generated sample is not code-like."
                     logger.warning(last_judge_reason)
-                    _append_attempt(
+                    _append_jsonl(
+                        attempts_path,
                         {
                             "run_id": run_id,
                             "seed": seed,
@@ -681,13 +676,13 @@ Debate Transcript:
                         strict=True,
                         repair_on_fail=True,
                         repair_model=judge_model,
-                        stage="judge_adjudication",
                     )
                     last_judge_reason = debate_eval.reason
                 except Exception as e:
                     logger.error(f"Judge structured output failed: {e}")
                     last_judge_reason = f"Failed to parse judge response: {e}"
-                    _append_attempt(
+                    _append_jsonl(
+                        attempts_path,
                         {
                             "run_id": run_id,
                             "seed": seed,
@@ -733,7 +728,8 @@ Debate Transcript:
                         f"(only {len(normalized_anchors)} grounded anchors after normalization)."
                     )
                     logger.info(last_judge_reason)
-                    _append_attempt(
+                    _append_jsonl(
+                        attempts_path,
                         {
                             "run_id": run_id,
                             "seed": seed,
@@ -772,7 +768,8 @@ Debate Transcript:
                 if not mechanism_gate_pass:
                     last_judge_reason = "Rejected: mechanism evidence gate failed."
                     logger.info(last_judge_reason)
-                    _append_attempt(
+                    _append_jsonl(
+                        attempts_path,
                         {
                             "run_id": run_id,
                             "seed": seed,
@@ -809,7 +806,8 @@ Debate Transcript:
                 if not mechanism_template["pass"]:
                     last_judge_reason = "Rejected: mechanism template gate failed."
                     logger.info(last_judge_reason)
-                    _append_attempt(
+                    _append_jsonl(
+                        attempts_path,
                         {
                             "run_id": run_id,
                             "seed": seed,
@@ -837,7 +835,8 @@ Debate Transcript:
                 if not con_win_gate["pass"]:
                     last_judge_reason = "Rejected: con win lacks concrete counter-evidence anchors/guard."
                     logger.info(last_judge_reason)
-                    _append_attempt(
+                    _append_jsonl(
+                        attempts_path,
                         {
                             "run_id": run_id,
                             "seed": seed,
@@ -890,7 +889,8 @@ Debate Transcript:
                             last_judge_reason = f"VERIFIER AUDIT FAILED: {verifier_audit.logic_error}"
                             logger.warning(last_judge_reason)
                             
-                            _append_attempt(
+                            _append_jsonl(
+                                attempts_path,
                                 {
                                     "run_id": run_id,
                                     "seed": seed,
@@ -953,7 +953,8 @@ Debate Transcript:
                     with open(output_file, "a") as f:
                         f.write(json.dumps(export_data) + "\n")
 
-                    _append_attempt(
+                    _append_jsonl(
+                        attempts_path,
                         {
                             "run_id": run_id,
                             "seed": seed,
@@ -992,7 +993,8 @@ Debate Transcript:
                     return
                 else:
                     logger.info(f"Refinement required. Judge reason: {last_judge_reason}")
-                    _append_attempt(
+                    _append_jsonl(
+                        attempts_path,
                         {
                             "run_id": run_id,
                             "seed": seed,
