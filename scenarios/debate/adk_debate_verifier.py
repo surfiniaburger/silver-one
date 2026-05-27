@@ -31,6 +31,7 @@ class BareReplayManager:
         self.cassette = None  # Prevents safe_record_event from trying to save
 
     async def acompletion(self, **kwargs):
+        kwargs.pop("stage", None)
         if hasattr(litellm, "acompletion"):
             try:
                 return await litellm.acompletion(**kwargs)
@@ -128,6 +129,7 @@ Perform a bit-level data-flow trace to confirm or debunk the claim.
                 strict=True,
                 repair_on_fail=True,
                 repair_model=verifier_model,
+                stage="verifier_audit",
             )
             
             # Export the report as the result

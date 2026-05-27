@@ -145,6 +145,7 @@ async def call_structured(
     strict: bool = True,
     repair_on_fail: bool = True,
     repair_model: Optional[str] = None,
+    stage: str = "structured_output",
 ) -> T:
     """
     Structured output helper with *recorded* fallback.
@@ -173,6 +174,7 @@ async def call_structured(
             model=model,
             messages=messages,
             response_format=schema,
+            stage=stage,
         )
         raw_text = response.choices[0].message.content.strip()
     except Exception as e:
@@ -199,7 +201,7 @@ async def call_structured(
             },
             *messages,
         ]
-        response = await replay_manager.acompletion(model=model, messages=retry_messages)
+        response = await replay_manager.acompletion(model=model, messages=retry_messages, stage=stage)
         raw_text = response.choices[0].message.content.strip()
 
     for candidate in _json_candidates(raw_text):
@@ -248,6 +250,7 @@ async def call_structured(
         repair_kwargs: dict[str, Any] = {
             "model": repair_model or model,
             "messages": repair_messages,
+            "stage": stage,
         }
         if structured_supported:
             repair_kwargs["response_format"] = schema

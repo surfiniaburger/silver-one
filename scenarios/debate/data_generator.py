@@ -98,6 +98,7 @@ Return your response ONLY as a valid JSON object conforming to the schema.
                 schema_model=Dimensions,
                 strict=True,
                 repair_on_fail=True,
+                stage="generator_dimensions",
             )
             return data.dimensions
         except Exception as e:
@@ -173,6 +174,7 @@ Return your response ONLY as a valid JSON object with the following fields: "thi
                 schema_model=BoundarySample,
                 strict=True,
                 repair_on_fail=True,
+                stage="generator_boundary",
             )
             return data.model_dump()
         except Exception as e:
@@ -245,6 +247,7 @@ Return your response ONLY as a valid JSON object conforming to the schema.
                 schema_model=BoundarySample,
                 strict=True,
                 repair_on_fail=True,
+                stage="generator_refine",
             )
             return data.model_dump()
         except Exception as e:
