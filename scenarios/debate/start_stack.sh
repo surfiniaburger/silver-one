@@ -11,7 +11,8 @@ JUDGE_MODEL="${JUDGE_MODEL:-ollama/gpt-oss:120b-cloud}"
 DEBATER_MODEL="${DEBATER_MODEL:-ollama/gemma4:31b-cloud}"
 GENERATOR_MODEL="${GENERATOR_MODEL:-ollama/gemma4:31b-cloud}"
 VERIFIER_MODEL="${VERIFIER_MODEL:-ollama/gpt-oss:120b-cloud}"
-export JUDGE_MODEL DEBATER_MODEL GENERATOR_MODEL VERIFIER_MODEL
+LLM_SAMPLING_PROFILE="${LLM_SAMPLING_PROFILE:-ollama_gemma4}"
+export JUDGE_MODEL DEBATER_MODEL GENERATOR_MODEL VERIFIER_MODEL LLM_SAMPLING_PROFILE
 
 echo "Starting debate stack on ports 9009, 9018, 9019, 9020"
 exec uv run agentbeats-run scenarios/debate/barred_test.toml --serve-only

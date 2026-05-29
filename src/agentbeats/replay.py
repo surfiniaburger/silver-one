@@ -10,8 +10,18 @@ class RunRecord(BaseModel):
     run_id: str
     rng_seed: int
     models: Dict[str, str]
+    generation_config: Dict[str, Any] = {}
     git_commit: Optional[str] = None
     created_at: str
+
+
+GEMMA4_OLLAMA_SAMPLING_CONFIG = {
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "top_k": 64,
+}
+
+GENERATION_PARAM_KEYS = {"temperature", "top_p", "top_k", "max_tokens"}
 
 class LLMCassette:
     """Records and replays LLM responses based on full prompt/param hashes."""
@@ -156,6 +166,8 @@ class ReplayManager:
             "by_stage": by_stage,
             "by_model": by_model,
             "events": self.usage_events,
+            "generation_config": dict(self.run_record.generation_config),
+            "models": dict(self.run_record.models),
             "notes": {
                 "tracked_paths": "calls through ReplayManager.acompletion",
                 "untracked_paths": ["direct A2A tool calls (debater/verifier transport) unless wrapped"],
@@ -302,10 +314,84 @@ class ReplayManager:
                 "stage": stage,
                 "model": model,
                 "source": source,
+                "generation_params": self.effective_generation_config(model),
                 **usage,
                 "cost_usd": cost_usd,
             }
         )
+
+    @staticmethod
+    def _optional_float_env(name: str) -> Optional[float]:
+        value = os.getenv(name, "").strip()
+        if not value:
+            return None
+        return float(value)
+
+    @staticmethod
+    def _optional_int_env(name: str) -> Optional[int]:
+        value = os.getenv(name, "").strip()
+        if not value:
+            return None
+        return int(value)
+
+    @classmethod
+    def generation_config_from_env(cls, model_config: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+        default_config: Dict[str, Any] = {}
+        float_fields = {
+            "temperature": "LLM_TEMPERATURE",
+            "top_p": "LLM_TOP_P",
+        }
+        int_fields = {
+            "top_k": "LLM_TOP_K",
+            "max_tokens": "LLM_MAX_TOKENS",
+        }
+        for param, env_name in float_fields.items():
+            value = cls._optional_float_env(env_name)
+            if value is not None:
+                default_config[param] = value
+        for param, env_name in int_fields.items():
+            value = cls._optional_int_env(env_name)
+            if value is not None:
+                default_config[param] = value
+
+        profile = os.getenv("LLM_SAMPLING_PROFILE", "").strip().lower()
+        model_values = list((model_config or {}).values())
+        use_gemma4_profile = profile in ("ollama_gemma4", "gemma4_ollama", "gemma4") or (
+            not profile and any("gemma4" in str(model).lower() for model in model_values)
+        )
+
+        model_overrides: Dict[str, Dict[str, Any]] = {}
+        if use_gemma4_profile:
+            model_overrides["gemma4"] = dict(GEMMA4_OLLAMA_SAMPLING_CONFIG)
+
+        return {
+            "default": default_config,
+            "model_overrides": model_overrides,
+            "sampling_profile": profile or ("auto_gemma4_ollama" if use_gemma4_profile else "env"),
+        }
+
+    def effective_generation_config(self, model: str) -> Dict[str, Any]:
+        config = self.run_record.generation_config or {}
+
+        # Backward compatibility for older flat RunRecord generation_config values.
+        if any(key in config for key in GENERATION_PARAM_KEYS):
+            effective = {k: v for k, v in config.items() if k in GENERATION_PARAM_KEYS}
+        else:
+            default = config.get("default")
+            effective = dict(default) if isinstance(default, dict) else {}
+
+        overrides = config.get("model_overrides")
+        if isinstance(overrides, dict):
+            model_lower = str(model).lower()
+            for pattern, values in overrides.items():
+                if str(pattern).lower() in model_lower and isinstance(values, dict):
+                    effective.update(values)
+
+        return effective
+
+    def _apply_generation_config(self, model: str, kwargs: Dict[str, Any]) -> None:
+        for key, value in self.effective_generation_config(model).items():
+            kwargs.setdefault(key, value)
 
     def save_record(self, path: str):
         """Persist the RunRecord (A1)."""
@@ -314,12 +400,13 @@ class ReplayManager:
             f.write(self.run_record.model_dump_json(indent=2))
 
     @classmethod
-    def from_config(cls, run_id: str, seed: int, cassette_path: str, mode: str = "record", model_config: Dict[str, str] = None):
+    def from_config(cls, run_id: str, seed: int, cassette_path: str, mode: str = "record", model_config: Dict[str, str] = None, generation_config: Dict[str, Any] = None):
         from datetime import datetime
         record = RunRecord(
             run_id=run_id,
             rng_seed=seed,
             models=model_config or {},
+            generation_config=generation_config if generation_config is not None else cls.generation_config_from_env(model_config),
             created_at=datetime.now().isoformat()
         )
         cassette = LLMCassette(cassette_path, mode)
@@ -329,6 +416,7 @@ class ReplayManager:
         """Wrapper for litellm.acompletion with record/replay logic (A3)."""
         import litellm
         stage = str(kwargs.pop("stage", "unknown"))
+        self._apply_generation_config(model, kwargs)
         
         # In replay mode, fail loudly if not in cassette
         cached = self.cassette.get_response(model, messages, kwargs)

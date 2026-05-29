@@ -227,7 +227,10 @@ def compute_b_metrics(
     usage_cost_usd_total = 0.0
     usage_missing_usage_calls_total = 0
     usage_stage_totals: Dict[str, Dict[str, float]] = {}
+    usage_model_totals: Dict[str, Dict[str, float]] = {}
     usage_source_totals: Dict[str, int] = {}
+    generation_config_values: Dict[str, List[Any]] = {}
+    generation_config_missing_attempts = 0
     if attempts_path:
         for _, attempt in _iter_jsonl(attempts_path):
             attempts_total += 1
@@ -303,6 +306,15 @@ def compute_b_metrics(
 
             llm_usage = attempt.get("llm_usage") if isinstance(attempt, dict) else None
             if isinstance(llm_usage, dict):
+                generation_config = llm_usage.get("generation_config")
+                if isinstance(generation_config, dict) and generation_config:
+                    for key, value in generation_config.items():
+                        bucket = generation_config_values.setdefault(str(key), [])
+                        if value not in bucket:
+                            bucket.append(value)
+                else:
+                    generation_config_missing_attempts += 1
+
                 totals = llm_usage.get("totals")
                 if isinstance(totals, dict):
                     usage_calls_total += int(totals.get("calls") or 0)
@@ -343,6 +355,21 @@ def compute_b_metrics(
                             continue
                         slot = usage_stage_totals.setdefault(
                             str(stage),
+                            {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost_usd": 0.0},
+                        )
+                        slot["calls"] += int(vals.get("calls") or 0)
+                        slot["prompt_tokens"] += int(vals.get("prompt_tokens") or 0)
+                        slot["completion_tokens"] += int(vals.get("completion_tokens") or 0)
+                        slot["total_tokens"] += int(vals.get("total_tokens") or 0)
+                        slot["cost_usd"] += float(vals.get("cost_usd") or 0.0)
+
+                by_model = llm_usage.get("by_model")
+                if isinstance(by_model, dict):
+                    for model, vals in by_model.items():
+                        if not isinstance(vals, dict):
+                            continue
+                        slot = usage_model_totals.setdefault(
+                            str(model),
                             {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost_usd": 0.0},
                         )
                         slot["calls"] += int(vals.get("calls") or 0)
@@ -417,6 +444,7 @@ def compute_b_metrics(
         "usage_cost_usd_total": usage_cost_usd_total if attempts_path else None,
         "usage_missing_usage_calls_total": usage_missing_usage_calls_total if attempts_path else None,
         "usage_by_stage_totals": usage_stage_totals if attempts_path else None,
+        "usage_by_model_totals": usage_model_totals if attempts_path else None,
         "usage_by_source_totals": usage_source_totals if attempts_path else None,
         "usage_by_source_rates": (
             {
@@ -444,6 +472,8 @@ def compute_b_metrics(
         "efficiency_cost_per_verifier_called_attempt": (
             usage_cost_usd_total / max(verifier_called, 1) if attempts_path else None
         ),
+        "generation_config_values": generation_config_values if attempts_path else None,
+        "generation_config_missing_attempts": generation_config_missing_attempts if attempts_path else None,
     }
 
     thresholds = config.thresholds

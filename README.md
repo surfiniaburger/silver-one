@@ -87,6 +87,26 @@ The scenario reads model choices from environment variables:
 - `VERIFIER_MODEL`
 - `GEPA_MODEL` (used by seed-loader workflows)
 
+### Sampling controls
+
+Tracked LiteLLM calls read and record sampling controls from environment variables:
+
+- `LLM_SAMPLING_PROFILE=ollama_gemma4`
+- `LLM_TEMPERATURE`
+- `LLM_TOP_P`
+- `LLM_TOP_K`
+- `LLM_MAX_TOKENS`
+
+The `ollama_gemma4` profile applies Ollama's Gemma 4 sampling recommendation only to tracked models whose name contains `gemma4`:
+
+```bash
+temperature=1.0
+top_p=0.95
+top_k=64
+```
+
+These values are written into run records, attempt logs, corpus row metadata, and B-gate metrics so generation settings are treated as control variables rather than hidden confounders.
+
 Example:
 
 ```bash

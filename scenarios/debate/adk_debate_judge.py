@@ -44,6 +44,7 @@ class VerifierMeta(TypedDict):
     passes_audit: Optional[bool]
     error: Optional[str]
     raw_response: Optional[str]
+    llm_usage: Optional[Dict[str, Any]]
     model: str
     url: str
 
@@ -410,6 +411,115 @@ def _parse_verifier_report(response_text: str) -> Optional[VerifierReport]:
     return None
 
 
+def _parse_verifier_usage_summary(response_text: str) -> Optional[dict]:
+    for line in response_text.splitlines():
+        candidate = line.strip()
+        if not candidate.startswith("{"):
+            continue
+        try:
+            data = json.loads(candidate)
+        except Exception:
+            continue
+        if isinstance(data, dict) and isinstance(data.get("verifier_llm_usage"), dict):
+            return data["verifier_llm_usage"]
+    return None
+
+
+def _merge_usage_summaries(primary: dict, secondary: Optional[dict]) -> dict:
+    if not isinstance(secondary, dict):
+        return primary
+
+    merged = {
+        "totals": dict(primary.get("totals") or {}),
+        "by_stage": {k: dict(v) for k, v in (primary.get("by_stage") or {}).items()},
+        "by_model": {k: dict(v) for k, v in (primary.get("by_model") or {}).items()},
+        "events": list(primary.get("events") or []),
+        "generation_config": dict(primary.get("generation_config") or {}),
+        "models": dict(primary.get("models") or {}),
+        "notes": dict(primary.get("notes") or {}),
+    }
+
+    def add_numeric(dst: dict, src: dict, keys: tuple[str, ...]) -> None:
+        for key in keys:
+            dst[key] = dst.get(key, 0) + src.get(key, 0)
+
+    total_keys = (
+        "calls",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "cost_usd",
+        "missing_usage_calls",
+    )
+    if isinstance(secondary.get("totals"), dict):
+        add_numeric(merged["totals"], secondary["totals"], total_keys)
+
+    bucket_keys = ("calls", "prompt_tokens", "completion_tokens", "total_tokens", "cost_usd")
+    for bucket_name in ("by_stage", "by_model"):
+        bucket = secondary.get(bucket_name)
+        if not isinstance(bucket, dict):
+            continue
+        for name, values in bucket.items():
+            if not isinstance(values, dict):
+                continue
+            slot = merged[bucket_name].setdefault(str(name), {})
+            add_numeric(slot, values, bucket_keys)
+
+    events = secondary.get("events")
+    if isinstance(events, list):
+        merged["events"].extend(events)
+
+    if isinstance(secondary.get("models"), dict):
+        merged["models"].update(secondary["models"])
+    if isinstance(secondary.get("generation_config"), dict):
+        merged["generation_config"].update(secondary["generation_config"])
+
+    merged["notes"]["tracked_paths"] = (
+        "judge/generator calls plus verifier internals returned by verifier_llm_usage"
+    )
+    return merged
+
+
+def _model_config(*, judge_model: str, generator_model: str, verifier_model: str) -> dict[str, str]:
+    return {
+        "judge": judge_model,
+        "generator": generator_model,
+        "verifier": verifier_model,
+        "debater": os.getenv("DEBATER_MODEL", "ollama/gpt-oss:20b-cloud"),
+    }
+
+
+def _run_metadata(
+    *,
+    replay_manager: ReplayManager,
+    mode: str,
+    cassette_path: str,
+    target_dimension: str,
+    target_verdict: str,
+    sample_text: Optional[str] = None,
+) -> dict:
+    metadata = {
+        "run_id": replay_manager.run_record.run_id,
+        "seed": replay_manager.run_record.rng_seed,
+        "mode": mode,
+        "cassette_path": cassette_path,
+        "models": dict(replay_manager.run_record.models),
+        "generation_config": dict(replay_manager.run_record.generation_config),
+        "target_dimension": target_dimension,
+        "target_verdict": target_verdict,
+        "variable_roles": {
+            "features": ["input", "instruction", "output.anchors", "output.mechanism"],
+            "target": "output.verdict",
+            "controls": ["metadata.models", "metadata.generation_config", "metadata.seed"],
+            "audit_labels": ["output.support_level", "output.verifier_status"],
+            "leakage_risk": "Do not train on metadata or adjudication fields unless intentionally auditing generation process.",
+        },
+    }
+    if sample_text is not None:
+        metadata["sample_sha256"] = _sha256_text(sample_text)
+    return metadata
+
+
 # System prompt for the judge agent
 judge_system_prompt = """
 <role>
@@ -482,6 +592,7 @@ class DebateJudgeADK(GreenAgent):
             "passes_audit": None,
             "error": None,
             "raw_response": None,
+            "llm_usage": None,
             "model": os.getenv("VERIFIER_MODEL", ""),
             "url": self.verifier_url,
         }
@@ -491,7 +602,11 @@ class DebateJudgeADK(GreenAgent):
             "code": code,
             "mechanism": eval_obj.mechanism,
             "anchors": eval_obj.anchors,
-            "predicate": predicate
+            "predicate": predicate,
+            "run_id": replay_manager.run_record.run_id,
+            "seed": replay_manager.run_record.rng_seed,
+            "mode": replay_manager.cassette.mode,
+            "cassette_path": replay_manager.cassette.path,
         }
         
         # A2: Record/Replay Verifier turns via Cassette
@@ -534,6 +649,7 @@ class DebateJudgeADK(GreenAgent):
                 meta["error"] = f"transport_error: {e}"
                 return None, meta
         meta["raw_response"] = response_text
+        meta["llm_usage"] = _parse_verifier_usage_summary(response_text)
 
         try:
             report = _parse_verifier_report(response_text)
@@ -570,7 +686,20 @@ class DebateJudgeADK(GreenAgent):
         seed = int(req.config.get("seed", 42))
         mode = req.config.get("mode", "record")
         cassette_path = req.config.get("cassette_path", f"artifacts/cassettes/{run_id}.json")
-        replay_manager = ReplayManager.from_config(run_id, seed, cassette_path, mode)
+        judge_model = os.getenv("JUDGE_MODEL", self.model)
+        verifier_model = os.getenv("VERIFIER_MODEL", "")
+        models = _model_config(
+            judge_model=judge_model,
+            generator_model=self.generator.model,
+            verifier_model=verifier_model,
+        )
+        replay_manager = ReplayManager.from_config(
+            run_id,
+            seed,
+            cassette_path,
+            mode,
+            model_config=models,
+        )
         self.generator.replay_manager = replay_manager
 
         predicate = req.config.get("predicate", "The input block matches the target verdict.")
@@ -584,7 +713,22 @@ class DebateJudgeADK(GreenAgent):
 
         def _append_attempt(obj: dict) -> None:
             enriched = dict(obj)
-            enriched["llm_usage"] = replay_manager.get_usage_summary()
+            enriched.setdefault(
+                "metadata",
+                _run_metadata(
+                    replay_manager=replay_manager,
+                    mode=mode,
+                    cassette_path=cassette_path,
+                    target_dimension=target_dimension,
+                    target_verdict=target_verdict,
+                ),
+            )
+            verifier = enriched.get("verifier")
+            verifier_usage = verifier.get("llm_usage") if isinstance(verifier, dict) else None
+            enriched["llm_usage"] = _merge_usage_summaries(
+                replay_manager.get_usage_summary(),
+                verifier_usage,
+            )
             _append_jsonl(attempts_path, enriched)
         
         try:
@@ -668,7 +812,6 @@ Debate Transcript:
 </context>
 """
                 try:
-                    judge_model = os.getenv("JUDGE_MODEL", self.model)
                     debate_eval = await call_structured(
                         replay_manager=replay_manager,
                         model=judge_model,
@@ -871,6 +1014,7 @@ Debate Transcript:
                     "passes_audit": None,
                     "error": None,
                     "raw_response": None,
+                    "llm_usage": None,
                     "model": os.getenv("VERIFIER_MODEL", ""),
                     "url": self.verifier_url,
                 }
@@ -929,6 +1073,14 @@ Debate Transcript:
                     export_data = {
                         "instruction": f"Analyze this input for the condition: {predicate}",
                         "input": current_sample_block,
+                        "metadata": _run_metadata(
+                            replay_manager=replay_manager,
+                            mode=mode,
+                            cassette_path=cassette_path,
+                            target_dimension=target_dimension,
+                            target_verdict=target_verdict,
+                            sample_text=current_sample_block,
+                        ),
                         "output": {
                             "predicate": debate_eval.predicate,
                             "anchors": normalized_anchors,

@@ -4,7 +4,6 @@ import uvicorn
 import asyncio
 import logging
 import os
-import litellm
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -18,29 +17,11 @@ from agentbeats.green_executor import GreenAgent, GreenExecutor
 from agentbeats.models import EvalRequest, EvalResult
 from agentbeats.tool_provider import ToolProvider
 from agentbeats.structured_output import call_structured
+from agentbeats.replay import ReplayManager
 from debate_judge_common import VerifierReport, debate_judge_agent_card
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("adk_debate_verifier")
-
-# --- Determinism Mock ---
-
-class BareReplayManager:
-    """A minimal ReplayManager that calls LiteLLM directly without caching."""
-    def __init__(self):
-        self.cassette = None  # Prevents safe_record_event from trying to save
-
-    async def acompletion(self, **kwargs):
-        kwargs.pop("stage", None)
-        if hasattr(litellm, "acompletion"):
-            try:
-                return await litellm.acompletion(**kwargs)
-            except Exception:
-                logger.exception("litellm.acompletion failed in verifier; trying sync fallback.")
-        # Fallback for providers/transports that break on async path.
-        return await asyncio.to_thread(litellm.completion, **kwargs)
-
-_BARE_REPLAY = BareReplayManager()
 
 # --- System Prompt ---
 
@@ -97,6 +78,10 @@ class DebateVerifierADK(GreenAgent):
         mechanism = req.config["mechanism"]
         anchors = req.config["anchors"]
         predicate = req.config.get("predicate", "")
+        run_id = str(req.config.get("run_id", "verifier-adhoc"))
+        seed = int(req.config.get("seed", 42))
+        mode = str(req.config.get("mode", "record"))
+        cassette_path = str(req.config.get("cassette_path", f"artifacts/cassettes/{run_id}.json"))
 
         verifier_prompt = f"""
 <context>
@@ -117,8 +102,15 @@ Perform a bit-level data-flow trace to confirm or debunk the claim.
 
         try:
             verifier_model = os.getenv("VERIFIER_MODEL", self.model)
+            replay_manager = ReplayManager.from_config(
+                run_id=run_id,
+                seed=seed,
+                cassette_path=cassette_path,
+                mode=mode,
+                model_config={"verifier": verifier_model},
+            )
             report = await call_structured(
-                replay_manager=_BARE_REPLAY,
+                replay_manager=replay_manager,
                 model=verifier_model,
                 messages=[
                     {"role": "system", "content": verifier_system_prompt},
@@ -131,11 +123,13 @@ Perform a bit-level data-flow trace to confirm or debunk the claim.
                 repair_model=verifier_model,
                 stage="verifier_audit",
             )
+            usage_summary = replay_manager.get_usage_summary()
             
             # Export the report as the result
             await updater.add_artifact(
                 parts=[
                     TextPart(text=json.dumps(report.model_dump(), ensure_ascii=False)),
+                    TextPart(text=json.dumps({"verifier_llm_usage": usage_summary}, ensure_ascii=False)),
                     TextPart(text=f"Verification Result: {'PASSED' if report.passes_audit else 'FAILED'}"),
                     TextPart(text=report.thinking_process),
                     TextPart(text=f"Logic Audit: {report.logic_error or 'None'}")
