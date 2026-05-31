@@ -169,9 +169,80 @@ def test_strict_b2_and_verifier_threshold_checks():
         assert metrics["checks"]["min_verifier_parse_ok_rate"] is True
 
 
+def test_usage_model_and_generation_config_metrics():
+    rows = [
+        {
+            "instruction": "Analyze ...",
+            "input": "int foo(){ return bar(x); }",
+            "output": {
+                "predicate": "X",
+                "anchors": ["bar(x)", "foo("],
+                "counterfactual": "Replace bar(x) with baz(x).",
+                "verifier_report": {"passes_audit": True},
+                "support_level": "supported",
+            },
+        }
+    ]
+    attempts = [
+        {
+            "decision": "accepted",
+            "support_level": "supported",
+            "judge_eval": {"winner": "pro_debater"},
+            "verifier": {"called": True, "parse_ok": True, "passes_audit": True},
+            "llm_usage": {
+                "totals": {
+                    "calls": 2,
+                    "prompt_tokens": 30,
+                    "completion_tokens": 10,
+                    "total_tokens": 40,
+                    "cost_usd": 0.0,
+                    "missing_usage_calls": 0,
+                },
+                "by_model": {
+                    "judge-model": {
+                        "calls": 1,
+                        "prompt_tokens": 10,
+                        "completion_tokens": 5,
+                        "total_tokens": 15,
+                        "cost_usd": 0.0,
+                    },
+                    "verifier-model": {
+                        "calls": 1,
+                        "prompt_tokens": 20,
+                        "completion_tokens": 5,
+                        "total_tokens": 25,
+                        "cost_usd": 0.0,
+                    },
+                },
+                "generation_config": {
+                    "default": {},
+                    "model_overrides": {
+                        "gemma4": {"temperature": 1.0, "top_p": 0.95, "top_k": 64}
+                    },
+                    "sampling_profile": "ollama_gemma4",
+                },
+            },
+        }
+    ]
+    with tempfile.TemporaryDirectory() as td:
+        p = td + "/c.jsonl"
+        a = td + "/attempts.jsonl"
+        _write_jsonl(p, rows)
+        _write_jsonl(a, attempts)
+        metrics = compute_b_metrics(
+            input_path=p,
+            attempts_path=a,
+            config=BGateConfig(thresholds=BGateThresholds()),
+        )
+        assert metrics["usage_by_model_totals"]["verifier-model"]["total_tokens"] == 25
+        assert metrics["generation_config_values"]["sampling_profile"] == ["ollama_gemma4"]
+        assert metrics["generation_config_missing_attempts"] == 0
+
+
 if __name__ == "__main__":
     test_gate_passes_on_grounded_sample()
     test_gate_fails_when_no_anchor_matches_input()
     test_verifier_metrics_and_disagreement_counts()
     test_strict_b2_and_verifier_threshold_checks()
+    test_usage_model_and_generation_config_metrics()
     print("ok")
