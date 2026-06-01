@@ -1,5 +1,7 @@
 # silver-one
 
+> Changing world values are inputs. Inputs are recorded. Recorded inputs are replayable. Replayable workflows are evolvable.
+
 `silver-one` is an Agentbeats evaluation project focused on deterministic, reproducible multi-agent security debates.
 
 The main implemented scenario is **BARRED** (Boundary Adversarial Reasoning for Reproducible Evaluation and Dataset generation):
@@ -197,6 +199,17 @@ uv run python scenarios/debate/run_batch.py \
   --output training_corpus.jsonl \
   --attempts-out artifacts/attempts/pilot-v1-softchecks.jsonl
 
+
+uv run python scenarios/debate/run_batch.py \
+  --run-id pilot-v1-clocked \
+  --seed 42 \
+  --mode record \
+  --clock-now 2026-05-31T16:06:00Z \
+  --seeds scenarios/debate/cve_seeds_test.jsonl \
+  --output training_corpus_clocked.jsonl \
+  --attempts-out artifacts/attempts/pilot-v1-clocked.jsonl
+
+
 # Compute B metrics + soft-check rates
 ./scripts/run_b_gate.sh
 
@@ -218,8 +231,10 @@ The project supports deterministic record/replay for model calls.
 Key artifacts:
 
 - `artifacts/cassettes/<run-id>.json`
-- `artifacts/runs/<run-id>.json`
+- `artifacts/runs/<run-id>/<seed>.json`
+- `artifacts/runs/<run-id>/batch_manifest.json`
 - `artifacts/attempts/<run-id>.jsonl`
+- `artifacts/checkpoints/<run-id>/<seed>.json`
 
 Replay example:
 
@@ -231,6 +246,23 @@ uv run python scenarios/debate/run_batch.py \
   --seeds scenarios/debate/cve_seeds_50.jsonl \
   --output training_corpus_replay.jsonl
 ```
+
+Resume a partially completed batch from per-seed workflow checkpoints:
+
+```bash
+uv run python scenarios/debate/run_batch.py \
+  --run-id pilot-v1 \
+  --seed 42 \
+  --mode record \
+  --resume \
+  --checkpoint-dir artifacts/checkpoints \
+  --seeds scenarios/debate/cve_seeds_50.jsonl \
+  --output training_corpus.jsonl
+```
+
+Checkpoints preserve the latest durable phase for a seed, including generated sample, debate transcript, judge output, strict-gate state, verifier state, and run controls. Resume fails if run controls drift, including model choices, sampling config, seed, predicate, target verdict, target dimension, or cassette path.
+
+Batch runs use a base seed plus item index (`item_seed = base_seed + zero_based_index`) and write one run record per item seed. The batch manifest records this seed schedule, per-seed checkpoint paths, per-seed run-record paths, and the injected `clock_now` value used for run records and checkpoints. Set `RUN_CLOCK_NOW` or pass `--clock-now` to freeze artifact timestamps for deterministic replay audits.
 
 ## Kaggle Runner
 

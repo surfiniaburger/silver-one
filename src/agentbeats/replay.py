@@ -5,6 +5,7 @@ import tempfile
 import os
 from typing import Dict, Any, Optional, List, Tuple
 from pydantic import BaseModel
+from agentbeats.clock import RunClock
 
 class RunRecord(BaseModel):
     run_id: str
@@ -400,14 +401,22 @@ class ReplayManager:
             f.write(self.run_record.model_dump_json(indent=2))
 
     @classmethod
-    def from_config(cls, run_id: str, seed: int, cassette_path: str, mode: str = "record", model_config: Dict[str, str] = None, generation_config: Dict[str, Any] = None):
-        from datetime import datetime
+    def from_config(
+        cls,
+        run_id: str,
+        seed: int,
+        cassette_path: str,
+        mode: str = "record",
+        model_config: Dict[str, str] = None,
+        generation_config: Dict[str, Any] = None,
+        created_at: Optional[str] = None,
+    ):
         record = RunRecord(
             run_id=run_id,
             rng_seed=seed,
             models=model_config or {},
             generation_config=generation_config if generation_config is not None else cls.generation_config_from_env(model_config),
-            created_at=datetime.now().isoformat()
+            created_at=created_at or RunClock.from_env().now_iso(),
         )
         cassette = LLMCassette(cassette_path, mode)
         return cls(record, cassette)

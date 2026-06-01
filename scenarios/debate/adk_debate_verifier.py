@@ -82,6 +82,7 @@ class DebateVerifierADK(GreenAgent):
         seed = int(req.config.get("seed", 42))
         mode = str(req.config.get("mode", "record"))
         cassette_path = str(req.config.get("cassette_path", f"artifacts/cassettes/{run_id}.json"))
+        clock_now = req.config.get("clock_now")
 
         verifier_prompt = f"""
 <context>
@@ -108,6 +109,7 @@ Perform a bit-level data-flow trace to confirm or debunk the claim.
                 cassette_path=cassette_path,
                 mode=mode,
                 model_config={"verifier": verifier_model},
+                created_at=clock_now,
             )
             report = await call_structured(
                 replay_manager=replay_manager,

@@ -31,10 +31,28 @@ from agentbeats.structured_output import (
 from debate_judge_common import DebateEval, VerifierReport, debate_judge_agent_card
 from data_generator import BarredDataGenerator
 from agentbeats.replay import ReplayManager
+from agentbeats.checkpoint import (
+    CheckpointError,
+    load_checkpoint,
+    save_checkpoint,
+    validate_checkpoint,
+)
 from typing import Optional, Dict, Any, Tuple, TypedDict
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("adk_debate_judge")
+
+
+PHASE_ORDER = {
+    "start": 0,
+    "generated_sample": 10,
+    "debate_complete": 20,
+    "judge_complete": 30,
+    "strict_gates_complete": 40,
+    "verifier_complete": 50,
+    "accepted": 100,
+    "failed": 100,
+}
 
 
 class VerifierMeta(TypedDict):
@@ -42,6 +60,7 @@ class VerifierMeta(TypedDict):
     from_cache: bool
     parse_ok: bool
     passes_audit: Optional[bool]
+    logic_error: Optional[str]
     error: Optional[str]
     raw_response: Optional[str]
     llm_usage: Optional[Dict[str, Any]]
@@ -62,6 +81,37 @@ _CODE_MARKERS = (
     "private ",
     "protected ",
 )
+
+_PREDICATE_PLACEHOLDER_RE = re.compile(
+    r"\b("
+    r"vulnerability\s+suspected|suspected\s+vulnerability|suspected|"
+    r"maybe|may\s+be|might\s+be|could\s+be|appears\s+to|seems\s+to"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_PREDICATE_VULN_CLASS_RE = re.compile(
+    r"\b("
+    r"overflow|underflow|out[-\s]?of[-\s]?bounds|oob|use[-\s]?after[-\s]?free|"
+    r"double[-\s]?free|null[-\s]?pointer|division[-\s]?by[-\s]?zero|"
+    r"denial[-\s]?of[-\s]?service|dos|race|toctou|symlink|file[-\s]?write|injection|"
+    r"spoofing|side[-\s]?channel|timing|leakage|leak|plaintext[-\s]?pattern|"
+    r"privilege[-\s]?escalation|memory\s+corruption|buffer|integer|traversal|"
+    r"authentication|authorization|hash[-\s]?collision|collision|register\s+access|"
+    r"mdio|entropy|key[-\s]?material|environment\s+variable"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_UNICODE_HYPHENS = {
+    ord("\u2010"): "-",
+    ord("\u2011"): "-",
+    ord("\u2012"): "-",
+    ord("\u2013"): "-",
+    ord("\u2014"): "-",
+    ord("\u2015"): "-",
+    ord("\u2212"): "-",
+}
 
 
 def _is_code_like(text: str) -> bool:
@@ -94,6 +144,50 @@ def _is_code_like(text: str) -> bool:
     if function_like_hits >= 2:
         signals += 1
     return signals >= 3
+
+
+def _has_logic_error(logic_error: Optional[str]) -> bool:
+    return isinstance(logic_error, str) and bool(logic_error.strip())
+
+
+def _normalize_predicate_text(predicate: str) -> str:
+    return " ".join(predicate.translate(_UNICODE_HYPHENS).strip().split())
+
+
+def _predicate_quality(predicate: str, code: str) -> dict:
+    if not isinstance(predicate, str):
+        return {
+            "pass": False,
+            "reasons": ["predicate_not_string"],
+            "length": 0,
+            "has_vulnerability_class": False,
+            "has_code_symbol": False,
+        }
+
+    text = _normalize_predicate_text(predicate)
+    reasons: list[str] = []
+    if len(text) < 40:
+        reasons.append("predicate_too_short")
+    if _PREDICATE_PLACEHOLDER_RE.search(text):
+        reasons.append("predicate_contains_hedging_or_placeholder")
+
+    has_vulnerability_class = bool(_PREDICATE_VULN_CLASS_RE.search(text))
+    if not has_vulnerability_class:
+        reasons.append("missing_vulnerability_class")
+
+    symbol_hits = _predicate_aboutness(text, code).get("hits", [])
+    has_code_symbol = bool(symbol_hits)
+    if not has_code_symbol:
+        reasons.append("missing_code_symbol_or_grounded_term")
+
+    return {
+        "pass": not reasons,
+        "reasons": reasons,
+        "length": len(text),
+        "has_vulnerability_class": has_vulnerability_class,
+        "has_code_symbol": has_code_symbol,
+        "symbol_hits": symbol_hits,
+    }
 
 
 def _anchor_match_stats(anchors: list[str], input_text: str) -> dict:
@@ -503,6 +597,7 @@ def _run_metadata(
         "seed": replay_manager.run_record.rng_seed,
         "mode": mode,
         "cassette_path": cassette_path,
+        "clock_now": replay_manager.run_record.created_at,
         "models": dict(replay_manager.run_record.models),
         "generation_config": dict(replay_manager.run_record.generation_config),
         "target_dimension": target_dimension,
@@ -510,7 +605,7 @@ def _run_metadata(
         "variable_roles": {
             "features": ["input", "instruction", "output.anchors", "output.mechanism"],
             "target": "output.verdict",
-            "controls": ["metadata.models", "metadata.generation_config", "metadata.seed"],
+            "controls": ["metadata.models", "metadata.generation_config", "metadata.seed", "metadata.clock_now"],
             "audit_labels": ["output.support_level", "output.verifier_status"],
             "leakage_risk": "Do not train on metadata or adjudication fields unless intentionally auditing generation process.",
         },
@@ -518,6 +613,41 @@ def _run_metadata(
     if sample_text is not None:
         metadata["sample_sha256"] = _sha256_text(sample_text)
     return metadata
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "y", "on")
+    return bool(value)
+
+
+def _checkpoint_controls(
+    *,
+    replay_manager: ReplayManager,
+    mode: str,
+    cassette_path: str,
+    predicate: str,
+    target_verdict: str,
+    target_dimension: str,
+) -> dict:
+    return {
+        "run_id": replay_manager.run_record.run_id,
+        "seed": replay_manager.run_record.rng_seed,
+        "mode": mode,
+        "cassette_path": cassette_path,
+        "clock_now": replay_manager.run_record.created_at,
+        "models": dict(replay_manager.run_record.models),
+        "generation_config": dict(replay_manager.run_record.generation_config),
+        "predicate": predicate,
+        "target_verdict": target_verdict,
+        "target_dimension": target_dimension,
+    }
+
+
+def _phase_at_least(phase: str, required: str) -> bool:
+    return PHASE_ORDER.get(phase, -1) >= PHASE_ORDER[required]
 
 
 # System prompt for the judge agent
@@ -590,6 +720,7 @@ class DebateJudgeADK(GreenAgent):
             "from_cache": False,
             "parse_ok": False,
             "passes_audit": None,
+            "logic_error": None,
             "error": None,
             "raw_response": None,
             "llm_usage": None,
@@ -607,6 +738,7 @@ class DebateJudgeADK(GreenAgent):
             "seed": replay_manager.run_record.rng_seed,
             "mode": replay_manager.cassette.mode,
             "cassette_path": replay_manager.cassette.path,
+            "clock_now": replay_manager.run_record.created_at,
         }
         
         # A2: Record/Replay Verifier turns via Cassette
@@ -656,6 +788,7 @@ class DebateJudgeADK(GreenAgent):
             if report is not None:
                 meta["parse_ok"] = True
                 meta["passes_audit"] = bool(report.passes_audit)
+                meta["logic_error"] = report.logic_error
                 return report, meta
         except Exception as e:
             logger.error(f"Failed to parse VerifierReport: {e}")
@@ -686,6 +819,7 @@ class DebateJudgeADK(GreenAgent):
         seed = int(req.config.get("seed", 42))
         mode = req.config.get("mode", "record")
         cassette_path = req.config.get("cassette_path", f"artifacts/cassettes/{run_id}.json")
+        clock_now = req.config.get("clock_now")
         judge_model = os.getenv("JUDGE_MODEL", self.model)
         verifier_model = os.getenv("VERIFIER_MODEL", "")
         models = _model_config(
@@ -699,6 +833,7 @@ class DebateJudgeADK(GreenAgent):
             cassette_path,
             mode,
             model_config=models,
+            created_at=clock_now,
         )
         self.generator.replay_manager = replay_manager
 
@@ -708,8 +843,48 @@ class DebateJudgeADK(GreenAgent):
         max_refinements = int(req.config.get("max_refinements", 2))
         output_file = req.config.get("output_file", "training_corpus.jsonl")
         attempts_path = req.config.get("attempts_path", f"artifacts/attempts/{run_id}.jsonl")
+        checkpoint_path = req.config.get("checkpoint_path", f"artifacts/checkpoints/{run_id}/{seed}.json")
+        resume = _truthy(req.config.get("resume", False))
         
         current_input_block = req.config.get("topic", "")
+        controls = _checkpoint_controls(
+            replay_manager=replay_manager,
+            mode=mode,
+            cassette_path=cassette_path,
+            predicate=predicate,
+            target_verdict=target_verdict,
+            target_dimension=target_dimension,
+        )
+        resume_checkpoint = None
+        if resume:
+            resume_checkpoint = load_checkpoint(checkpoint_path)
+            if resume_checkpoint:
+                try:
+                    expected = {
+                        **controls,
+                        "current_input_block_sha256": _sha256_text(current_input_block),
+                    }
+                    validate_checkpoint(resume_checkpoint, expected)
+                    logger.info(
+                        "Loaded checkpoint %s at phase=%s refinement_round=%s",
+                        checkpoint_path,
+                        resume_checkpoint.get("phase"),
+                        resume_checkpoint.get("refinement_round"),
+                    )
+                except CheckpointError:
+                    raise
+
+        def _write_checkpoint(phase: str, refinement_round: int, **state: Any) -> None:
+            payload = {
+                "schema_version": 1,
+                **controls,
+                "current_input_block_sha256": _sha256_text(current_input_block),
+                "phase": phase,
+                "refinement_round": refinement_round,
+                "current_input_block": current_input_block,
+                **state,
+            }
+            save_checkpoint(checkpoint_path, payload, clock_now=replay_manager.run_record.created_at)
 
         def _append_attempt(obj: dict) -> None:
             enriched = dict(obj)
@@ -733,19 +908,56 @@ class DebateJudgeADK(GreenAgent):
         
         try:
             last_judge_reason = ""
+            if resume_checkpoint and resume_checkpoint.get("phase") in ("accepted", "failed"):
+                terminal_phase = str(resume_checkpoint.get("phase"))
+                await updater.add_artifact(
+                    parts=[TextPart(text=f"Checkpoint already terminal: {terminal_phase}")],
+                    name="Result",
+                )
+                return
+
             for i in range(max_refinements + 1):
                 replay_manager.reset_usage_events()
                 await updater.update_status(TaskState.working, new_agent_text_message(f"Refinement Round {i+1}/{max_refinements + 1}"))
+                active_checkpoint = None
+                checkpoint_phase = "start"
+                if (
+                    resume_checkpoint
+                    and int(resume_checkpoint.get("refinement_round", -1)) == i
+                ):
+                    active_checkpoint = resume_checkpoint
+                    checkpoint_phase = str(active_checkpoint.get("phase", "start"))
+                elif (
+                    resume_checkpoint
+                    and int(resume_checkpoint.get("refinement_round", -1)) > i
+                ):
+                    logger.info("Skipping refinement round %s before checkpoint round.", i)
+                    continue
                 
                 # Step 1: Generate/Refine the sample
-                if i == 0:
-                    await updater.update_status(TaskState.working, new_agent_text_message("Generating initial boundary sample..."))
-                    sample_data = await self.generator.generate_boundary_sample(current_input_block, predicate, target_dimension, target_verdict)
+                if active_checkpoint and _phase_at_least(checkpoint_phase, "generated_sample"):
+                    sample_data = active_checkpoint.get("sample_data") or {}
+                    current_sample_block = active_checkpoint.get(
+                        "current_sample_block",
+                        sample_data.get("revised_input_block", current_input_block),
+                    )
                 else:
-                    await updater.update_status(TaskState.working, new_agent_text_message(f"Refining sample based on judge feedback..."))
-                    sample_data = await self.generator.refine_sample(current_input_block, predicate, target_dimension, target_verdict, sample_data.get("revised_input_block", ""), last_judge_reason)
+                    if i == 0:
+                        await updater.update_status(TaskState.working, new_agent_text_message("Generating initial boundary sample..."))
+                        sample_data = await self.generator.generate_boundary_sample(current_input_block, predicate, target_dimension, target_verdict)
+                    else:
+                        await updater.update_status(TaskState.working, new_agent_text_message(f"Refining sample based on judge feedback..."))
+                        sample_data = await self.generator.refine_sample(current_input_block, predicate, target_dimension, target_verdict, sample_data.get("revised_input_block", ""), last_judge_reason)
 
-                current_sample_block = sample_data.get("revised_input_block", current_input_block)
+                    current_sample_block = sample_data.get("revised_input_block", current_input_block)
+                    _write_checkpoint(
+                        "generated_sample",
+                        i,
+                        sample_data=sample_data,
+                        current_sample_block=current_sample_block,
+                        current_sample_block_sha256=_sha256_text(current_sample_block),
+                        last_judge_reason=last_judge_reason,
+                    )
 
                 # Phase B guardrail: reject non-code-like samples (prevents repeatable hallucination).
                 if not _is_code_like(current_sample_block):
@@ -773,17 +985,29 @@ class DebateJudgeADK(GreenAgent):
                 pro_mission = f"PRO MISSION: Prove that the predicate '{predicate}' is {target_verdict} for the given code."
                 con_mission = f"CON MISSION: Prove that the predicate '{predicate}' is {opposite_verdict} (i.e., disprove the target verdict)."
                 
-                debate = await self.orchestrate_debate(
-                    replay_manager,
-                    req.participants, 
-                    current_sample_block, 
-                    int(req.config["num_rounds"]), 
-                    updater,
-                    pro_mission=pro_mission,
-                    con_mission=con_mission,
-                    predicate=predicate,
-                    target_verdict=target_verdict
-                )
+                if active_checkpoint and _phase_at_least(checkpoint_phase, "debate_complete"):
+                    debate = active_checkpoint.get("debate") or {"pro_debater": [], "con_debater": []}
+                else:
+                    debate = await self.orchestrate_debate(
+                        replay_manager,
+                        req.participants,
+                        current_sample_block,
+                        int(req.config["num_rounds"]),
+                        updater,
+                        pro_mission=pro_mission,
+                        con_mission=con_mission,
+                        predicate=predicate,
+                        target_verdict=target_verdict
+                    )
+                    _write_checkpoint(
+                        "debate_complete",
+                        i,
+                        sample_data=sample_data,
+                        current_sample_block=current_sample_block,
+                        current_sample_block_sha256=_sha256_text(current_sample_block),
+                        debate=debate,
+                        last_judge_reason=last_judge_reason,
+                    )
 
                 transcript = ""
                 for j, (pro, con) in enumerate(zip(debate["pro_debater"], debate["con_debater"]), start=1):
@@ -812,20 +1036,33 @@ Debate Transcript:
 </context>
 """
                 try:
-                    debate_eval = await call_structured(
-                        replay_manager=replay_manager,
-                        model=judge_model,
-                        messages=[
-                            {"role": "system", "content": judge_system_prompt},
-                            {"role": "user", "content": judge_prompt},
-                        ],
-                        schema_name="debate_eval",
-                        schema_model=DebateEval,
-                        strict=True,
-                        repair_on_fail=True,
-                        repair_model=judge_model,
-                        stage="judge_adjudication",
-                    )
+                    if active_checkpoint and _phase_at_least(checkpoint_phase, "judge_complete"):
+                        debate_eval = DebateEval(**active_checkpoint["judge_eval"])
+                    else:
+                        debate_eval = await call_structured(
+                            replay_manager=replay_manager,
+                            model=judge_model,
+                            messages=[
+                                {"role": "system", "content": judge_system_prompt},
+                                {"role": "user", "content": judge_prompt},
+                            ],
+                            schema_name="debate_eval",
+                            schema_model=DebateEval,
+                            strict=True,
+                            repair_on_fail=True,
+                            repair_model=judge_model,
+                            stage="judge_adjudication",
+                        )
+                        _write_checkpoint(
+                            "judge_complete",
+                            i,
+                            sample_data=sample_data,
+                            current_sample_block=current_sample_block,
+                            current_sample_block_sha256=_sha256_text(current_sample_block),
+                            debate=debate,
+                            judge_eval=debate_eval.model_dump(),
+                            last_judge_reason=debate_eval.reason,
+                        )
                     last_judge_reason = debate_eval.reason
                 except Exception as e:
                     logger.error(f"Judge structured output failed: {e}")
@@ -853,6 +1090,7 @@ Debate Transcript:
 
                 # Soft checks (log-only): predicate aboutness + mechanism grounding.
                 aboutness = _predicate_aboutness(predicate, current_sample_block)
+                predicate_quality = _predicate_quality(predicate, current_sample_block)
                 mech_grounding = _mechanism_grounding(debate_eval.mechanism, normalized_anchors)
                 anchor_stats = _anchor_match_stats(normalized_anchors, current_sample_block)
                 mech_evidence = _mechanism_evidence_gate(
@@ -867,6 +1105,43 @@ Debate Transcript:
                     debate_eval.mechanism,
                     normalized_anchors,
                 )
+
+                if not predicate_quality["pass"]:
+                    last_judge_reason = "Rejected: predicate quality gate failed."
+                    logger.info("%s %s", last_judge_reason, predicate_quality)
+                    _append_attempt(
+                        {
+                            "run_id": run_id,
+                            "seed": seed,
+                            "mode": mode,
+                            "refinement_round": i,
+                            "predicate": predicate,
+                            "target_verdict": target_verdict,
+                            "target_dimension": target_dimension,
+                            "decision": "rejected",
+                            "reject_reason": "predicate_quality_failed",
+                            "sample_sha256": _sha256_text(current_sample_block),
+                            "anchor_stats": anchor_stats,
+                            "anchors_normalized": normalized_anchors,
+                            "judge_eval": {
+                                "predicate": debate_eval.predicate,
+                                "anchors": normalized_anchors,
+                                "support_level": debate_eval.support_level,
+                                "verifier_report": debate_eval.verifier_report,
+                                "winner": debate_eval.winner,
+                            },
+                            "soft_checks": {
+                                "predicate_quality": predicate_quality,
+                                "predicate_aboutness": aboutness,
+                                "mechanism_grounding": mech_grounding,
+                                "mechanism_evidence": mech_evidence,
+                                "mechanism_template": mechanism_template,
+                                "con_win_counter_evidence": con_win_gate,
+                            },
+                            "support_level": debate_eval.support_level,
+                        },
+                    )
+                    continue
 
                 # Phase B strict anchor enforcement:
                 # After normalization, require >=2 grounded anchors.
@@ -898,6 +1173,7 @@ Debate Transcript:
                                 "winner": debate_eval.winner,
                             },
                             "soft_checks": {
+                                "predicate_quality": predicate_quality,
                                 "predicate_aboutness": aboutness,
                                 "mechanism_grounding": mech_grounding,
                                 "mechanism_evidence": mech_evidence,
@@ -938,6 +1214,7 @@ Debate Transcript:
                                 "winner": debate_eval.winner,
                             },
                             "soft_checks": {
+                                "predicate_quality": predicate_quality,
                                 "predicate_aboutness": aboutness,
                                 "mechanism_grounding": mech_grounding,
                                 "mechanism_evidence": mech_evidence,
@@ -966,6 +1243,7 @@ Debate Transcript:
                             "sample_sha256": _sha256_text(current_sample_block),
                             "mechanism_template": mechanism_template,
                             "soft_checks": {
+                                "predicate_quality": predicate_quality,
                                 "predicate_aboutness": aboutness,
                                 "mechanism_grounding": mech_grounding,
                                 "mechanism_evidence": mech_evidence,
@@ -994,6 +1272,7 @@ Debate Transcript:
                             "sample_sha256": _sha256_text(current_sample_block),
                             "con_win_counter_evidence": con_win_gate,
                             "soft_checks": {
+                                "predicate_quality": predicate_quality,
                                 "predicate_aboutness": aboutness,
                                 "mechanism_grounding": mech_grounding,
                                 "mechanism_evidence": mech_evidence,
@@ -1004,6 +1283,27 @@ Debate Transcript:
                         },
                     )
                     continue
+
+                if not (active_checkpoint and _phase_at_least(checkpoint_phase, "strict_gates_complete")):
+                    _write_checkpoint(
+                        "strict_gates_complete",
+                        i,
+                        sample_data=sample_data,
+                        current_sample_block=current_sample_block,
+                        current_sample_block_sha256=_sha256_text(current_sample_block),
+                        debate=debate,
+                        judge_eval=debate_eval.model_dump(),
+                        normalized_anchors=normalized_anchors,
+                        soft_checks={
+                            "predicate_aboutness": aboutness,
+                            "predicate_quality": predicate_quality,
+                            "mechanism_grounding": mech_grounding,
+                            "mechanism_evidence": mech_evidence,
+                            "mechanism_template": mechanism_template,
+                            "con_win_counter_evidence": con_win_gate,
+                        },
+                        last_judge_reason=last_judge_reason,
+                    )
                 
                 is_valid = debate_eval.winner == "pro_debater"
                 verifier_audit = None
@@ -1012,6 +1312,7 @@ Debate Transcript:
                     "from_cache": False,
                     "parse_ok": False,
                     "passes_audit": None,
+                    "logic_error": None,
                     "error": None,
                     "raw_response": None,
                     "llm_usage": None,
@@ -1020,17 +1321,42 @@ Debate Transcript:
                 }
                 
                 if is_valid:
-                    await updater.update_status(TaskState.working, new_agent_text_message("Pro win detected. Triggering Predictive Verifier audit..."))
-                    verifier_audit, verifier_meta = await self._call_verifier(
-                        replay_manager,
-                        current_sample_block,
-                        debate_eval,
-                        predicate,
-                    )
+                    if active_checkpoint and _phase_at_least(checkpoint_phase, "verifier_complete"):
+                        verifier_meta = active_checkpoint.get("verifier") or verifier_meta
+                        verifier_meta.setdefault("logic_error", None)
+                        verifier_payload = active_checkpoint.get("verifier_audit")
+                        verifier_audit = VerifierReport(**verifier_payload) if isinstance(verifier_payload, dict) else None
+                    else:
+                        await updater.update_status(TaskState.working, new_agent_text_message("Pro win detected. Triggering Predictive Verifier audit..."))
+                        verifier_audit, verifier_meta = await self._call_verifier(
+                            replay_manager,
+                            current_sample_block,
+                            debate_eval,
+                            predicate,
+                        )
+                        _write_checkpoint(
+                            "verifier_complete",
+                            i,
+                            sample_data=sample_data,
+                            current_sample_block=current_sample_block,
+                            current_sample_block_sha256=_sha256_text(current_sample_block),
+                            debate=debate,
+                            judge_eval=debate_eval.model_dump(),
+                            normalized_anchors=normalized_anchors,
+                            verifier=verifier_meta,
+                            verifier_audit=verifier_audit.model_dump() if verifier_audit else None,
+                            last_judge_reason=last_judge_reason,
+                        )
                     
                     if verifier_audit:
-                        if not verifier_audit.passes_audit:
+                        verifier_meta["logic_error"] = verifier_audit.logic_error
+                        if (not verifier_audit.passes_audit) or _has_logic_error(verifier_audit.logic_error):
                             is_valid = False
+                            reject_reason = (
+                                "verifier_logic_error"
+                                if _has_logic_error(verifier_audit.logic_error)
+                                else "verifier_failed"
+                            )
                             last_judge_reason = f"VERIFIER AUDIT FAILED: {verifier_audit.logic_error}"
                             logger.warning(last_judge_reason)
                             
@@ -1044,15 +1370,23 @@ Debate Transcript:
                                     "target_verdict": target_verdict,
                                     "target_dimension": target_dimension,
                                     "decision": "rejected",
-                                    "reject_reason": "verifier_failed",
+                                    "reject_reason": reject_reason,
                                     "logic_error": verifier_audit.logic_error,
                                     "sample_sha256": _sha256_text(current_sample_block),
-                            "judge_eval": {
-                                "predicate": debate_eval.predicate,
-                                "anchors": normalized_anchors,
-                                "support_level": debate_eval.support_level,
-                                "winner": debate_eval.winner,
-                            },
+                                    "judge_eval": {
+                                        "predicate": debate_eval.predicate,
+                                        "anchors": normalized_anchors,
+                                        "support_level": debate_eval.support_level,
+                                        "winner": debate_eval.winner,
+                                    },
+                                    "soft_checks": {
+                                        "predicate_quality": predicate_quality,
+                                        "predicate_aboutness": aboutness,
+                                        "mechanism_grounding": mech_grounding,
+                                        "mechanism_evidence": mech_evidence,
+                                        "mechanism_template": mechanism_template,
+                                        "con_win_counter_evidence": con_win_gate,
+                                    },
                                     "verifier": verifier_meta,
                                     "support_level": debate_eval.support_level,
                                 },
@@ -1092,6 +1426,7 @@ Debate Transcript:
                                 "called": verifier_meta["called"],
                                 "parse_ok": verifier_meta["parse_ok"],
                                 "passes_audit": verifier_meta["passes_audit"],
+                                "logic_error": verifier_meta["logic_error"],
                                 "error": verifier_meta["error"],
                             },
                             "verifier_report": verifier_audit.model_dump() if verifier_audit else "not_applicable",
@@ -1125,6 +1460,7 @@ Debate Transcript:
                             },
                             "soft_checks": {
                                 "predicate_aboutness": aboutness,
+                                "predicate_quality": predicate_quality,
                                 "mechanism_grounding": mech_grounding,
                                 "mechanism_evidence": mech_evidence,
                                 "mechanism_template": mechanism_template,
@@ -1135,6 +1471,21 @@ Debate Transcript:
                             "anchors_normalized": normalized_anchors,
                             "support_level": debate_eval.support_level,
                         },
+                    )
+                    _write_checkpoint(
+                        "accepted",
+                        i,
+                        sample_data=sample_data,
+                        current_sample_block=current_sample_block,
+                        current_sample_block_sha256=_sha256_text(current_sample_block),
+                        debate=debate,
+                        judge_eval=debate_eval.model_dump(),
+                        normalized_anchors=normalized_anchors,
+                        verifier=verifier_meta,
+                        verifier_audit=verifier_audit.model_dump() if verifier_audit else None,
+                        output_file=output_file,
+                        export_data=export_data,
+                        last_judge_reason=last_judge_reason,
                     )
                     
                     await updater.add_artifact(
@@ -1180,6 +1531,12 @@ Debate Transcript:
             # Persist RunRecord (A1) - Failure path
             record_path = req.config.get("record_path", f"artifacts/runs/{run_id}.json")
             replay_manager.save_record(record_path)
+            _write_checkpoint(
+                "failed",
+                max_refinements,
+                last_judge_reason=last_judge_reason,
+                output_file=output_file,
+            )
 
             await updater.update_status(TaskState.working, new_agent_text_message("Failed to reach consensus after max refinements."))
             await updater.add_artifact(

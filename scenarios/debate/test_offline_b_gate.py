@@ -239,10 +239,61 @@ def test_usage_model_and_generation_config_metrics():
         assert metrics["generation_config_missing_attempts"] == 0
 
 
+def test_accepted_logic_error_metrics_fail_gate():
+    rows = [
+        {
+            "instruction": "Analyze ...",
+            "input": "int foo(){ return bar(x); }",
+            "output": {
+                "predicate": "X",
+                "anchors": ["bar(x)", "foo("],
+                "counterfactual": "Replace bar(x) with baz(x).",
+                "verifier_report": {"passes_audit": True, "logic_error": "signed overflow assumed wrap"},
+                "support_level": "supported",
+            },
+        }
+    ]
+    attempts = [
+        {
+            "seed": 56,
+            "predicate": "X",
+            "decision": "accepted",
+            "support_level": "supported",
+            "judge_eval": {"winner": "pro_debater"},
+            "verifier": {
+                "called": True,
+                "parse_ok": True,
+                "passes_audit": True,
+                "raw_response": json.dumps(
+                    {
+                        "passes_audit": True,
+                        "logic_error": "signed overflow assumed wrap",
+                    }
+                ),
+            },
+        },
+    ]
+    with tempfile.TemporaryDirectory() as td:
+        p = td + "/c.jsonl"
+        a = td + "/attempts.jsonl"
+        _write_jsonl(p, rows)
+        _write_jsonl(a, attempts)
+        metrics = compute_b_metrics(
+            input_path=p,
+            attempts_path=a,
+            config=BGateConfig(thresholds=BGateThresholds()),
+        )
+        assert metrics["accepted_attempt_logic_error_count"] == 1
+        assert metrics["accepted_corpus_logic_error_count"] == 1
+        assert metrics["checks"]["max_accepted_logic_error_rate"] is False
+        assert metrics["pass"] is False
+
+
 if __name__ == "__main__":
     test_gate_passes_on_grounded_sample()
     test_gate_fails_when_no_anchor_matches_input()
     test_verifier_metrics_and_disagreement_counts()
     test_strict_b2_and_verifier_threshold_checks()
     test_usage_model_and_generation_config_metrics()
+    test_accepted_logic_error_metrics_fail_gate()
     print("ok")
