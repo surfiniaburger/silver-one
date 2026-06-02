@@ -52,6 +52,47 @@ def _valid_verifier_report(value: Any) -> bool:
     return False
 
 
+def _nonempty_logic_error(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _logic_error_from_raw_response(raw_response: Any) -> Optional[str]:
+    if not isinstance(raw_response, str) or not raw_response.strip():
+        return None
+    try:
+        data, _ = json.JSONDecoder().raw_decode(raw_response.strip())
+    except Exception:
+        return None
+    if isinstance(data, dict):
+        logic_error = data.get("logic_error")
+        if _nonempty_logic_error(logic_error):
+            return logic_error
+    return None
+
+
+def _logic_error_from_attempt(attempt: Dict[str, Any]) -> Optional[str]:
+    logic_error = attempt.get("logic_error")
+    if _nonempty_logic_error(logic_error):
+        return logic_error
+
+    verifier = attempt.get("verifier")
+    if isinstance(verifier, dict):
+        logic_error = verifier.get("logic_error")
+        if _nonempty_logic_error(logic_error):
+            return logic_error
+        return _logic_error_from_raw_response(verifier.get("raw_response"))
+    return None
+
+
+def _logic_error_from_row(row: Dict[str, Any]) -> Optional[str]:
+    verifier_report = _get(row, "output.verifier_report")
+    if isinstance(verifier_report, dict):
+        logic_error = verifier_report.get("logic_error")
+        if _nonempty_logic_error(logic_error):
+            return logic_error
+    return None
+
+
 def _anchor_matches_input(anchor: str, input_text: str, *, case_insensitive: bool) -> bool:
     if not _is_nonempty_str(anchor) or not _is_nonempty_str(input_text):
         return False
@@ -77,6 +118,7 @@ class BGateThresholds:
     min_anchor_match_rate: float = 0.80
     min_verifier_pass_rate: float = 0.0
     min_verifier_parse_ok_rate: float = 0.0
+    max_accepted_logic_error_rate: float = 0.0
     max_cost_per_accepted_row: Optional[float] = None
     max_tokens_per_accepted_row: Optional[float] = None
 
@@ -205,6 +247,8 @@ def compute_b_metrics(
     attempts_inconclusive = 0
     attempts_soft_aboutness_total = 0
     attempts_soft_aboutness_fail = 0
+    attempts_predicate_quality_total = 0
+    attempts_predicate_quality_fail = 0
     attempts_soft_mech_total = 0
     attempts_soft_mech_fail = 0
     verifier_called = 0
@@ -213,6 +257,9 @@ def compute_b_metrics(
     prowin_total = 0
     verifier_called_on_prowin = 0
     accepted_with_not_applicable = 0
+    accepted_attempt_logic_error_count = 0
+    accepted_corpus_logic_error_count = 0
+    accepted_logic_error_examples: List[Dict[str, Any]] = []
     disagreement_missing_or_parse_fail = 0
     disagreement_verifier_pass_anchor_strict_fail = 0
     attempts_b2_strict_total = 0
@@ -242,6 +289,12 @@ def compute_b_metrics(
 
             soft = attempt.get("soft_checks") if isinstance(attempt, dict) else None
             if isinstance(soft, dict):
+                pq = soft.get("predicate_quality")
+                if isinstance(pq, dict) and "pass" in pq:
+                    attempts_predicate_quality_total += 1
+                    if not bool(pq.get("pass")):
+                        attempts_predicate_quality_fail += 1
+
                 pa = soft.get("predicate_aboutness")
                 if isinstance(pa, dict) and "pass" in pa:
                     attempts_soft_aboutness_total += 1
@@ -275,6 +328,17 @@ def compute_b_metrics(
                 called = bool(verifier.get("called")) if isinstance(verifier, dict) else False
                 if (not called) or (not parse_ok):
                     disagreement_missing_or_parse_fail += 1
+                logic_error = _logic_error_from_attempt(attempt)
+                if _nonempty_logic_error(logic_error):
+                    accepted_attempt_logic_error_count += 1
+                    if len(accepted_logic_error_examples) < 5:
+                        accepted_logic_error_examples.append(
+                            {
+                                "seed": attempt.get("seed"),
+                                "predicate": attempt.get("predicate"),
+                                "logic_error": logic_error,
+                            }
+                        )
 
             # Disagreement audit #2: verifier passes but strict anchor gate fails.
             if attempt.get("reject_reason") == "anchors_no_match":
@@ -385,6 +449,9 @@ def compute_b_metrics(
                 continue
             if out.get("verifier_report") == "not_applicable":
                 accepted_with_not_applicable += 1
+            logic_error = _logic_error_from_row(row)
+            if _nonempty_logic_error(logic_error):
+                accepted_corpus_logic_error_count += 1
 
     metrics: Dict[str, Any] = {
         "input_path": input_path,
@@ -404,6 +471,12 @@ def compute_b_metrics(
             else None
         ),
         "b2_predicate_aboutness_total": attempts_soft_aboutness_total if attempts_path else None,
+        "predicate_quality_fail_rate": (
+            attempts_predicate_quality_fail / max(attempts_predicate_quality_total, 1)
+            if attempts_path
+            else None
+        ),
+        "predicate_quality_total": attempts_predicate_quality_total if attempts_path else None,
         "b2_mechanism_grounding_fail_rate": (
             attempts_soft_mech_fail / max(attempts_soft_mech_total, 1) if attempts_path else None
         ),
@@ -417,6 +490,21 @@ def compute_b_metrics(
         "verifier_pass_rate": (verifier_pass / max(verifier_parse_ok, 1)) if attempts_path else None,
         "accepted_with_not_applicable_rate": (
             accepted_with_not_applicable / max(accepted, 1) if attempts_path else None
+        ),
+        "accepted_attempt_logic_error_count": (
+            accepted_attempt_logic_error_count if attempts_path else None
+        ),
+        "accepted_attempt_logic_error_rate": (
+            accepted_attempt_logic_error_count / max(accepted, 1) if attempts_path else None
+        ),
+        "accepted_corpus_logic_error_count": (
+            accepted_corpus_logic_error_count if attempts_path else None
+        ),
+        "accepted_corpus_logic_error_rate": (
+            accepted_corpus_logic_error_count / max(accepted, 1) if attempts_path else None
+        ),
+        "accepted_logic_error_examples": (
+            accepted_logic_error_examples if attempts_path else None
         ),
         "disagreement_judge_accept_but_verifier_missing_or_parse_fail_count": (
             disagreement_missing_or_parse_fail if attempts_path else None
@@ -516,6 +604,16 @@ def compute_b_metrics(
                     and metrics["verifier_parse_ok_rate"] >= thresholds.min_verifier_parse_ok_rate
                 )
             ),
+            "max_accepted_logic_error_rate": (
+                True
+                if not attempts_path
+                else (
+                    metrics["accepted_attempt_logic_error_rate"] is not None
+                    and metrics["accepted_attempt_logic_error_rate"] <= thresholds.max_accepted_logic_error_rate
+                    and metrics["accepted_corpus_logic_error_rate"] is not None
+                    and metrics["accepted_corpus_logic_error_rate"] <= thresholds.max_accepted_logic_error_rate
+                )
+            ),
             "max_cost_per_accepted_row": (
                 True
                 if (not attempts_path or thresholds.max_cost_per_accepted_row is None)
@@ -539,6 +637,7 @@ def compute_b_metrics(
             "min_anchor_match_rate": thresholds.min_anchor_match_rate,
             "min_verifier_pass_rate": thresholds.min_verifier_pass_rate,
             "min_verifier_parse_ok_rate": thresholds.min_verifier_parse_ok_rate,
+            "max_accepted_logic_error_rate": thresholds.max_accepted_logic_error_rate,
             "max_cost_per_accepted_row": thresholds.max_cost_per_accepted_row,
             "max_tokens_per_accepted_row": thresholds.max_tokens_per_accepted_row,
         }
@@ -569,6 +668,7 @@ def main() -> int:
     p.add_argument("--min-anchor-match-rate", type=float, default=0.80)
     p.add_argument("--min-verifier-pass-rate", type=float, default=0.0)
     p.add_argument("--min-verifier-parse-ok-rate", type=float, default=0.0)
+    p.add_argument("--max-accepted-logic-error-rate", type=float, default=0.0)
     p.add_argument("--max-cost-per-accepted-row", type=float, default=-1.0)
     p.add_argument("--max-tokens-per-accepted-row", type=float, default=-1.0)
     args = p.parse_args()
@@ -582,6 +682,7 @@ def main() -> int:
         min_anchor_match_rate=args.min_anchor_match_rate,
         min_verifier_pass_rate=args.min_verifier_pass_rate,
         min_verifier_parse_ok_rate=args.min_verifier_parse_ok_rate,
+        max_accepted_logic_error_rate=args.max_accepted_logic_error_rate,
         max_cost_per_accepted_row=(
             None if args.max_cost_per_accepted_row < 0 else args.max_cost_per_accepted_row
         ),
