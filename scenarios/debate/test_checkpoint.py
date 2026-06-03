@@ -26,6 +26,8 @@ def test_checkpoint_round_trip_and_validation():
         assert loaded["phase"] == "judge_complete"
         assert loaded["updated_at"] == "2026-05-31T00:00:00Z"
 
+        # Clock values are recorded for audit but should not be required
+        # as strict resume controls, otherwise resume would fail on timestamp drift.
         validate_checkpoint(
             loaded,
             {

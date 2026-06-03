@@ -637,7 +637,6 @@ def _checkpoint_controls(
         "seed": replay_manager.run_record.rng_seed,
         "mode": mode,
         "cassette_path": cassette_path,
-        "clock_now": replay_manager.run_record.created_at,
         "models": dict(replay_manager.run_record.models),
         "generation_config": dict(replay_manager.run_record.generation_config),
         "predicate": predicate,
@@ -878,6 +877,7 @@ class DebateJudgeADK(GreenAgent):
             payload = {
                 "schema_version": 1,
                 **controls,
+                "clock_now": replay_manager.run_record.created_at,
                 "current_input_block_sha256": _sha256_text(current_input_block),
                 "phase": phase,
                 "refinement_round": refinement_round,
@@ -1352,12 +1352,17 @@ Debate Transcript:
                         verifier_meta["logic_error"] = verifier_audit.logic_error
                         if (not verifier_audit.passes_audit) or _has_logic_error(verifier_audit.logic_error):
                             is_valid = False
+                            has_logic_error = _has_logic_error(verifier_audit.logic_error)
                             reject_reason = (
                                 "verifier_logic_error"
-                                if _has_logic_error(verifier_audit.logic_error)
+                                if has_logic_error
                                 else "verifier_failed"
                             )
-                            last_judge_reason = f"VERIFIER AUDIT FAILED: {verifier_audit.logic_error}"
+                            last_judge_reason = (
+                                f"VERIFIER AUDIT FAILED: {verifier_audit.logic_error}"
+                                if has_logic_error
+                                else "VERIFIER AUDIT FAILED: audit did not pass"
+                            )
                             logger.warning(last_judge_reason)
                             
                             _append_attempt(

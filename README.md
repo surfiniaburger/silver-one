@@ -10,12 +10,108 @@ The main implemented scenario is **BARRED** (Boundary Adversarial Reasoning for 
 - an optional Verifier agent (`adk_debate_verifier.py`) audits groundedness,
 - outputs are written as training corpus rows and audited with an offline B-gate.
 
+## Why This Matters
+
+LLM-generated security datasets and agent evaluations are easy to make and hard to trust. Small hidden changes in prompts, model sampling, timestamps, tool calls, or verifier behavior can change which rows enter a corpus. `silver-one` treats those changing values as recorded inputs so generated rows can be audited, replayed, resumed, and rejected when the evidence is weak.
+
+The goal is not to maximize synthetic data volume. The goal is to produce security-evaluation rows whose verdict, anchors, mechanism, verifier outcome, model controls, and run state are inspectable after the fact.
+
+## Who This Is For
+
+- AI evaluation researchers building reproducible agent benchmarks.
+- Security dataset builders who need grounded vulnerability examples rather than unsupported labels.
+- Agent framework maintainers studying checkpoint/resume, replay, and verifier boundaries.
+- Engineers comparing model behavior across local, cloud, and Kaggle benchmark providers.
+
+## Current Status
+
+`silver-one` is early-stage research infrastructure under active development. It does not yet have broad public adoption, stars, or package downloads. It does have a working local harness, deterministic replay machinery, checkpointed batch execution, verifier accounting, calibrated corpus gates, and concrete run metrics from repeated pilot batches.
+
+Use it today as an experimental evaluation harness, not as a polished production package.
+
 ## What This Repo Contains
 
 - Agent runtime primitives under `src/agentbeats`.
 - A complete debate scenario under `scenarios/debate`.
 - Determinism tooling (record/replay cassettes and run records).
 - Batch and Kaggle runners for larger corpus generation.
+- Offline quality gates for structural completeness, anchor grounding, verifier parse/pass rates, logic-error leakage, and token efficiency.
+
+## Architecture At A Glance
+
+```mermaid
+flowchart LR
+    Seeds["CVE / security seeds"] --> Batch["run_batch.py"]
+    Batch --> Judge["Green judge agent"]
+    Judge --> Generator["Boundary generator"]
+    Judge --> Pro["Pro debater"]
+    Judge --> Con["Con debater"]
+    Judge --> Verifier["Verifier audit"]
+    Generator --> Replay["ReplayManager + cassette"]
+    Pro --> Replay
+    Con --> Replay
+    Verifier --> Replay
+    Judge --> Corpus["training_corpus*.jsonl"]
+    Judge --> Attempts["attempts/*.jsonl"]
+    Judge --> Checkpoints["checkpoints/<run>/<seed>.json"]
+    Corpus --> BGate["offline_b_gate.py"]
+    Attempts --> BGate
+    BGate --> Metrics["metrics/*.json"]
+```
+
+For the fuller Mermaid breakdown and stress-test playbook, see `docs/ARCHITECTURE_MERMAID.md`.
+
+## Reproducible Smoke Path
+
+Start the BARRED stack:
+
+```bash
+./scenarios/debate/start_stack.sh
+```
+
+In a second terminal, run a clocked batch:
+
+```bash
+uv run python scenarios/debate/run_batch.py \
+  --run-id pilot-v1-clocked \
+  --seed 42 \
+  --mode record \
+  --clock-now 2026-05-31T16:06:00Z \
+  --seeds scenarios/debate/cve_seeds_test.jsonl \
+  --output training_corpus_clocked.jsonl \
+  --attempts-out artifacts/attempts/pilot-v1-clocked.jsonl
+```
+
+Compute B-gate metrics:
+
+```bash
+uv run python scenarios/debate/offline_b_gate.py \
+  --input training_corpus_clocked.jsonl \
+  --attempts artifacts/attempts/pilot-v1-clocked.jsonl \
+  --metrics-out artifacts/metrics/b_gate-pilot-v1-clocked.json
+```
+
+## Latest Calibrated Results
+
+After predicate-quality calibration and logic-error gating, the clean calibrated runs showed stable quality with lower yield:
+
+| Metric | Calibrated B | Calibrated C |
+| :--- | ---: | ---: |
+| B-gate pass | `true` | `true` |
+| Accepted rows | `11` | `10` |
+| Attempts | `30` | `31` |
+| Predicate-quality fail rate | `0.0909` | `0.0870` |
+| Accepted logic-error count | `0` | `0` |
+| Verifier parse OK rate | `1.00` | `1.00` |
+| Strict B2 fail rate | `0.1034` | `0.0645` |
+| Mechanism grounding fail rate | `0.0333` | `0.0000` |
+| Tokens / accepted row | `94,480` | `98,304` |
+
+Interpretation: corpus cleanliness improved, placeholder predicates are rejected, verifier logic errors no longer leak into accepted rows, and the next optimization target is yield/token efficiency rather than predicate calibration.
+
+## Artifact Hygiene
+
+Generated corpora, cassettes, attempts, metrics, checkpoints, and local `.env` files are intentionally ignored by git. Keep committed changes focused on harness code, seed definitions, tests, docs, and reproducible commands. Run artifacts should be attached to reports or copied into docs only when they are intentionally curated.
 
 ## Architecture
 
@@ -118,31 +214,6 @@ uv run agentbeats-run scenarios/debate/scenario.toml
 ```
 
 ## BARRED Workflow
-
-## Latest Benchmark Snapshot (Run 5)
-
-Source: `artifacts/metrics/b_gate-20260527-043758.json`
-
-| Metric | Value |
-| :--- | :--- |
-| Pass | `true` |
-| Accepted Rows | `13` |
-| Attempts | `30` |
-| Verifier Parse OK Rate | `1.00` |
-| Verifier Pass Rate | `0.6842` |
-| Strict B2 Fail Rate | `0.1667` |
-| Total Tokens | `846,681` |
-| Tokens / Attempt | `28,222.7` |
-| Tokens / Accepted Row | `65,129.3` |
-| Usage Source Coverage | `provider: 101/101 (100%)` |
-
-Top token sinks by stage:
-
-| Stage | Calls | Prompt Tokens | Completion Tokens | Total Tokens | Share |
-| :--- | ---: | ---: | ---: | ---: | ---: |
-| `generator_boundary` | 21 | 407,887 | 24,539 | 432,426 | 51.1% |
-| `generator_refine` | 20 | 174,489 | 38,396 | 212,885 | 25.1% |
-| `judge_adjudication` | 60 | 121,413 | 79,957 | 201,370 | 23.8% |
 
 ### Option A: Start the full stack via helper script
 
@@ -260,7 +331,7 @@ uv run python scenarios/debate/run_batch.py \
   --output training_corpus.jsonl
 ```
 
-Checkpoints preserve the latest durable phase for a seed, including generated sample, debate transcript, judge output, strict-gate state, verifier state, and run controls. Resume fails if run controls drift, including model choices, sampling config, seed, predicate, target verdict, target dimension, or cassette path.
+Checkpoints preserve the latest durable phase for a seed, including generated sample, debate transcript, judge output, strict-gate state, verifier state, and run controls. Resume validates logical controls, not wall-clock equality: it fails if model choices, sampling config, seed, predicate, target verdict, target dimension, cassette path, or input hash drift, but `clock_now` is recorded as audit metadata rather than used as a strict resume key. Each checkpoint also stores `updated_at`, the actual checkpoint write time.
 
 Batch runs use a base seed plus item index (`item_seed = base_seed + zero_based_index`) and write one run record per item seed. The batch manifest records this seed schedule, per-seed checkpoint paths, per-seed run-record paths, and the injected `clock_now` value used for run records and checkpoints. Set `RUN_CLOCK_NOW` or pass `--clock-now` to freeze artifact timestamps for deterministic replay audits.
 
@@ -320,13 +391,6 @@ silver-one/
 ├─ pyproject.toml
 └─ README.md
 ```
-
-## Architecture Diagrams and Stress-Test Playbook
-
-Use the Mermaid-based breakdown and critique flows here:
-- `docs/ARCHITECTURE_MERMAID.md`
-
-It maps Prompt Engineering, Context Engineering, and Harness Engineering directly to the `silver-one` code paths and includes stress-test/checklist flows for security and quality reviews.
 
 ## Contributing
 

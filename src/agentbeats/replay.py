@@ -184,11 +184,15 @@ class ReplayManager:
     def _to_response_dict(self, response_obj: Any) -> Dict[str, Any]:
         if isinstance(response_obj, dict):
             return response_obj
+        # Use json() + loads() to bypass Pydantic serialization warnings for non-standard fields
+        if hasattr(response_obj, "json"):
+            try:
+                return json.loads(response_obj.json())
+            except Exception:
+                pass
         if hasattr(response_obj, "model_dump"):
             try:
-                data = response_obj.model_dump()
-                if isinstance(data, dict):
-                    return data
+                return response_obj.model_dump()
             except Exception:
                 pass
         return {}
