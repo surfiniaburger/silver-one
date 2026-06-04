@@ -2,7 +2,9 @@
 
 > Changing world values are inputs. Inputs are recorded. Recorded inputs are replayable. Replayable workflows are evolvable.
 
-`silver-one` is an Agentbeats evaluation project focused on deterministic, reproducible multi-agent security debates.
+`silver-one` is an Agentbeats research project for generating auditable code-security reasoning data. Its long-term goal is to build the kind of grounded corpus needed to train safer security-reasoning models: models that learn from concrete evidence hooks, mechanism-level invariants, verifier feedback, and rejected failure cases instead of shallow vulnerable/safe labels.
+
+The project is a continuation of the In-Varia metacognitive-control research direction and the Google DeepMind/Kaggle AGI hackathon work behind MCSB v2. That earlier work showed that models can look calibrated in static settings while failing to update beliefs correctly under adversarial code-security evidence. `silver-one` moves from measuring that failure mode toward producing better training data for it.
 
 The main implemented scenario is **BARRED** (Boundary Adversarial Reasoning for Reproducible Evaluation and Dataset generation):
 - a Green agent (`adk_debate_judge.py`) orchestrates debate rounds,
@@ -12,14 +14,26 @@ The main implemented scenario is **BARRED** (Boundary Adversarial Reasoning for 
 
 ## Why This Matters
 
-LLM-generated security datasets and agent evaluations are easy to make and hard to trust. Small hidden changes in prompts, model sampling, timestamps, tool calls, or verifier behavior can change which rows enter a corpus. `silver-one` treats those changing values as recorded inputs so generated rows can be audited, replayed, resumed, and rejected when the evidence is weak.
+LLM-generated security datasets and agent evaluations are easy to make and hard to trust. Small hidden changes in prompts, model sampling, timestamps, tool calls, or verifier behavior can change which rows enter a corpus. If those rows are later used for training, hidden errors become training signal.
 
-The goal is not to maximize synthetic data volume. The goal is to produce security-evaluation rows whose verdict, anchors, mechanism, verifier outcome, model controls, and run state are inspectable after the fact.
+`silver-one` treats changing values as recorded inputs so generated rows can be audited, replayed, resumed, and rejected when the evidence is weak. The goal is not to maximize synthetic data volume. The goal is to produce a deep reasoning corpus whose verdicts, anchors, mechanisms, verifier outcomes, model controls, rejected attempts, and run state are inspectable after the fact.
+
+The intended downstream use is training and evaluating safer code-security reasoning models. In this repo, "safer" means evidence-grounded, less prone to unsupported vulnerability claims, more explicit about uncertainty and failure modes, and easier to audit when a generated row is wrong.
+
+## Where This Is Headed
+
+`silver-one` is building toward a SecurityDecisionGuard-style training loop: generate high-fidelity code-security examples, debate the boundary condition, verify the mechanism, reject unsupported labels, and preserve enough trace data for later audit.
+
+The near-term artifact is a **Deep Reasoning Corpus** for code security. Each accepted row should teach more than a label. It should expose the evidence hooks, mechanism-level invariants, counterfactual boundary, verifier judgment, model controls, and failure cases that shaped the decision.
+
+The longer-term objective is to train and evaluate safer security-reasoning models: models that reason from grounded evidence, update under adversarial evidence, avoid shallow vulnerability claims, and make their uncertainty and failure modes visible enough for humans to inspect.
+
 
 ## Who This Is For
 
 - AI evaluation researchers building reproducible agent benchmarks.
-- Security dataset builders who need grounded vulnerability examples rather than unsupported labels.
+- Security dataset builders who need grounded vulnerability examples and rejected counterexamples rather than unsupported labels.
+- Model builders training code-security reasoning models from auditable synthetic data.
 - Agent framework maintainers studying checkpoint/resume, replay, and verifier boundaries.
 - Engineers comparing model behavior across local, cloud, and Kaggle benchmark providers.
 
