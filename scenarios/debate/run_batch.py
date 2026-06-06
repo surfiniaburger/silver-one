@@ -51,8 +51,15 @@ async def run_batch():
                 except:
                     pass
 
+    seeds = []
     with open(args.seeds, "r") as f:
-        seeds = [json.loads(line) for line in f]
+        for lineno, line in enumerate(f, 1):
+            if not line.strip():
+                continue
+            try:
+                seeds.append(json.loads(line))
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"Invalid JSONL in {args.seeds} at line {lineno}: {exc}") from exc
 
     manifest = {
         "schema_version": 1,
