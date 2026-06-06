@@ -276,23 +276,15 @@ Use this exact flow when you want attempts-level soft checks captured and scored
 ./scenarios/debate/start_stack.sh
 
 # Re-run a record run to generate attempts with soft_checks
-uv run python scenarios/debate/run_batch.py \
-  --run-id pilot-v1-softchecks \
-  --mode record \
-  --seed 42 \
-  --seeds scenarios/debate/cve_seeds_test.jsonl \
-  --output training_corpus.jsonl \
-  --attempts-out artifacts/attempts/pilot-v1-softchecks.jsonl
-
 
 uv run python scenarios/debate/run_batch.py \
-  --run-id pilot-v1-clocked \
+  --run-id pilot-v1-calibrated-d \
   --seed 42 \
   --mode record \
-  --clock-now 2026-05-31T16:06:00Z \
+  --clock-now 2026-06-30T20:50:00Z \
   --seeds scenarios/debate/cve_seeds_test.jsonl \
-  --output training_corpus_clocked.jsonl \
-  --attempts-out artifacts/attempts/pilot-v1-clocked.jsonl
+  --output training_corpus_calibrated_d.jsonl \
+  --attempts-out artifacts/attempts/pilot-v1-calibrated-d.jsonl
 
 
 # Compute B metrics + soft-check rates
@@ -300,10 +292,10 @@ uv run python scenarios/debate/run_batch.py \
 
 or
 
-UV_CACHE_DIR=/tmp/uv-cache uv run python scenarios/debate/offline_b_gate.py \
-  --input training_corpus.jsonl \
-  --attempts artifacts/attempts/pilot-v1-softchecks.jsonl \
-  --metrics-out artifacts/metrics/b_gate.json
+./scripts/run_b_gate.sh \
+  training_corpus_calibrated_d.jsonl \
+  artifacts/attempts/pilot-v1-calibrated-d.jsonl \
+  artifacts/metrics/b_gate-pilot-v1-calibrated-d.json
 ```
 
 ## Determinism and Replay
