@@ -281,7 +281,7 @@ uv run python scenarios/debate/run_batch.py \
   --run-id pilot-v1-calibrated-d \
   --seed 42 \
   --mode record \
-  --clock-now 2026-06-31T20:50:00Z \
+  --clock-now 2026-06-30T20:50:00Z \
   --seeds scenarios/debate/cve_seeds_test.jsonl \
   --output training_corpus_calibrated_d.jsonl \
   --attempts-out artifacts/attempts/pilot-v1-calibrated-d.jsonl
