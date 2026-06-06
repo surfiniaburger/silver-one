@@ -52,7 +52,7 @@ async def run_batch():
                     pass
 
     seeds = []
-    with open(args.seeds, "r") as f:
+    with open(args.seeds, "r", encoding="utf-8") as f:
         for lineno, line in enumerate(f, 1):
             if not line.strip():
                 continue
