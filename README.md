@@ -278,24 +278,21 @@ Use this exact flow when you want attempts-level soft checks captured and scored
 # Re-run a record run to generate attempts with soft_checks
 
 uv run python scenarios/debate/run_batch.py \
-  --run-id pilot-v1-calibrated-d \
+  --run-id pilot-v1-calibrated-e \
   --seed 42 \
-  --mode record \
-  --clock-now 2026-06-30T20:50:00Z \
+  --mode replay \
+  --clock-now 2026-06-07T12:09:00Z \
   --seeds scenarios/debate/cve_seeds_test.jsonl \
-  --output training_corpus_calibrated_d.jsonl \
-  --attempts-out artifacts/attempts/pilot-v1-calibrated-d.jsonl
+  --output training_corpus_calibrated_e.jsonl \
+  --attempts-out artifacts/attempts/pilot-v1-calibrated-e.jsonl
 
 
 # Compute B metrics + soft-check rates
-./scripts/run_b_gate.sh
-
-or
 
 ./scripts/run_b_gate.sh \
-  training_corpus_calibrated_d.jsonl \
-  artifacts/attempts/pilot-v1-calibrated-d.jsonl \
-  artifacts/metrics/b_gate-pilot-v1-calibrated-d.json
+  training_corpus_calibrated_e.jsonl \
+  artifacts/attempts/pilot-v1-calibrated-e.jsonl \
+  artifacts/metrics/b_gate-pilot-v1-calibrated-e.json
 ```
 
 ## Determinism and Replay
@@ -317,24 +314,28 @@ Replay example:
 
 ```bash
 uv run python scenarios/debate/run_batch.py \
-  --run-id pilot-v1 \
+  --run-id pilot-v1-calibrated-e \
   --seed 42 \
   --mode replay \
-  --seeds scenarios/debate/cve_seeds_50.jsonl \
-  --output training_corpus_replay.jsonl
+  --clock-now 2026-06-07T12:29:00Z \
+  --seeds scenarios/debate/cve_seeds_test.jsonl \
+  --output training_corpus_calibrated_e.jsonl \
+  --attempts-out artifacts/attempts/pilot-v1-calibrated-e.jsonl
 ```
 
-Resume a partially completed batch from per-seed workflow checkpoints:
+Resume a partially completed batch from per-seed workflow checkpoints, (remember to crank the clock before resuming):
 
 ```bash
 uv run python scenarios/debate/run_batch.py \
-  --run-id pilot-v1 \
+  --run-id pilot-v1-calibrated-e \
   --seed 42 \
   --mode record \
   --resume \
-  --checkpoint-dir artifacts/checkpoints \
-  --seeds scenarios/debate/cve_seeds_50.jsonl \
-  --output training_corpus.jsonl
+  --clock-now 2026-06-07T13:08:00Z \
+  --checkpoint-dir artifacts/checkpoints/pilot-v1-calibrated-e \
+  --seeds scenarios/debate/cve_seeds_test.jsonl \
+  --output training_corpus_calibrated_e.jsonl \
+  --attempts-out artifacts/attempts/pilot-v1-calibrated-e.jsonl  
 ```
 
 Checkpoints preserve the latest durable phase for a seed, including generated sample, debate transcript, judge output, strict-gate state, verifier state, and run controls. Resume validates logical controls, not wall-clock equality: it fails if model choices, sampling config, seed, predicate, target verdict, target dimension, cassette path, or input hash drift, but `clock_now` is recorded as audit metadata rather than used as a strict resume key. Each checkpoint also stores `updated_at`, the actual checkpoint write time.
