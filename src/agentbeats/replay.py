@@ -66,7 +66,6 @@ class LLMCassette:
                     self.data = json.load(f)
                     self._unlock(f)
             except Exception as e:
-                logger = logging.getLogger(__name__)
                 logger.warning("Failed to load cassette %s: %s", self.path, e)
 
     def get_response(self, model: str, messages: list, params: Dict[str, Any]) -> Optional[Any]:
