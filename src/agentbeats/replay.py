@@ -41,7 +41,6 @@ class LLMCassette:
                 # Use logging instead of printing directly. This respects any
                 # logging configuration the host may have set and makes the
                 # warning easily testable.
-                logger = logging.getLogger(__name__)
                 logger.warning("Failed to load cassette %s: %s", path, e)
 
     def _hash(self, model: str, messages: list, params: Dict[str, Any]) -> str:
