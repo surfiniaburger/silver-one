@@ -3,6 +3,9 @@ import json
 import fcntl
 import tempfile
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 from typing import Dict, Any, Optional, List, Tuple
 from pydantic import BaseModel
 from agentbeats.clock import RunClock
@@ -35,7 +38,10 @@ class LLMCassette:
                 with open(path, "r") as f:
                     self.data = json.load(f)
             except Exception as e:
-                print(f"Warning: Failed to load cassette {path}: {e}")
+                # Use logging instead of printing directly. This respects any
+                # logging configuration the host may have set and makes the
+                # warning easily testable.
+                logger.warning("Failed to load cassette %s: %s", path, e)
 
     def _hash(self, model: str, messages: list, params: Dict[str, Any]) -> str:
         # Include all generation-affecting params in the hash
@@ -60,7 +66,7 @@ class LLMCassette:
                     self.data = json.load(f)
                     self._unlock(f)
             except Exception as e:
-                print(f"Warning: Failed to load cassette {self.path}: {e}")
+                logger.warning("Failed to load cassette %s: %s", self.path, e)
 
     def get_response(self, model: str, messages: list, params: Dict[str, Any]) -> Optional[Any]:
         # Always reload before reading in case another process updated it
