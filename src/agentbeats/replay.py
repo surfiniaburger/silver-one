@@ -5,6 +5,15 @@ import tempfile
 import os
 import logging
 
+# ``litellm`` is required for the async completion wrapper and the token / cost helpers.
+# Importing it once at module load time avoids repeated import overhead and makes the
+# dependency explicit. If the package is missing we set a placeholder so the module can be
+# imported (useful for tests that mock the provider).
+try:
+    import litellm  # type: ignore
+except Exception:  # pragma: no cover – the library may be absent in some environments
+    litellm = None  # type: ignore
+
 logger = logging.getLogger(__name__)
 from typing import Dict, Any, Optional, List, Tuple
 from pydantic import BaseModel
@@ -249,16 +258,18 @@ class ReplayManager:
 
     def _estimate_tokens(self, model: str, messages: List[Dict[str, Any]], response_obj: Any) -> Tuple[int, int, int]:
         try:
-            import litellm
-            prompt_tokens = int(litellm.token_counter(model=model, messages=messages) or 0)
+            if litellm is not None:
+                prompt_tokens = int(litellm.token_counter(model=model, messages=messages) or 0)
+            else:
+                prompt_tokens = 0
         except Exception:
             prompt_tokens = 0
         try:
-            import litellm
             completion_text = self._extract_message_text(response_obj)
-            completion_tokens = int(
-                litellm.token_counter(model=model, text=completion_text) or 0
-            ) if completion_text else 0
+            if litellm is not None and completion_text:
+                completion_tokens = int(litellm.token_counter(model=model, text=completion_text) or 0)
+            else:
+                completion_tokens = 0
         except Exception:
             completion_tokens = 0
         total_tokens = prompt_tokens + completion_tokens
@@ -299,11 +310,12 @@ class ReplayManager:
 
     def _estimate_cost_usd(self, model: str, response_obj: Any, usage: Dict[str, Any]) -> float:
         try:
-            import litellm
-            return float(litellm.completion_cost(completion_response=response_obj, model=model) or 0.0)
+            if litellm is not None:
+                return float(litellm.completion_cost(completion_response=response_obj, model=model) or 0.0)
         except Exception:
-            try:
-                import litellm
+            pass
+        try:
+            if litellm is not None:
                 pt = int(usage.get("prompt_tokens") or 0)
                 ct = int(usage.get("completion_tokens") or 0)
                 return float(
@@ -314,8 +326,9 @@ class ReplayManager:
                     )
                     or 0.0
                 )
-            except Exception:
-                return 0.0
+        except Exception:
+            pass
+        return 0.0
 
     def _record_usage_event(self, *, stage: str, model: str, messages: List[Dict[str, Any]], response_obj: Any, source: str) -> None:
         usage = self._extract_usage(model=model, messages=messages, response_obj=response_obj)
@@ -433,30 +446,40 @@ class ReplayManager:
 
     async def acompletion(self, model: str, messages: list, **kwargs):
         """Wrapper for litellm.acompletion with record/replay logic (A3)."""
-        import litellm
+        # Use the module-level `litellm` binding (may be None in test environments)
         stage = str(kwargs.pop("stage", "unknown"))
         self._apply_generation_config(model, kwargs)
         
         # In replay mode, fail loudly if not in cassette
         cached = self.cassette.get_response(model, messages, kwargs)
         if cached:
-            from litellm.utils import ModelResponse
-            if isinstance(cached, dict) and "choices" in cached:
-                # Return a proper litellm ModelResponse object for serialization compatibility
+            # Try to use litellm.ModelResponse when available for compatibility,
+            # otherwise return the cached dict/object directly.
+            ModelResponse = None
+            if litellm is not None:
+                try:
+                    from litellm.utils import ModelResponse as _ModelResponse
+                    ModelResponse = _ModelResponse
+                except Exception:
+                    ModelResponse = None
+
+            if ModelResponse is not None and isinstance(cached, dict) and "choices" in cached:
                 response = ModelResponse(**cached)
                 self._record_usage_event(stage=stage, model=model, messages=messages, response_obj=response, source="cache")
                 return response
-            else:
-                # Legacy or string-only fallback
-                response = ModelResponse(choices=[{"message": {"content": str(cached), "role": "assistant"}}])
-                self._record_usage_event(stage=stage, model=model, messages=messages, response_obj=response, source="cache_legacy")
-                return response
+
+            # Fallback: return the cached object/dict and record usage using it.
+            # _record_usage_event accepts either dict-like provider responses or model objects.
+            self._record_usage_event(stage=stage, model=model, messages=messages, response_obj=cached, source="cache_fallback")
+            return cached
 
         if self.cassette.mode == "replay":
             raise RuntimeError(f"Offline Replay Error: No cached response for {model} with hash {self.cassette._hash(model, messages, kwargs)}")
 
         # Make real call with increased timeout
         kwargs.setdefault("timeout", 1200)
+        if litellm is None:
+            raise RuntimeError("litellm is not available in this environment; cannot perform live completion")
         response = await litellm.acompletion(model=model, messages=messages, **kwargs)
         
         # Save full response
