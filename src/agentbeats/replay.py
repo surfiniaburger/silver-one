@@ -4,6 +4,8 @@ import fcntl
 import tempfile
 import os
 import logging
+
+logger = logging.getLogger(__name__)
 from typing import Dict, Any, Optional, List, Tuple
 from pydantic import BaseModel
 from agentbeats.clock import RunClock
