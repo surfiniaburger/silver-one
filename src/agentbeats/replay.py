@@ -11,7 +11,7 @@ import logging
 # imported (useful for tests that mock the provider).
 try:
     import litellm  # type: ignore
-except Exception:  # pragma: no cover – the library may be absent in some environments
+except ImportError:  # pragma: no cover – the library may be absent in some environments
     litellm = None  # type: ignore
 
 logger = logging.getLogger(__name__)
@@ -257,21 +257,21 @@ class ReplayManager:
         return ""
 
     def _estimate_tokens(self, model: str, messages: List[Dict[str, Any]], response_obj: Any) -> Tuple[int, int, int]:
+        # If litellm is not present, we can't estimate tokens — return zeros.
+        if litellm is None:
+            return 0, 0, 0
+
         try:
-            if litellm is not None:
-                prompt_tokens = int(litellm.token_counter(model=model, messages=messages) or 0)
-            else:
-                prompt_tokens = 0
+            prompt_tokens = int(litellm.token_counter(model=model, messages=messages) or 0)
         except Exception:
             prompt_tokens = 0
+
         try:
             completion_text = self._extract_message_text(response_obj)
-            if litellm is not None and completion_text:
-                completion_tokens = int(litellm.token_counter(model=model, text=completion_text) or 0)
-            else:
-                completion_tokens = 0
+            completion_tokens = int(litellm.token_counter(model=model, text=completion_text) or 0) if completion_text else 0
         except Exception:
             completion_tokens = 0
+
         total_tokens = prompt_tokens + completion_tokens
         return prompt_tokens, completion_tokens, total_tokens
 
@@ -453,23 +453,30 @@ class ReplayManager:
         # In replay mode, fail loudly if not in cassette
         cached = self.cassette.get_response(model, messages, kwargs)
         if cached:
-            # Try to use litellm.ModelResponse when available for compatibility,
-            # otherwise return the cached dict/object directly.
+            # Prefer returning a litellm ModelResponse when available to preserve
+            # caller expectations (attributes like `.choices`). If litellm or
+            # ModelResponse is unavailable, fall back to returning the raw cached
+            # object/dict.
             ModelResponse = None
             if litellm is not None:
                 try:
                     from litellm.utils import ModelResponse as _ModelResponse
                     ModelResponse = _ModelResponse
-                except Exception:
+                except ImportError:
                     ModelResponse = None
 
-            if ModelResponse is not None and isinstance(cached, dict) and "choices" in cached:
-                response = ModelResponse(**cached)
-                self._record_usage_event(stage=stage, model=model, messages=messages, response_obj=response, source="cache")
-                return response
+            if ModelResponse is not None:
+                if isinstance(cached, dict) and "choices" in cached:
+                    response = ModelResponse(**cached)
+                    self._record_usage_event(stage=stage, model=model, messages=messages, response_obj=response, source="cache")
+                    return response
+                else:
+                    # Legacy or string-only fallback wrapped into ModelResponse
+                    response = ModelResponse(choices=[{"message": {"content": str(cached), "role": "assistant"}}])
+                    self._record_usage_event(stage=stage, model=model, messages=messages, response_obj=response, source="cache_legacy")
+                    return response
 
-            # Fallback: return the cached object/dict and record usage using it.
-            # _record_usage_event accepts either dict-like provider responses or model objects.
+            # litellm/ModelResponse not available: return cached object/dict directly.
             self._record_usage_event(stage=stage, model=model, messages=messages, response_obj=cached, source="cache_fallback")
             return cached
 

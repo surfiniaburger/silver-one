@@ -23,7 +23,7 @@ python3 scenarios/debate/offline_b_gate.py \
 
 
 run a small seed 
-  
+
 PYTHONUNBUFFERED=1 \
 KAGGLE_SWARM_MAX_SEEDS=1 \
 KAGGLE_SWARM_MODELS=google/gemini-3-flash-preview \

@@ -280,8 +280,8 @@ Use this exact flow when you want attempts-level soft checks captured and scored
 uv run python scenarios/debate/run_batch.py \
   --run-id pilot-v1-calibrated-e \
   --seed 42 \
-  --mode replay \
-  --clock-now 2026-06-07T12:09:00Z \
+  --mode record \
+  --clock-now 2026-06-07T23:20:00Z \
   --seeds scenarios/debate/cve_seeds_test.jsonl \
   --output training_corpus_calibrated_e.jsonl \
   --attempts-out artifacts/attempts/pilot-v1-calibrated-e.jsonl
@@ -290,9 +290,9 @@ uv run python scenarios/debate/run_batch.py \
 # Compute B metrics + soft-check rates
 
 ./scripts/run_b_gate.sh \
-  training_corpus_calibrated_e.jsonl \
-  artifacts/attempts/pilot-v1-calibrated-e.jsonl \
-  artifacts/metrics/b_gate-pilot-v1-calibrated-e.json
+  training_corpus_calibrated_f.jsonl \
+  artifacts/attempts/pilot-v1-calibrated-f.jsonl \
+  artifacts/metrics/b_gate-pilot-v1-calibrated-f.json
 ```
 
 ## Determinism and Replay
