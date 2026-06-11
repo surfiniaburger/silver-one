@@ -2,6 +2,8 @@
 """
 workflow
 
+uv run kaggle benchmarks init -y
+
 cd /Users/surfiniaburger/Desktop/modular-metacog-swarm-v3/agent_training/silver-one
 
 PYTHONUNBUFFERED=1 \
