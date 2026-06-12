@@ -67,12 +67,13 @@ except Exception:
         fast: PropertyEvaluation
         first_tdd: PropertyEvaluation
         summary: str
-
         @classmethod
         def model_validate_json(cls, raw_json: str):
             payload = json.loads(raw_json)
+
             def _mk(pe):
-                return PropertyEvaluation(score=int(pe.get('score', 0)), rationale=pe.get('rationale',''), suggestions=pe.get('suggestions', []))
+                return PropertyEvaluation(score=int(pe.get('score', 0)), rationale=pe.get('rationale', ''), suggestions=pe.get('suggestions', []))
+
             return cls(
                 understandable=_mk(payload['understandable']),
                 maintainable=_mk(payload['maintainable']),
@@ -82,8 +83,9 @@ except Exception:
                 granular=_mk(payload['granular']),
                 fast=_mk(payload['fast']),
                 first_tdd=_mk(payload['first_tdd']),
-                summary=payload.get('summary','')
+                summary=payload.get('summary', '')
             )
+
 
 # --- AST Parser for Extracting Tests ---
 
@@ -110,6 +112,10 @@ class TestExtractor(ast.NodeVisitor):
                 "class_name": self.current_class
             })
         self.generic_visit(node)
+
+    # Ensure async test functions are captured as well (async def test_...)
+    visit_AsyncFunctionDef = visit_FunctionDef
+
 
 def extract_tests_from_file(filepath: str) -> List[Dict[str, Any]]:
     """Extract individual test functions/methods from a python file using AST."""
@@ -139,6 +145,102 @@ def extract_tests_from_file(filepath: str) -> List[Dict[str, Any]]:
     except Exception as e:
         print(f"\033[91mError parsing AST for {filepath}: {e}\033[0m")
         return []
+
+
+
+# --- Helper functions (kept at module level) ---
+async def find_target_files(input_paths: List[str]) -> List[str]:
+    paths = input_paths if input_paths else ["."]
+    target_files: List[str] = []
+    for path in paths:
+        if os.path.isfile(path):
+            if path.endswith('.py'):
+                target_files.append(path)
+        elif os.path.isdir(path):
+            pattern = os.path.join(path, "**/test_*.py")
+            for f in glob.glob(pattern, recursive=True):
+                target_files.append(f)
+            pattern_tail = os.path.join(path, "**/*_test.py")
+            for f in glob.glob(pattern_tail, recursive=True):
+                if f not in target_files:
+                    target_files.append(f)
+    return target_files
+
+
+def _init_replay_manager(run_id: str, seed: int, cassette: str, mode: str, model: str):
+    if ReplayManager is None:
+        return None
+    return ReplayManager.from_config(
+        run_id=run_id,
+        seed=seed,
+        cassette_path=cassette,
+        mode=mode,
+        model_config={"evaluator": model}
+    )
+
+
+async def evaluate_files(replay_mgr: ReplayManager, model: str, target_files: List[str]):
+    all_indices: List[float] = []
+    reviewed_count = 0
+    for filepath in target_files:
+        print(f"\033[90mParsing test cases from {filepath}...\033[0m")
+        test_cases = extract_tests_from_file(filepath)
+        if not test_cases:
+            continue
+        print(f"\033[90mEvaluating {len(test_cases)} case(s) in {os.path.basename(filepath)}...\033[0m")
+        for tc in test_cases:
+            try:
+                report = await evaluate_test_case(replay_mgr, model, tc, filepath)
+                idx = display_report(filepath, tc["name"], tc.get("class_name"), report)
+                all_indices.append(idx)
+                reviewed_count += 1
+            except Exception as e:
+                print(f"\033[91mFailed to evaluate test case {tc.get('name')}: {e}\033[0m")
+    return all_indices, reviewed_count
+
+
+async def main_async():
+    parser = argparse.ArgumentParser(description="MSEC Farley Score Evaluator")
+    parser.add_argument("paths", nargs="*", help="Python test files or directories to review")
+    parser.add_argument("--model", type=str, default=os.getenv("FARLEY_EVALUATOR_MODEL", "ollama/gpt-oss:120b-cloud"), help="LiteLLM model string")
+    parser.add_argument("--run-id", type=str, default="farley-eval", help="Identifier for run metadata")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for determinism")
+    parser.add_argument("--mode", choices=["record", "replay"], default="record", help="Cassette mode")
+    parser.add_argument("--cassette", type=str, default="artifacts/cassettes/farley_score.json", help="Path to replay cassette JSON")
+    args = parser.parse_args()
+
+    target_files = await find_target_files(args.paths)
+    if not target_files:
+        print("\033[91mNo python test files found to evaluate.\033[0m")
+        sys.exit(1)
+
+    print(f"\033[94mFound {len(target_files)} test file(s) to evaluate.\033[0m")
+    print(f"\033[94mUsing model: {args.model} | Mode: {args.mode}\033[0m\n")
+
+    replay_mgr = _init_replay_manager(args.run_id, args.seed, args.cassette, args.mode, args.model)
+
+    all_indices, reviewed_count = await evaluate_files(replay_mgr, args.model, target_files)
+
+    # Save replay cassette if recording
+    if args.mode == "record" and replay_mgr is not None:
+        os.makedirs(os.path.dirname(args.cassette), exist_ok=True)
+        run_record_path = f"artifacts/runs/{args.run_id}/{args.seed}.json"
+        try:
+            replay_mgr.save_record(run_record_path)
+            print(f"\033[92mSaved run record to {run_record_path}\033[0m")
+        except Exception:
+            pass
+
+    if reviewed_count > 0:
+        suite_average = sum(all_indices) / len(all_indices)
+        avg_color = get_color_for_score(suite_average)
+        print("=" * 80)
+        print(f"\033[1mFINAL TEST SUITE SUMMARY\033[0m")
+        print(f"Total Reviewed Test Cases: {reviewed_count}")
+        print(f"Suite Farley Index Average: {avg_color}{suite_average:.2f}/10\033[0m")
+        print("=" * 80)
+    else:
+        print("\033[93mNo test cases were successfully evaluated.\033[0m")
 
 # --- LLM Review Orchestrator ---
 
@@ -249,91 +351,7 @@ def display_report(filepath: str, test_name: str, class_name: Optional[str], rep
     print()
     return farley_index
 
-# --- Main Orchestration ---
-
-async def main_async():
-    parser = argparse.ArgumentParser(description="MSEC Farley Score Evaluator")
-    parser.add_argument("paths", nargs="*", help="Python test files or directories to review")
-    parser.add_argument("--model", type=str, default=os.getenv("FARLEY_EVALUATOR_MODEL", "ollama/gpt-oss:120b-cloud"), help="LiteLLM model string")
-    parser.add_argument("--run-id", type=str, default="farley-eval", help="Identifier for run metadata")
-    parser.add_argument("--seed", type=int, default=42, help="Random seed for determinism")
-    parser.add_argument("--mode", choices=["record", "replay"], default="record", help="Cassette mode")
-    parser.add_argument("--cassette", type=str, default="artifacts/cassettes/farley_score.json", help="Path to replay cassette JSON")
-    args = parser.parse_args()
-
-    # Find test files
-    target_files = []
-    input_paths = args.paths if args.paths else ["."]
-    
-    for path in input_paths:
-        if os.path.isfile(path):
-            if path.endswith(".py"):
-                target_files.append(path)
-        elif os.path.isdir(path):
-            # Recursively find test python files
-            pattern = os.path.join(path, "**/test_*.py")
-            for f in glob.glob(pattern, recursive=True):
-                target_files.append(f)
-            pattern_tail = os.path.join(path, "**/*_test.py")
-            for f in glob.glob(pattern_tail, recursive=True):
-                if f not in target_files:
-                    target_files.append(f)
-
-    if not target_files:
-        print("\033[91mNo python test files found to evaluate.\033[0m")
-        sys.exit(1)
-
-    print(f"\033[94mFound {len(target_files)} test file(s) to evaluate.\033[0m")
-    print(f"\033[94mUsing model: {args.model} | Mode: {args.mode}\033[0m\n")
-
-    # Initialize ReplayManager
-    replay_mgr = ReplayManager.from_config(
-        run_id=args.run_id,
-        seed=args.seed,
-        cassette_path=args.cassette,
-        mode=args.mode,
-        model_config={"evaluator": args.model}
-    )
-
-    all_indices = []
-    reviewed_count = 0
-
-    for filepath in target_files:
-        print(f"\033[90mParsing test cases from {filepath}...\033[0m")
-        test_cases = extract_tests_from_file(filepath)
-        if not test_cases:
-            continue
-        
-        print(f"\033[90mEvaluating {len(test_cases)} case(s) in {os.path.basename(filepath)}...\033[0m")
-        for tc in test_cases:
-            try:
-                report = await evaluate_test_case(replay_mgr, args.model, tc, filepath)
-                idx = display_report(filepath, tc["name"], tc["class_name"], report)
-                all_indices.append(idx)
-                reviewed_count += 1
-            except Exception as e:
-                print(f"\033[91mFailed to evaluate test case {tc['name']}: {e}\033[0m")
-
-    # Save replay cassette if recording
-    if args.mode == "record":
-        # Ensure directory exists
-        os.makedirs(os.path.dirname(args.cassette), exist_ok=True)
-        # ReplayManager writes to the cassette file atomically on save_response, 
-        # and we can also persist the run record metadata.
-        run_record_path = f"artifacts/runs/{args.run_id}/{args.seed}.json"
-        replay_mgr.save_record(run_record_path)
-        print(f"\033[92mSaved run record to {run_record_path}\033[0m")
-
-    if reviewed_count > 0:
-        suite_average = sum(all_indices) / len(all_indices)
-        avg_color = get_color_for_score(suite_average)
-        print("=" * 80)
-        print(f"\033[1mFINAL TEST SUITE SUMMARY\033[0m")
-        print(f"Total Reviewed Test Cases: {reviewed_count}")
-        print(f"Suite Farley Index Average: {avg_color}{suite_average:.2f}/10\033[0m")
-        print("=" * 80)
-    else:
-        print("\033[93mNo test cases were successfully evaluated.\033[0m")
+# (Main orchestration implemented in the refactored `main_async` above.)
 
 def main():
     try:

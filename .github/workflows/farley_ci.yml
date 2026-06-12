@@ -24,14 +24,13 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install deps
+      - name: Install build tools and project deps
         run: |
-          python -m pip install -r requirements.txt || true
+          python -m pip install -U pip setuptools wheel build hatchling
+          python -m pip install -e .
 
       - name: Run targeted unit tests
         run: |
-          # Ensure async test plugin is available for pytest
-          python -m pip install pytest-asyncio || true
           python -m pytest tests -q --disable-warnings --maxfail=1
 
       - name: Pull Qwen3.5 2B model
