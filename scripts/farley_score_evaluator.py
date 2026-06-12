@@ -70,78 +70,98 @@ except Exception:
 
         @classmethod
         def model_validate_json(cls, raw_json: str):
-            payload = json.loads(raw_json)
-            def _mk(pe):
-                return PropertyEvaluation(score=int(pe.get('score', 0)), rationale=pe.get('rationale',''), suggestions=pe.get('suggestions', []))
-            return cls(
-                understandable=_mk(payload['understandable']),
-                maintainable=_mk(payload['maintainable']),
-                repeatable=_mk(payload['repeatable']),
-                atomic=_mk(payload['atomic']),
-                necessary=_mk(payload['necessary']),
-                granular=_mk(payload['granular']),
-                fast=_mk(payload['fast']),
-                first_tdd=_mk(payload['first_tdd']),
-                summary=payload.get('summary','')
-            )
+            async def find_target_files(input_paths: List[str]) -> List[str]:
+                paths = input_paths if input_paths else ["."]
+                target_files: List[str] = []
+                for path in paths:
+                    if os.path.isfile(path):
+                        if path.endswith('.py'):
+                            target_files.append(path)
+                    elif os.path.isdir(path):
+                        pattern = os.path.join(path, "**/test_*.py")
+                        for f in glob.glob(pattern, recursive=True):
+                            target_files.append(f)
+                        pattern_tail = os.path.join(path, "**/*_test.py")
+                        for f in glob.glob(pattern_tail, recursive=True):
+                            if f not in target_files:
+                                target_files.append(f)
+                return target_files
 
-# --- AST Parser for Extracting Tests ---
 
-class TestExtractor(ast.NodeVisitor):
-    def __init__(self, source_code: str):
-        self.source_code = source_code
-        self.test_cases = []
-        self.current_class = None
+            def _init_replay_manager(run_id: str, seed: int, cassette: str, mode: str, model: str):
+                if ReplayManager is None:
+                    return None
+                return ReplayManager.from_config(
+                    run_id=run_id,
+                    seed=seed,
+                    cassette_path=cassette,
+                    mode=mode,
+                    model_config={"evaluator": model}
+                )
 
-    def visit_ClassDef(self, node):
-        prev_class = self.current_class
-        if node.name.startswith("Test") or node.name.endswith("Test"):
-            self.current_class = node.name
-        self.generic_visit(node)
-        self.current_class = prev_class
 
-    def visit_FunctionDef(self, node):
-        is_test = node.name.startswith("test_")
-        if is_test or (self.current_class and node.name.startswith("test_")):
-            code_segment = ast.get_source_segment(self.source_code, node)
-            self.test_cases.append({
-                "name": node.name,
-                "code": code_segment or "",
-                "class_name": self.current_class
-            })
-        self.generic_visit(node)
+            async def evaluate_files(replay_mgr: ReplayManager, model: str, target_files: List[str]):
+                all_indices: List[float] = []
+                reviewed_count = 0
+                for filepath in target_files:
+                    print(f"\033[90mParsing test cases from {filepath}...\033[0m")
+                    test_cases = extract_tests_from_file(filepath)
+                    if not test_cases:
+                        continue
+                    print(f"\033[90mEvaluating {len(test_cases)} case(s) in {os.path.basename(filepath)}...\033[0m")
+                    for tc in test_cases:
+                        try:
+                            report = await evaluate_test_case(replay_mgr, model, tc, filepath)
+                            idx = display_report(filepath, tc["name"], tc.get("class_name"), report)
+                            all_indices.append(idx)
+                            reviewed_count += 1
+                        except Exception as e:
+                            print(f"\033[91mFailed to evaluate test case {tc.get('name')}: {e}\033[0m")
+                return all_indices, reviewed_count
 
-    # Ensure async test functions are captured as well (async def test_...)
-    visit_AsyncFunctionDef = visit_FunctionDef
 
-def extract_tests_from_file(filepath: str) -> List[Dict[str, Any]]:
-    """Extract individual test functions/methods from a python file using AST."""
-    try:
-        with open(filepath, "r", encoding="utf-8") as f:
-            content = f.read()
-    except Exception as e:
-        print(f"\033[91mError reading file {filepath}: {e}\033[0m")
-        return []
+            async def main_async():
+                parser = argparse.ArgumentParser(description="MSEC Farley Score Evaluator")
+                parser.add_argument("paths", nargs="*", help="Python test files or directories to review")
+                parser.add_argument("--model", type=str, default=os.getenv("FARLEY_EVALUATOR_MODEL", "ollama/gpt-oss:120b-cloud"), help="LiteLLM model string")
+                parser.add_argument("--run-id", type=str, default="farley-eval", help="Identifier for run metadata")
+                parser.add_argument("--seed", type=int, default=42, help="Random seed for determinism")
+                parser.add_argument("--mode", choices=["record", "replay"], default="record", help="Cassette mode")
+                parser.add_argument("--cassette", type=str, default="artifacts/cassettes/farley_score.json", help="Path to replay cassette JSON")
+                args = parser.parse_args()
 
-    try:
-        tree = ast.parse(content)
-        extractor = TestExtractor(content)
-        extractor.visit(tree)
-        
-        # Fallback: if no test cases are found using standard naming, treat the whole file as a single case
-        if not extractor.test_cases:
-            extractor.test_cases.append({
-                "name": os.path.basename(filepath),
-                "code": content,
-                "class_name": None
-            })
-        return extractor.test_cases
-    except SyntaxError as e:
-        print(f"\033[91mSyntax error parsing {filepath}: {e}\033[0m")
-        return []
-    except Exception as e:
-        print(f"\033[91mError parsing AST for {filepath}: {e}\033[0m")
-        return []
+                target_files = await find_target_files(args.paths)
+                if not target_files:
+                    print("\033[91mNo python test files found to evaluate.\033[0m")
+                    sys.exit(1)
+
+                print(f"\033[94mFound {len(target_files)} test file(s) to evaluate.\033[0m")
+                print(f"\033[94mUsing model: {args.model} | Mode: {args.mode}\033[0m\n")
+
+                replay_mgr = _init_replay_manager(args.run_id, args.seed, args.cassette, args.mode, args.model)
+
+                all_indices, reviewed_count = await evaluate_files(replay_mgr, args.model, target_files)
+
+                # Save replay cassette if recording
+                if args.mode == "record" and replay_mgr is not None:
+                    os.makedirs(os.path.dirname(args.cassette), exist_ok=True)
+                    run_record_path = f"artifacts/runs/{args.run_id}/{args.seed}.json"
+                    try:
+                        replay_mgr.save_record(run_record_path)
+                        print(f"\033[92mSaved run record to {run_record_path}\033[0m")
+                    except Exception:
+                        pass
+
+                if reviewed_count > 0:
+                    suite_average = sum(all_indices) / len(all_indices)
+                    avg_color = get_color_for_score(suite_average)
+                    print("=" * 80)
+                    print(f"\033[1mFINAL TEST SUITE SUMMARY\033[0m")
+                    print(f"Total Reviewed Test Cases: {reviewed_count}")
+                    print(f"Suite Farley Index Average: {avg_color}{suite_average:.2f}/10\033[0m")
+                    print("=" * 80)
+                else:
+                    print("\033[93mNo test cases were successfully evaluated.\033[0m")
 
 # --- LLM Review Orchestrator ---
 

@@ -62,20 +62,23 @@ def main():
 
     delta = psum['avg_index'] - bsum['avg_index']
 
-    # identify tests dropping by >=2
-    base_map = {t.get('id'): t for t in base.get('tests', []) if t.get('id') is not None}
-    drops = 0
-    total = len(pr.get('tests', []))
-    biggest = []
-    for t in pr.get('tests', []):
-        tid = t.get('id')
-        b = base_map.get(tid)
-        if b:
-            d = b.get('farley_index',0.0) - t.get('farley_index',0.0)
-            if d >= 2.0:
-                drops += 1
-                biggest.append((d, b, t))
-    pct = (drops / total) if total else 0.0
+    def _compute_drops_and_pct(base_tests, pr_tests):
+        base_map = {t.get('id'): t for t in base_tests if t.get('id') is not None}
+        drops = 0
+        total = len(pr_tests)
+        biggest = []
+        for t in pr_tests:
+            tid = t.get('id')
+            b = base_map.get(tid)
+            if b:
+                d = b.get('farley_index', 0.0) - t.get('farley_index', 0.0)
+                if d >= 2.0:
+                    drops += 1
+                    biggest.append((d, b, t))
+        pct = (drops / total) if total else 0.0
+        return drops, pct, biggest
+
+    drops, pct, biggest = _compute_drops_and_pct(base.get('tests', []), pr.get('tests', []))
 
     verdict = 'PASS'
     exit_code = 0

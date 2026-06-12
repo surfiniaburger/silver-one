@@ -125,17 +125,22 @@ async def call_structured(replay_manager: Any, model: str, messages: List[Dict],
     provider = _select_provider(model)
 
     # Replay lookup (best-effort; ReplayManager API may vary)
-    request_id = None
-    try:
-        if replay_manager is not None and hasattr(replay_manager, "lookup"):
+    def _replay_lookup():
+        if replay_manager is None or not hasattr(replay_manager, "lookup"):
+            return None
+        try:
             request_id = replay_manager.lookup(stage, model, messages)
             if request_id:
                 recorded = replay_manager.get(request_id)
                 if recorded:
                     return schema_model.model_validate_json(json.dumps(recorded))
-    except Exception:
-        # ignore replay lookup errors
-        pass
+        except Exception:
+            return None
+        return None
+
+    replay_hit = _replay_lookup()
+    if replay_hit is not None:
+        return replay_hit
 
     # Call provider
     if provider == "nebius":
@@ -177,11 +182,18 @@ async def call_structured(replay_manager: Any, model: str, messages: List[Dict],
             raise RuntimeError(f"Failed to validate LLM response as {schema_name}: {e}\nResponse:\n{text}")
 
     # Save to replay if possible
-    try:
-        if replay_manager is not None and hasattr(replay_manager, "save_response"):
-            # save structured dict
-            replay_manager.save_response(stage, model, messages, json.loads(validated.model_dump_json()) if hasattr(validated, "model_dump_json") else json.loads(json.dumps(validated.__dict__)))
-    except Exception:
-        pass
+    def _save_response():
+        if replay_manager is None or not hasattr(replay_manager, "save_response"):
+            return
+        try:
+            payload = None
+            if hasattr(validated, "model_dump_json"):
+                payload = json.loads(validated.model_dump_json())
+            else:
+                payload = json.loads(json.dumps(validated.__dict__))
+            replay_manager.save_response(stage, model, messages, payload)
+        except Exception:
+            return
 
+    _save_response()
     return validated
