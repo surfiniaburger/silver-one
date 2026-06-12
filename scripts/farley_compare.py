@@ -47,39 +47,24 @@ def top_regressions(base, pr, top_n=5):
     return reg[:top_n]
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--baseline', required=True)
-    parser.add_argument('--pr', required=True)
-    parser.add_argument('--out', required=True)
-    args = parser.parse_args()
+def compute_drops_and_pct(base_tests, pr_tests):
+    base_map = {t.get('id'): t for t in base_tests if t.get('id') is not None}
+    drops = 0
+    total = len(pr_tests)
+    biggest = []
+    for t in pr_tests:
+        tid = t.get('id')
+        b = base_map.get(tid)
+        if b:
+            d = b.get('farley_index', 0.0) - t.get('farley_index', 0.0)
+            if d >= 2.0:
+                drops += 1
+                biggest.append((d, b, t))
+    pct = (drops / total) if total else 0.0
+    return drops, pct, biggest
 
-    base = load_cassette(args.baseline)
-    pr = load_cassette(args.pr)
 
-    bsum = compute_suite_summary(base)
-    psum = compute_suite_summary(pr)
-
-    delta = psum['avg_index'] - bsum['avg_index']
-
-    def _compute_drops_and_pct(base_tests, pr_tests):
-        base_map = {t.get('id'): t for t in base_tests if t.get('id') is not None}
-        drops = 0
-        total = len(pr_tests)
-        biggest = []
-        for t in pr_tests:
-            tid = t.get('id')
-            b = base_map.get(tid)
-            if b:
-                d = b.get('farley_index', 0.0) - t.get('farley_index', 0.0)
-                if d >= 2.0:
-                    drops += 1
-                    biggest.append((d, b, t))
-        pct = (drops / total) if total else 0.0
-        return drops, pct, biggest
-
-    drops, pct, biggest = _compute_drops_and_pct(base.get('tests', []), pr.get('tests', []))
-
+def determine_verdict_and_reasons(delta, bsum, psum, pct_val):
     verdict = 'PASS'
     exit_code = 0
     reasons = []
@@ -87,22 +72,24 @@ def main():
         verdict = 'FAIL'
         exit_code = 2
         reasons.append(f'Suite Farley Index decreased by {abs(delta):.2f} >= {FAIL_DELTA}')
-    if psum['per_property'].get('understandable',0.0) - bsum['per_property'].get('understandable',0.0) <= -FAIL_PROP:
+    if psum['per_property'].get('understandable', 0.0) - bsum['per_property'].get('understandable', 0.0) <= -FAIL_PROP:
         verdict = 'FAIL'
         exit_code = 2
         reasons.append('Understandable dropped too much')
-    if psum['per_property'].get('maintainable',0.0) - bsum['per_property'].get('maintainable',0.0) <= -FAIL_PROP:
+    if psum['per_property'].get('maintainable', 0.0) - bsum['per_property'].get('maintainable', 0.0) <= -FAIL_PROP:
         verdict = 'FAIL'
         exit_code = 2
         reasons.append('Maintainable dropped too much')
-    if pct > FAIL_PERCENT_TESTS:
+    if pct_val > FAIL_PERCENT_TESTS:
         verdict = 'FAIL'
         exit_code = 2
-        reasons.append(f'{pct*100:.1f}% of tests dropped by >=2 points')
+        reasons.append(f'{pct_val*100:.1f}% of tests dropped by >=2 points')
+    return verdict, exit_code, reasons
 
-    # write report
-    with open(args.out, 'w', encoding='utf-8') as f:
-        f.write(f'# Farley Compare Report\n\n')
+
+def write_report(out_path, bsum, psum, delta, verdict, reasons, base, pr):
+    with open(out_path, 'w', encoding='utf-8') as f:
+        f.write('# Farley Compare Report\n\n')
         f.write(f'**Baseline avg**: {bsum["avg_index"]:.2f}\n')
         f.write(f'**PR avg**: {psum["avg_index"]:.2f}\n')
         f.write(f'**Delta**: {delta:+.2f}\n\n')
@@ -118,8 +105,30 @@ def main():
         else:
             f.write('| Delta | File | Test | Base | PR |\n')
             f.write('|---|---|---|---:|---:|\n')
-            for d,bp,tp in regs:
+            for d, bp, tp in regs:
                 f.write(f'| {d:.2f} | {bp.get("file_path")} | {bp.get("test_name")} | {bp.get("farley_index",0.0):.2f} | {tp.get("farley_index",0.0):.2f} |\n')
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--baseline', required=True)
+    parser.add_argument('--pr', required=True)
+    parser.add_argument('--out', required=True)
+    args = parser.parse_args()
+
+    base = load_cassette(args.baseline)
+    pr = load_cassette(args.pr)
+
+    bsum = compute_suite_summary(base)
+    psum = compute_suite_summary(pr)
+
+    delta = psum['avg_index'] - bsum['avg_index']
+
+    _, pct_val, _ = compute_drops_and_pct(base.get('tests', []), pr.get('tests', []))
+
+    verdict, exit_code, reasons = determine_verdict_and_reasons(delta, bsum, psum, pct_val)
+
+    write_report(args.out, bsum, psum, delta, verdict, reasons, base, pr)
 
     sys.exit(exit_code)
 
