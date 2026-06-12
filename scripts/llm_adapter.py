@@ -13,6 +13,8 @@ except Exception:
 
 import requests
 
+LITELLM_PREFIX = "litellm/"
+
 PRESETS = {
     "instruct": {"temperature": 0.0, "top_p": 0.8, "max_tokens": 1024},
     "qwen3.5:thinking-general": {"temperature": 1.0, "top_p": 0.95, "top_k": 20, "min_p": 0.0, "presence_penalty": 1.5},
@@ -24,7 +26,7 @@ def _select_provider(model: str) -> str:
     model = model or ""
     if model.startswith("nebius/") or os.environ.get("LLM_PROVIDER") == "nebius":
         return "nebius"
-    if model.startswith("litellm/") or model.startswith("local/") or os.environ.get("LLM_PROVIDER") == "litellm":
+    if model.startswith(LITELLM_PREFIX) or model.startswith("local/") or os.environ.get("LLM_PROVIDER") == "litellm":
         return "litellm"
     # fallback preference
     return os.environ.get("LLM_PROVIDER", "litellm")
@@ -78,7 +80,7 @@ async def _call_litellm_async(model: str, messages: List[Dict], params: Dict[str
 
     if acompletion is not None:
         # Use the litellm library directly
-        resp = await acompletion(model=model.replace("litellm/", ""), messages=messages, temperature=params.get("temperature", 0.0), max_tokens=params.get("max_tokens", 1024))
+        resp = await acompletion(model=model.replace(LITELLM_PREFIX, ""), messages=messages, temperature=params.get("temperature", 0.0), max_tokens=params.get("max_tokens", 1024))
         # normalize
         if hasattr(resp, "choices") and resp.choices:
             msg = resp.choices[0].message
@@ -91,7 +93,7 @@ async def _call_litellm_async(model: str, messages: List[Dict], params: Dict[str
     def _sync_call():
         try:
             url = os.environ.get("LITELLM_HTTP", "http://localhost:11434/api/generate")
-            payload = {"model": model.replace("litellm/", ""), "input": messages[-1]["content"], "system": messages[0]["content"]}
+            payload = {"model": model.replace(LITELLM_PREFIX, ""), "input": messages[-1]["content"], "system": messages[0]["content"], "stream": False}
             r = requests.post(url, json=payload, timeout=60)
             r.raise_for_status()
             d = r.json()
@@ -146,13 +148,21 @@ async def call_structured(replay_manager: Any, model: str, messages: List[Dict],
     # Trim surrounding whitespace
     text = text.strip()
 
+    # Try to isolate JSON payload if the model wrapped it in markdown or commentary
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        json_text = text[start:end+1]
+    else:
+        json_text = text
+
     # Try to validate using schema_model.model_validate_json if available
     try:
         if hasattr(schema_model, "model_validate_json"):
-            validated = schema_model.model_validate_json(text)
+            validated = schema_model.model_validate_json(json_text)
         else:
             # fallback: parse json then instantiate
-            payload = json.loads(text)
+            payload = json.loads(json_text)
             validated = schema_model(**payload)
     except Exception:
         # Last resort: try to extract JSON block from text

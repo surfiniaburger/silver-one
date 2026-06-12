@@ -34,7 +34,7 @@ def compute_suite_summary(cassette):
 
 
 def top_regressions(base, pr, top_n=5):
-    base_map = {t['id']: t for t in base.get('tests', [])}
+    base_map = {t.get('id'): t for t in base.get('tests', []) if t.get('id') is not None}
     reg = []
     for t in pr.get('tests', []):
         tid = t.get('id')
@@ -63,7 +63,7 @@ def main():
     delta = psum['avg_index'] - bsum['avg_index']
 
     # identify tests dropping by >=2
-    base_map = {t['id']: t for t in base.get('tests', [])}
+    base_map = {t.get('id'): t for t in base.get('tests', []) if t.get('id') is not None}
     drops = 0
     total = len(pr.get('tests', []))
     biggest = []

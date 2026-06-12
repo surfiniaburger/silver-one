@@ -111,6 +111,9 @@ class TestExtractor(ast.NodeVisitor):
             })
         self.generic_visit(node)
 
+    # Ensure async test functions are captured as well (async def test_...)
+    visit_AsyncFunctionDef = visit_FunctionDef
+
 def extract_tests_from_file(filepath: str) -> List[Dict[str, Any]]:
     """Extract individual test functions/methods from a python file using AST."""
     try:
