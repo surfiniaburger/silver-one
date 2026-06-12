@@ -34,31 +34,26 @@ jobs:
           python -m pytest tests -q --disable-warnings --maxfail=1
 
       - name: Pull Qwen3.5 2B model
-        if: ${{ github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' }}
         run: |
           curl --fail -sS -X POST http://localhost:11434/api/pull -H 'Content-Type: application/json' -d '{"name":"qwen3.5:2b"}' || true
 
       - name: Run Farley evaluator
-        if: ${{ github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' }}
         run: |
           python3 scripts/farley_score_evaluator.py . --mode record --cassette artifacts/cassettes/farley_score-PR-${{ env.PR_NUMBER }}.json --run-id pr-${{ env.PR_NUMBER }} --model "litellm/qwen3.5:2b"
 
       - name: Upload cassette
-        if: ${{ github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' }}
         uses: actions/upload-artifact@v4
         with:
           name: farley-cassette-pr-${{ env.PR_NUMBER }}
           path: artifacts/cassettes/farley_score-PR-${{ env.PR_NUMBER }}.json
 
       - name: Compare to baseline and upload report
-        if: ${{ github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' }}
         run: |
           python3 scripts/farley_compare.py --baseline artifacts/cassettes/farley_score-main-latest.json --pr artifacts/cassettes/farley_score-PR-${{ env.PR_NUMBER }}.json --out report.md || true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload report
-        if: ${{ github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' }}
         uses: actions/upload-artifact@v4
         with:
           name: farley-report-pr-${{ env.PR_NUMBER }}
