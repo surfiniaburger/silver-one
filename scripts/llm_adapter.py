@@ -82,7 +82,10 @@ def _parse_ollama_response(d: Any) -> str:
             return d["text"]
         if "choices" in d and d["choices"]:
             choice = d["choices"][0]
-            return choice.get("message", choice.get("text", ""))
+            msg = choice.get("message", "")
+            if isinstance(msg, dict):
+                return msg.get("content", "")
+            return msg or choice.get("text", "")
     return json.dumps(d)
 
 
@@ -91,7 +94,7 @@ def _local_ollama_sync_call(model: str, messages: List[Dict]) -> str:
     clean_model = model.replace(LITELLM_PREFIX, "")
     payload = {
         "model": clean_model,
-        "input": messages[-1]["content"],
+        "input": messages[-1]["content"] if messages else "",
         "system": messages[0]["content"] if messages else "",
         "stream": False
     }
@@ -132,10 +135,10 @@ def _replay_lookup(replay_manager: Any, stage: str, model: str, messages: List[D
         if request_id:
             recorded = replay_manager.get(request_id)
             if recorded:
-                if hasattr(schema_model, "model_validate_json"):
-                    return schema_model.model_validate_json(json.dumps(recorded))
-                elif hasattr(schema_model, "model_validate"):
+                if hasattr(schema_model, "model_validate"):
                     return schema_model.model_validate(recorded)
+                elif hasattr(schema_model, "model_validate_json"):
+                    return schema_model.model_validate_json(json.dumps(recorded))
                 else:
                     return schema_model(**recorded)
     except Exception:
@@ -177,7 +180,9 @@ def _save_response(replay_manager: Any, stage: str, model: str, messages: List[D
         return
     try:
         payload = None
-        if hasattr(validated, "model_dump_json"):
+        if hasattr(validated, "model_dump"):
+            payload = validated.model_dump()
+        elif hasattr(validated, "model_dump_json"):
             payload = json.loads(validated.model_dump_json())
         elif hasattr(validated, "dict"):
             payload = validated.dict()
