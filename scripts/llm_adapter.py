@@ -65,48 +65,58 @@ async def _call_nebius_async(model: str, messages: List[Dict], params: Dict[str,
     return await asyncio.to_thread(_sync_call)
 
 
+def _retry_sync(fn, retries=2, backoff=0.5):
+    last = None
+    for i in range(retries+1):
+        try:
+            return fn()
+        except Exception as e:
+            last = e
+            time.sleep(backoff * (2 ** i))
+    raise last
+
+
+def _parse_ollama_response(d: Any) -> str:
+    if isinstance(d, dict):
+        if "text" in d:
+            return d["text"]
+        if "choices" in d and d["choices"]:
+            choice = d["choices"][0]
+            return choice.get("message", choice.get("text", ""))
+    return json.dumps(d)
+
+
+def _local_ollama_sync_call(model: str, messages: List[Dict]) -> str:
+    url = os.environ.get("LITELLM_HTTP", "http://localhost:11434/api/generate")
+    clean_model = model.replace(LITELLM_PREFIX, "")
+    payload = {
+        "model": clean_model,
+        "input": messages[-1]["content"],
+        "system": messages[0]["content"] if messages else "",
+        "stream": False
+    }
+    r = requests.post(url, json=payload, timeout=60)
+    r.raise_for_status()
+    return _parse_ollama_response(r.json())
+
+
 async def _call_litellm_async(model: str, messages: List[Dict], params: Dict[str, Any]) -> str:
     """Call litellm's async completion if available, else try local HTTP endpoints (ollama/litellm)."""
-    # Simple retry/backoff wrapper
-    def _retry_sync(fn, retries=2, backoff=0.5):
-        last = None
-        for i in range(retries+1):
-            try:
-                return fn()
-            except Exception as e:
-                last = e
-                time.sleep(backoff * (2 ** i))
-        raise last
-
     if acompletion is not None:
-        # Use the litellm library directly
-        resp = await acompletion(model=model.replace(LITELLM_PREFIX, ""), messages=messages, temperature=params.get("temperature", 0.0), max_tokens=params.get("max_tokens", 1024))
-        # normalize
+        clean_model = model.replace(LITELLM_PREFIX, "")
+        resp = await acompletion(
+            model=clean_model,
+            messages=messages,
+            temperature=params.get("temperature", 0.0),
+            max_tokens=params.get("max_tokens", 1024)
+        )
         if hasattr(resp, "choices") and resp.choices:
             msg = resp.choices[0].message
-            if hasattr(msg, "content"):
-                return msg.content
-            return str(msg)
+            return getattr(msg, "content", str(msg))
         return str(resp)
 
-    # Fallback: try local Ollama API
-    def _sync_call():
-        try:
-            url = os.environ.get("LITELLM_HTTP", "http://localhost:11434/api/generate")
-            payload = {"model": model.replace(LITELLM_PREFIX, ""), "input": messages[-1]["content"], "system": messages[0]["content"], "stream": False}
-            r = requests.post(url, json=payload, timeout=60)
-            r.raise_for_status()
-            d = r.json()
-            # Ollama-like shape
-            if isinstance(d, dict) and "text" in d:
-                return d["text"]
-            if isinstance(d, dict) and "choices" in d and d["choices"]:
-                return d["choices"][0].get("message", d["choices"][0].get("text", ""))
-            return json.dumps(d)
-        except Exception as e:
-            raise
-
-    return await asyncio.to_thread(lambda: _retry_sync(_sync_call, retries=3, backoff=0.2))
+    fn = lambda: _local_ollama_sync_call(model, messages)
+    return await asyncio.to_thread(lambda: _retry_sync(fn, retries=3, backoff=0.2))
 
 
 def estimate_tokens(text: str) -> int:
@@ -114,8 +124,82 @@ def estimate_tokens(text: str) -> int:
     return max(1, math.ceil(len(text) / 4))
 
 
+def _replay_lookup(replay_manager: Any, stage: str, model: str, messages: List[Dict], schema_model: Type) -> Any:
+    if replay_manager is None or not hasattr(replay_manager, "lookup"):
+        return None
+    try:
+        request_id = replay_manager.lookup(stage, model, messages)
+        if request_id:
+            recorded = replay_manager.get(request_id)
+            if recorded:
+                if hasattr(schema_model, "model_validate_json"):
+                    return schema_model.model_validate_json(json.dumps(recorded))
+                elif hasattr(schema_model, "model_validate"):
+                    return schema_model.model_validate(recorded)
+                else:
+                    return schema_model(**recorded)
+    except Exception:
+        pass
+    return None
 
-async def call_structured(replay_manager: Any, model: str, messages: List[Dict], schema_name: str, schema_model: Type, stage: str, *, include_prompts: bool = False, timeout: int = 60) -> Any:
+
+def _extract_json_text(text: str) -> str:
+    text = text.strip()
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return text[start:end+1]
+    return text
+
+
+def _validate_response(text: str, schema_model: Type, schema_name: str) -> Any:
+    json_text = _extract_json_text(text)
+    try:
+        if hasattr(schema_model, "model_validate_json"):
+            return schema_model.model_validate_json(json_text)
+        payload = json.loads(json_text)
+        return schema_model(**payload)
+    except Exception:
+        try:
+            start = text.find("{")
+            if start != -1:
+                payload = json.loads(text[start:])
+                if hasattr(schema_model, "model_validate"):
+                    return schema_model.model_validate(payload)
+                return schema_model(**payload)
+            raise ValueError("No '{' found in response")
+        except Exception as e:
+            raise RuntimeError(f"Failed to validate LLM response as {schema_name}: {e}\nResponse:\n{text}")
+
+
+def _save_response(replay_manager: Any, stage: str, model: str, messages: List[Dict], validated: Any):
+    if replay_manager is None or not hasattr(replay_manager, "save_response"):
+        return
+    try:
+        payload = None
+        if hasattr(validated, "model_dump_json"):
+            payload = json.loads(validated.model_dump_json())
+        elif hasattr(validated, "dict"):
+            payload = validated.dict()
+        else:
+            import dataclasses
+            if dataclasses.is_dataclass(validated):
+                payload = dataclasses.asdict(validated)
+            else:
+                payload = json.loads(json.dumps(validated.__dict__))
+        replay_manager.save_response(stage, model, messages, payload)
+    except Exception:
+        pass
+
+
+async def call_structured(
+    replay_manager: Any,
+    model: str,
+    messages: List[Dict],
+    schema_name: str,
+    schema_model: Type,
+    stage: str
+) -> Any:
     """Main entry used by farley_score_evaluator. Selects provider, applies presets, calls provider, and validates response.
 
     Returns an instance of `schema_model` (pydantic or fallback) or raises on error.
@@ -124,76 +208,15 @@ async def call_structured(replay_manager: Any, model: str, messages: List[Dict],
     params = PRESETS.get(preset, {})
     provider = _select_provider(model)
 
-    # Replay lookup (best-effort; ReplayManager API may vary)
-    def _replay_lookup():
-        if replay_manager is None or not hasattr(replay_manager, "lookup"):
-            return None
-        try:
-            request_id = replay_manager.lookup(stage, model, messages)
-            if request_id:
-                recorded = replay_manager.get(request_id)
-                if recorded:
-                    return schema_model.model_validate_json(json.dumps(recorded))
-        except Exception:
-            return None
-        return None
-
-    replay_hit = _replay_lookup()
+    replay_hit = _replay_lookup(replay_manager, stage, model, messages, schema_model)
     if replay_hit is not None:
         return replay_hit
 
-    # Call provider
     if provider == "nebius":
         raw = await _call_nebius_async(model, messages, params)
     else:
         raw = await _call_litellm_async(model, messages, params)
 
-    # Optionally extract JSON from raw text
-    text = raw if isinstance(raw, str) else str(raw)
-    # Trim surrounding whitespace
-    text = text.strip()
-
-    # Try to isolate JSON payload if the model wrapped it in markdown or commentary
-    start = text.find("{")
-    end = text.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        json_text = text[start:end+1]
-    else:
-        json_text = text
-
-    # Try to validate using schema_model.model_validate_json if available
-    try:
-        if hasattr(schema_model, "model_validate_json"):
-            validated = schema_model.model_validate_json(json_text)
-        else:
-            # fallback: parse json then instantiate
-            payload = json.loads(json_text)
-            validated = schema_model(**payload)
-    except Exception:
-        # Last resort: try to extract JSON block from text
-        try:
-            start = text.find("{")
-            if start != -1:
-                payload = json.loads(text[start:])
-                validated = schema_model.model_validate(payload) if hasattr(schema_model, "model_validate") else schema_model(**payload)
-            else:
-                raise
-        except Exception as e:
-            raise RuntimeError(f"Failed to validate LLM response as {schema_name}: {e}\nResponse:\n{text}")
-
-    # Save to replay if possible
-    def _save_response():
-        if replay_manager is None or not hasattr(replay_manager, "save_response"):
-            return
-        try:
-            payload = None
-            if hasattr(validated, "model_dump_json"):
-                payload = json.loads(validated.model_dump_json())
-            else:
-                payload = json.loads(json.dumps(validated.__dict__))
-            replay_manager.save_response(stage, model, messages, payload)
-        except Exception:
-            return
-
-    _save_response()
+    validated = _validate_response(str(raw), schema_model, schema_name)
+    _save_response(replay_manager, stage, model, messages, validated)
     return validated

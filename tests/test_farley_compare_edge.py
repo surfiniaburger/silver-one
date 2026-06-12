@@ -1,3 +1,4 @@
+import pytest
 from scripts.farley_compare import top_regressions, compute_suite_summary
 
 
@@ -16,5 +17,5 @@ def test_top_regressions_handles_missing_ids():
 
 def test_compute_suite_summary_empty():
     summary = compute_suite_summary({'tests': []})
-    assert summary['avg_index'] == 0.0
+    assert summary['avg_index'] == pytest.approx(0.0)
     assert summary['count'] == 0
