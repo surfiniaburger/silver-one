@@ -47,8 +47,9 @@ except Exception:
     # Minimal fallback dataclasses so tests can import the module without pydantic
     from dataclasses import dataclass
 
-    def Field(*a, **kw):
+    def field_stub(*a, **kw):
         return None
+    Field = field_stub
 
     @dataclass
     class PropertyEvaluation:
@@ -149,21 +150,24 @@ def extract_tests_from_file(filepath: str) -> List[Dict[str, Any]]:
 
 
 # --- Helper functions (kept at module level) ---
-async def find_target_files(input_paths: List[str]) -> List[str]:
+def find_target_files(input_paths: List[str]) -> List[str]:
     paths = input_paths if input_paths else ["."]
     target_files: List[str] = []
+    seen = set()
+
+    def add_file(f):
+        abs_f = os.path.abspath(f)
+        if abs_f not in seen:
+            seen.add(abs_f)
+            target_files.append(f)
+
     for path in paths:
-        if os.path.isfile(path):
-            if path.endswith('.py'):
-                target_files.append(path)
+        if os.path.isfile(path) and path.endswith('.py'):
+            add_file(path)
         elif os.path.isdir(path):
-            pattern = os.path.join(path, "**/test_*.py")
-            for f in glob.glob(pattern, recursive=True):
-                target_files.append(f)
-            pattern_tail = os.path.join(path, "**/*_test.py")
-            for f in glob.glob(pattern_tail, recursive=True):
-                if f not in target_files:
-                    target_files.append(f)
+            for pattern in ["**/test_*.py", "**/*_test.py"]:
+                for f in glob.glob(os.path.join(path, pattern), recursive=True):
+                    add_file(f)
     return target_files
 
 
@@ -209,7 +213,7 @@ async def main_async():
     parser.add_argument("--cassette", type=str, default="artifacts/cassettes/farley_score.json", help="Path to replay cassette JSON")
     args = parser.parse_args()
 
-    target_files = await find_target_files(args.paths)
+    target_files = find_target_files(args.paths)
     if not target_files:
         print("\033[91mNo python test files found to evaluate.\033[0m")
         sys.exit(1)
@@ -218,6 +222,9 @@ async def main_async():
     print(f"\033[94mUsing model: {args.model} | Mode: {args.mode}\033[0m\n")
 
     replay_mgr = _init_replay_manager(args.run_id, args.seed, args.cassette, args.mode, args.model)
+    if args.mode == "replay" and replay_mgr is None:
+        print("\033[91mError: Replay mode requested but ReplayManager (agentbeats) is not available.\033[0m")
+        sys.exit(1)
 
     all_indices, reviewed_count = await evaluate_files(replay_mgr, args.model, target_files)
 
@@ -235,7 +242,7 @@ async def main_async():
         suite_average = sum(all_indices) / len(all_indices)
         avg_color = get_color_for_score(suite_average)
         print("=" * 80)
-        print(f"\033[1mFINAL TEST SUITE SUMMARY\033[0m")
+        print("\033[1mFINAL TEST SUITE SUMMARY\033[0m")
         print(f"Total Reviewed Test Cases: {reviewed_count}")
         print(f"Suite Farley Index Average: {avg_color}{suite_average:.2f}/10\033[0m")
         print("=" * 80)
