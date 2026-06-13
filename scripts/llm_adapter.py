@@ -142,7 +142,7 @@ def estimate_tokens(text: str) -> int:
     return max(1, math.ceil(len(text) / 4))
 
 
-def _replay_lookup(replay_manager: Any, stage: str, model: str, messages: List[Dict], schema_model: Type) -> Any:
+def _replay_lookup(replay_manager: Any, model: str, messages: List[Dict], schema_model: Type) -> Any:
     # ReplayManager exposes its cassette via .cassette (an LLMCassette instance)
     cassette = getattr(replay_manager, "cassette", None)
     if cassette is None or not hasattr(cassette, "get_response"):
@@ -244,7 +244,7 @@ async def call_structured(
     params = PRESETS.get(preset, {})
     provider = _select_provider(model)
 
-    replay_hit = _replay_lookup(replay_manager, stage, model, messages, schema_model)
+    replay_hit = _replay_lookup(replay_manager, model, messages, schema_model)
     if replay_hit is not None:
         return replay_hit
 
