@@ -92,6 +92,8 @@ def _parse_ollama_response(d: Any) -> str:
 def _local_ollama_sync_call(model: str, messages: List[Dict]) -> str:
     url = os.environ.get("LITELLM_HTTP", "http://localhost:11434/api/generate")
     clean_model = model.replace(LITELLM_PREFIX, "")
+    if "/" in clean_model:
+        clean_model = clean_model.split("/", 1)[1]
     payload = {
         "model": clean_model,
         "input": messages[-1]["content"] if messages else "",
