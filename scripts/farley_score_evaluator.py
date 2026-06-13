@@ -19,10 +19,12 @@ try:
 except Exception:
     pass
 
+ReplayManager = None
 try:
-    from agentbeats.replay import ReplayManager
+    from agentbeats.replay import ReplayManager as RM
+    ReplayManager = RM
 except Exception:
-    ReplayManager = None
+    pass
 from llm_adapter import call_structured
 
 try:
