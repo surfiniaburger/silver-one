@@ -17,9 +17,15 @@ LITELLM_PREFIX = "litellm/"
 
 PRESETS = {
     "instruct": {"temperature": 0.0, "top_p": 0.8, "max_tokens": 1024},
+    # Qwen3 (and other extended-thinking models) require temperature >= 0.6.
+    # At 0.0 the greedy sampler stalls after </think> and emits no final answer.
+    "qwen3-thinking": {"temperature": 0.6, "top_p": 0.95, "max_tokens": 2048},
     "qwen3.5:thinking-general": {"temperature": 1.0, "top_p": 0.95, "top_k": 20, "min_p": 0.0, "presence_penalty": 1.5},
     "qwen3.5:thinking-precise-coding": {"temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0.0, "presence_penalty": 0.0},
 }
+
+# Model substrings that indicate an extended-thinking model needing temp > 0.
+_THINKING_MODEL_HINTS = ("qwen3",)
 
 
 def _select_provider(model: str) -> str:
@@ -101,9 +107,12 @@ def _local_ollama_sync_call(model: str, messages: List[Dict]) -> str:
         "model": clean_model,
         # Ollama /api/generate expects 'prompt', not 'input'
         "prompt": messages[-1].get("content", "") if messages else "",
-        "system": messages[0].get("content", "") if messages else "",
+        # Only include system if there is a distinct first message
+        "system": messages[0].get("content", "") if len(messages) > 1 else "",
         "stream": False
     }
+    if any(hint in model.lower() for hint in _THINKING_MODEL_HINTS):
+        payload["think"] = False
     r = requests.post(url, json=payload, timeout=60)
     r.raise_for_status()
     return _parse_ollama_response(r.json())
@@ -113,24 +122,19 @@ async def _call_litellm_async(model: str, messages: List[Dict], params: Dict[str
     """Call litellm's async completion if available, else try local HTTP endpoints (ollama/litellm)."""
     if acompletion is not None:
         clean_model = model.replace(LITELLM_PREFIX, "")
-        resp = await acompletion(
-            model=clean_model,
-            messages=messages,
-            temperature=params.get("temperature", 0.0),
-            max_tokens=params.get("max_tokens", 1024)
-        )
+        kwargs = {
+            "model": clean_model,
+            "messages": messages,
+            "temperature": params.get("temperature", 0.0),
+            "max_tokens": params.get("max_tokens", 1024)
+        }
+        if any(hint in model.lower() for hint in _THINKING_MODEL_HINTS):
+            kwargs["extra_body"] = {"think": False}
+            kwargs["drop_params"] = True
+        resp = await acompletion(**kwargs)
         if hasattr(resp, "choices") and resp.choices:
             msg = resp.choices[0].message
-            # Qwen3 / thinking models put the answer in reasoning_content when
-            # content is None or empty (extended-thinking mode).
-            content = getattr(msg, "content", None) or ""
-            if not content:
-                content = (
-                    getattr(msg, "reasoning_content", None)
-                    or getattr(msg, "thinking", None)
-                    or ""
-                )
-            return content
+            return getattr(msg, "content", None) or ""
         return str(resp)
 
     fn = lambda: _local_ollama_sync_call(model, messages)
@@ -142,13 +146,13 @@ def estimate_tokens(text: str) -> int:
     return max(1, math.ceil(len(text) / 4))
 
 
-def _replay_lookup(replay_manager: Any, model: str, messages: List[Dict], schema_model: Type) -> Any:
+def _replay_lookup(replay_manager: Any, model: str, messages: List[Dict], schema_model: Type, params: Dict[str, Any] = None) -> Any:
     # ReplayManager exposes its cassette via .cassette (an LLMCassette instance)
     cassette = getattr(replay_manager, "cassette", None)
     if cassette is None or not hasattr(cassette, "get_response"):
         return None
     try:
-        recorded = cassette.get_response(model, messages, {})
+        recorded = cassette.get_response(model, messages, params or {})
         if recorded:
             if hasattr(schema_model, "model_validate"):
                 return schema_model.model_validate(recorded)
@@ -190,7 +194,7 @@ def _validate_response(text: str, schema_model: Type, schema_name: str) -> Any:
             raise RuntimeError(f"Failed to validate LLM response as {schema_name}: {e}\nResponse:\n{text}")
 
 
-def _save_response(replay_manager: Any, stage: str, model: str, messages: List[Dict], validated: Any):
+def _save_response(replay_manager: Any, stage: str, model: str, messages: List[Dict], validated: Any, params: Dict[str, Any] = None):
     """Persist validated response.
 
     Supports two shapes:
@@ -218,7 +222,7 @@ def _save_response(replay_manager: Any, stage: str, model: str, messages: List[D
         # Prefer the cassette path (real ReplayManager)
         cassette = getattr(replay_manager, "cassette", None)
         if cassette is not None and hasattr(cassette, "save_response"):
-            cassette.save_response(model, messages, {}, payload)
+            cassette.save_response(model, messages, params or {}, payload)
             return
 
         # Fallback: direct save_response on the replay_manager itself (DummyReplay / legacy)
@@ -241,10 +245,11 @@ async def call_structured(
     Returns an instance of `schema_model` (pydantic or fallback) or raises on error.
     """
     preset = os.environ.get("FARLEY_MODEL_PRESET", "instruct")
-    params = PRESETS.get(preset, {})
+
+    params = dict(PRESETS.get(preset, PRESETS["instruct"]))  # copy so mutations are local
     provider = _select_provider(model)
 
-    replay_hit = _replay_lookup(replay_manager, model, messages, schema_model)
+    replay_hit = _replay_lookup(replay_manager, model, messages, schema_model, params)
     if replay_hit is not None:
         return replay_hit
 
@@ -254,5 +259,5 @@ async def call_structured(
         raw = await _call_litellm_async(model, messages, params)
 
     validated = _validate_response(str(raw), schema_model, schema_name)
-    _save_response(replay_manager, stage, model, messages, validated)
+    _save_response(replay_manager, stage, model, messages, validated, params)
     return validated

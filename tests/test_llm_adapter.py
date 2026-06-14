@@ -44,6 +44,7 @@ class DummyReplay:
 async def test_call_structured_litellm(monkeypatch, tmp_path):
     # Patch internal litellm caller to return JSON string
     async def fake_litellm(model, messages, params):
+        await asyncio.sleep(0)
         return json.dumps(SAMPLE_FARLEY)
     monkeypatch.setattr(llm_adapter, "_call_litellm_async", fake_litellm)
 
@@ -57,6 +58,7 @@ async def test_call_structured_litellm(monkeypatch, tmp_path):
 @pytest.mark.asyncio
 async def test_call_structured_nebius(monkeypatch):
     async def fake_nebius(model, messages, params):
+        await asyncio.sleep(0)
         return json.dumps(SAMPLE_FARLEY)
     monkeypatch.setattr(llm_adapter, "_call_nebius_async", fake_nebius)
 
@@ -73,11 +75,57 @@ def test_select_provider_env_override(monkeypatch):
 @pytest.mark.asyncio
 async def test_replay_saved(monkeypatch):
     async def fake_litellm(model, messages, params):
+        await asyncio.sleep(0)
         return json.dumps(SAMPLE_FARLEY)
     monkeypatch.setattr(llm_adapter, "_call_litellm_async", fake_litellm)
 
     replay = DummyReplay()
     messages = [{"role":"system","content":"sys"},{"role":"user","content":"unique_input_xyz"}]
-    res = await llm_adapter.call_structured(replay, "litellm/qwen3.5:2b", messages, "FarleyScoreBreakdown", evaluator.FarleyScoreBreakdown, "s")
+    await llm_adapter.call_structured(replay, "litellm/qwen3.5:2b", messages, "FarleyScoreBreakdown", evaluator.FarleyScoreBreakdown, "s")
     # ensure something was saved
     assert any("unique_input_xyz" in k for k in replay.store.keys())
+
+
+@pytest.mark.asyncio
+async def test_qwen_disabled_thinking_litellm(monkeypatch):
+    called_kwargs = {}
+    async def fake_acompletion(**kwargs):
+        await asyncio.sleep(0)
+        nonlocal called_kwargs
+        called_kwargs = kwargs
+        class DummyMsg:
+            content = json.dumps(SAMPLE_FARLEY)
+        class DummyChoice:
+            message = DummyMsg()
+        class DummyResponse:
+            choices = [DummyChoice()]
+        return DummyResponse()
+
+    monkeypatch.setattr(llm_adapter, "acompletion", fake_acompletion)
+
+    params = {"temperature": 0.0, "max_tokens": 1024}
+    await llm_adapter._call_litellm_async("litellm/qwen3.5:2b", [{"role": "user", "content": "hi"}], params)
+    assert called_kwargs.get("extra_body") == {"think": False}
+    assert called_kwargs.get("drop_params") is True
+
+
+def test_qwen_disabled_thinking_ollama_payload(monkeypatch):
+    call_info = {}
+    class FakeResponse:
+        def raise_for_status(self):
+            # No-op mock implementation of requests.Response.raise_for_status
+            pass
+        def json(self):
+            return {"response": "dummy"}
+
+    def fake_post(url, json, timeout):
+        call_info["posted_json"] = json
+        return FakeResponse()
+
+    import requests
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    llm_adapter._local_ollama_sync_call("ollama/qwen3.5:2b", [{"role": "user", "content": "hi"}])
+    assert "posted_json" in call_info
+    assert call_info["posted_json"].get("think") is False
+
