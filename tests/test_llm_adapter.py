@@ -43,7 +43,7 @@ class DummyReplay:
 @pytest.mark.asyncio
 async def test_call_structured_litellm(monkeypatch, tmp_path):
     # Patch internal litellm caller to return JSON string
-    async def fake_litellm(model, messages, params):
+    async def fake_litellm(model, messages, params, schema_model=None):
         await asyncio.sleep(0)
         return json.dumps(SAMPLE_FARLEY)
     monkeypatch.setattr(llm_adapter, "_call_litellm_async", fake_litellm)
@@ -74,7 +74,7 @@ def test_select_provider_env_override(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_replay_saved(monkeypatch):
-    async def fake_litellm(model, messages, params):
+    async def fake_litellm(model, messages, params, schema_model=None):
         await asyncio.sleep(0)
         return json.dumps(SAMPLE_FARLEY)
     monkeypatch.setattr(llm_adapter, "_call_litellm_async", fake_litellm)
