@@ -10,8 +10,12 @@ FAIL_PERCENT_TESTS = 0.05
 
 
 def load_cassette(path):
-    with open(path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"Warning: cassette file not found at {path}. Returning empty cassette.")
+        return {'tests': []}
 
 
 def compute_suite_summary(cassette):

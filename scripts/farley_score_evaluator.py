@@ -272,7 +272,8 @@ async def evaluate_test_case(
         "6. granular: Targeted and precise in what it isolates and asserts.\n"
         "7. fast: Executes rapidly; avoids artificial sleeps/delays, heavy setups, or unneeded slow I/O operations.\n"
         "8. first_tdd: Demonstrates design properties of a test designed first (specifies behavior, clean separation of arrange-act-assert).\n\n"
-        "Make your feedback highly critical, professional, and actionable."
+        "Make your feedback highly critical, professional, and actionable.\n\n"
+        "You must return your evaluation strictly as a valid JSON object matching the FarleyScoreBreakdown schema."
     )
 
     class_context = f" inside class {test_case['class_name']}" if test_case['class_name'] else ""
