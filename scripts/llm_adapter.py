@@ -98,7 +98,7 @@ def _parse_ollama_response(d: Any) -> str:
     return json.dumps(d)
 
 
-def _local_ollama_sync_call(model: str, messages: List[Dict]) -> str:
+def _local_ollama_sync_call(model: str, messages: List[Dict], schema_model: Type = None) -> str:
     url = os.environ.get("LITELLM_HTTP", "http://localhost:11434/api/generate")
     clean_model = model.replace(LITELLM_PREFIX, "")
     if "/" in clean_model:
@@ -111,6 +111,13 @@ def _local_ollama_sync_call(model: str, messages: List[Dict]) -> str:
         "system": messages[0].get("content", "") if len(messages) > 1 else "",
         "stream": False
     }
+    if schema_model is not None:
+        if hasattr(schema_model, "model_json_schema"):
+            payload["format"] = schema_model.model_json_schema()
+        elif hasattr(schema_model, "schema"):
+            payload["format"] = schema_model.schema()
+        else:
+            payload["format"] = "json"
     if any(hint in model.lower() for hint in _THINKING_MODEL_HINTS):
         payload["think"] = False
     r = requests.post(url, json=payload, timeout=60)
@@ -118,7 +125,7 @@ def _local_ollama_sync_call(model: str, messages: List[Dict]) -> str:
     return _parse_ollama_response(r.json())
 
 
-async def _call_litellm_async(model: str, messages: List[Dict], params: Dict[str, Any]) -> str:
+async def _call_litellm_async(model: str, messages: List[Dict], params: Dict[str, Any], schema_model: Type = None) -> str:
     """Call litellm's async completion if available, else try local HTTP endpoints (ollama/litellm)."""
     if acompletion is not None:
         clean_model = model.replace(LITELLM_PREFIX, "")
@@ -128,16 +135,28 @@ async def _call_litellm_async(model: str, messages: List[Dict], params: Dict[str
             "temperature": params.get("temperature", 0.0),
             "max_tokens": params.get("max_tokens", 1024)
         }
+        if schema_model is not None:
+            if hasattr(schema_model, "model_json_schema") or hasattr(schema_model, "schema"):
+                kwargs["response_format"] = schema_model
+            else:
+                kwargs["response_format"] = {"type": "json_object"}
         if any(hint in model.lower() for hint in _THINKING_MODEL_HINTS):
             kwargs["extra_body"] = {"think": False}
             kwargs["drop_params"] = True
         resp = await acompletion(**kwargs)
         if hasattr(resp, "choices") and resp.choices:
             msg = resp.choices[0].message
-            return getattr(msg, "content", None) or ""
+            content = getattr(msg, "content", None) or ""
+            if not content:
+                content = (
+                    getattr(msg, "reasoning_content", None)
+                    or getattr(msg, "thinking", None)
+                    or ""
+                )
+            return content
         return str(resp)
 
-    fn = lambda: _local_ollama_sync_call(model, messages)
+    fn = lambda: _local_ollama_sync_call(model, messages, schema_model)
     return await asyncio.to_thread(lambda: _retry_sync(fn, retries=3, backoff=0.2))
 
 
@@ -256,7 +275,12 @@ async def call_structured(
     if provider == "nebius":
         raw = await _call_nebius_async(model, messages, params)
     else:
-        raw = await _call_litellm_async(model, messages, params)
+        import inspect
+        sig = inspect.signature(_call_litellm_async)
+        if "schema_model" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+            raw = await _call_litellm_async(model, messages, params, schema_model=schema_model)
+        else:
+            raw = await _call_litellm_async(model, messages, params)
 
     validated = _validate_response(str(raw), schema_model, schema_name)
     _save_response(replay_manager, stage, model, messages, validated, params)
