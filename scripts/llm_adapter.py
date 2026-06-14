@@ -78,6 +78,9 @@ def _retry_sync(fn, retries=2, backoff=0.5):
 
 def _parse_ollama_response(d: Any) -> str:
     if isinstance(d, dict):
+        # Ollama /api/generate returns a 'response' field
+        if "response" in d:
+            return d["response"]
         if "text" in d:
             return d["text"]
         if "choices" in d and d["choices"]:
@@ -96,8 +99,9 @@ def _local_ollama_sync_call(model: str, messages: List[Dict]) -> str:
         clean_model = clean_model.split("/", 1)[1]
     payload = {
         "model": clean_model,
-        "input": messages[-1]["content"] if messages else "",
-        "system": messages[0]["content"] if messages else "",
+        # Ollama /api/generate expects 'prompt', not 'input'
+        "prompt": messages[-1].get("content", "") if messages else "",
+        "system": messages[0].get("content", "") if messages else "",
         "stream": False
     }
     r = requests.post(url, json=payload, timeout=60)
@@ -117,7 +121,16 @@ async def _call_litellm_async(model: str, messages: List[Dict], params: Dict[str
         )
         if hasattr(resp, "choices") and resp.choices:
             msg = resp.choices[0].message
-            return getattr(msg, "content", str(msg))
+            # Qwen3 / thinking models put the answer in reasoning_content when
+            # content is None or empty (extended-thinking mode).
+            content = getattr(msg, "content", None) or ""
+            if not content:
+                content = (
+                    getattr(msg, "reasoning_content", None)
+                    or getattr(msg, "thinking", None)
+                    or ""
+                )
+            return content
         return str(resp)
 
     fn = lambda: _local_ollama_sync_call(model, messages)
@@ -129,20 +142,20 @@ def estimate_tokens(text: str) -> int:
     return max(1, math.ceil(len(text) / 4))
 
 
-def _replay_lookup(replay_manager: Any, stage: str, model: str, messages: List[Dict], schema_model: Type) -> Any:
-    if replay_manager is None or not hasattr(replay_manager, "lookup"):
+def _replay_lookup(replay_manager: Any, model: str, messages: List[Dict], schema_model: Type) -> Any:
+    # ReplayManager exposes its cassette via .cassette (an LLMCassette instance)
+    cassette = getattr(replay_manager, "cassette", None)
+    if cassette is None or not hasattr(cassette, "get_response"):
         return None
     try:
-        request_id = replay_manager.lookup(stage, model, messages)
-        if request_id:
-            recorded = replay_manager.get(request_id)
-            if recorded:
-                if hasattr(schema_model, "model_validate"):
-                    return schema_model.model_validate(recorded)
-                elif hasattr(schema_model, "model_validate_json"):
-                    return schema_model.model_validate_json(json.dumps(recorded))
-                else:
-                    return schema_model(**recorded)
+        recorded = cassette.get_response(model, messages, {})
+        if recorded:
+            if hasattr(schema_model, "model_validate"):
+                return schema_model.model_validate(recorded)
+            elif hasattr(schema_model, "model_validate_json"):
+                return schema_model.model_validate_json(json.dumps(recorded))
+            else:
+                return schema_model(**recorded)
     except Exception:
         pass
     return None
@@ -178,8 +191,15 @@ def _validate_response(text: str, schema_model: Type, schema_name: str) -> Any:
 
 
 def _save_response(replay_manager: Any, stage: str, model: str, messages: List[Dict], validated: Any):
-    if replay_manager is None or not hasattr(replay_manager, "save_response"):
-        return
+    """Persist validated response.
+
+    Supports two shapes:
+    - Real ``ReplayManager``: has a ``.cassette`` attribute whose
+      ``LLMCassette.save_response(model, messages, params, payload)`` does the
+      actual write.
+    - Test ``DummyReplay`` (and any legacy adapter): exposes ``.save_response``
+      directly with signature ``(stage, model, messages, payload)``.
+    """
     try:
         payload = None
         if hasattr(validated, "model_dump"):
@@ -194,7 +214,16 @@ def _save_response(replay_manager: Any, stage: str, model: str, messages: List[D
                 payload = dataclasses.asdict(validated)
             else:
                 payload = json.loads(json.dumps(validated.__dict__))
-        replay_manager.save_response(stage, model, messages, payload)
+
+        # Prefer the cassette path (real ReplayManager)
+        cassette = getattr(replay_manager, "cassette", None)
+        if cassette is not None and hasattr(cassette, "save_response"):
+            cassette.save_response(model, messages, {}, payload)
+            return
+
+        # Fallback: direct save_response on the replay_manager itself (DummyReplay / legacy)
+        if replay_manager is not None and hasattr(replay_manager, "save_response"):
+            replay_manager.save_response(stage, model, messages, payload)
     except Exception:
         pass
 
@@ -215,7 +244,7 @@ async def call_structured(
     params = PRESETS.get(preset, {})
     provider = _select_provider(model)
 
-    replay_hit = _replay_lookup(replay_manager, stage, model, messages, schema_model)
+    replay_hit = _replay_lookup(replay_manager, model, messages, schema_model)
     if replay_hit is not None:
         return replay_hit
 
