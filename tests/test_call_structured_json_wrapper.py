@@ -18,7 +18,7 @@ class DummyModel:
 
 @pytest.mark.asyncio
 async def test_call_structured_handles_markdown_wrapped_json(monkeypatch):
-    async def fake_litellm(model, messages, params):
+    async def fake_litellm(model, messages, params, schema_model=None):
         # return JSON wrapped in a markdown code fence and extra commentary
         return "Some preface\n```json\n{\"understandable\": {\"score\": 8, \"rationale\": \"ok\", \"suggestions\": []}, \"maintainable\": {\"score\": 7, \"rationale\": \"ok\", \"suggestions\": []}, \"repeatable\": {\"score\": 9, \"rationale\": \"ok\", \"suggestions\": []}, \"atomic\": {\"score\": 8, \"rationale\": \"ok\", \"suggestions\": []}, \"necessary\": {\"score\": 6, \"rationale\": \"ok\", \"suggestions\": []}, \"granular\": {\"score\": 7, \"rationale\": \"ok\", \"suggestions\": []}, \"fast\": {\"score\": 9, \"rationale\": \"ok\", \"suggestions\": []}, \"first_tdd\": {\"score\": 5, \"rationale\": \"ok\", \"suggestions\": []}, \"summary\": \"ok\"}\n```\nSome suffix"
 

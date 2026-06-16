@@ -125,36 +125,47 @@ def _local_ollama_sync_call(model: str, messages: List[Dict], schema_model: Type
     return _parse_ollama_response(r.json())
 
 
+def _extract_litellm_content(resp: Any) -> str:
+    """Extract text content from a LiteLLM completion response object."""
+    if not (hasattr(resp, "choices") and resp.choices):
+        return str(resp)
+    msg = resp.choices[0].message
+    content = getattr(msg, "content", None) or ""
+    if not content:
+        content = (
+            getattr(msg, "reasoning_content", None)
+            or getattr(msg, "thinking", None)
+            or ""
+        )
+    return content
+
+
+def _build_litellm_kwargs(model: str, messages: List[Dict], params: Dict[str, Any], schema_model: Type) -> Dict[str, Any]:
+    """Build the kwargs dict for a LiteLLM acompletion call."""
+    clean_model = model.replace(LITELLM_PREFIX, "")
+    kwargs: Dict[str, Any] = {
+        "model": clean_model,
+        "messages": messages,
+        "temperature": params.get("temperature", 0.0),
+        "max_tokens": params.get("max_tokens", 1024),
+    }
+    if schema_model is not None:
+        if hasattr(schema_model, "model_json_schema") or hasattr(schema_model, "schema"):
+            kwargs["response_format"] = schema_model
+        else:
+            kwargs["response_format"] = {"type": "json_object"}
+    if any(hint in model.lower() for hint in _THINKING_MODEL_HINTS):
+        kwargs["extra_body"] = {"think": False}
+        kwargs["drop_params"] = True
+    return kwargs
+
+
 async def _call_litellm_async(model: str, messages: List[Dict], params: Dict[str, Any], schema_model: Type = None) -> str:
     """Call litellm's async completion if available, else try local HTTP endpoints (ollama/litellm)."""
     if acompletion is not None:
-        clean_model = model.replace(LITELLM_PREFIX, "")
-        kwargs = {
-            "model": clean_model,
-            "messages": messages,
-            "temperature": params.get("temperature", 0.0),
-            "max_tokens": params.get("max_tokens", 1024)
-        }
-        if schema_model is not None:
-            if hasattr(schema_model, "model_json_schema") or hasattr(schema_model, "schema"):
-                kwargs["response_format"] = schema_model
-            else:
-                kwargs["response_format"] = {"type": "json_object"}
-        if any(hint in model.lower() for hint in _THINKING_MODEL_HINTS):
-            kwargs["extra_body"] = {"think": False}
-            kwargs["drop_params"] = True
+        kwargs = _build_litellm_kwargs(model, messages, params, schema_model)
         resp = await acompletion(**kwargs)
-        if hasattr(resp, "choices") and resp.choices:
-            msg = resp.choices[0].message
-            content = getattr(msg, "content", None) or ""
-            if not content:
-                content = (
-                    getattr(msg, "reasoning_content", None)
-                    or getattr(msg, "thinking", None)
-                    or ""
-                )
-            return content
-        return str(resp)
+        return _extract_litellm_content(resp)
 
     fn = lambda: _local_ollama_sync_call(model, messages, schema_model)
     return await asyncio.to_thread(lambda: _retry_sync(fn, retries=3, backoff=0.2))
@@ -275,12 +286,7 @@ async def call_structured(
     if provider == "nebius":
         raw = await _call_nebius_async(model, messages, params)
     else:
-        import inspect
-        sig = inspect.signature(_call_litellm_async)
-        if "schema_model" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
-            raw = await _call_litellm_async(model, messages, params, schema_model=schema_model)
-        else:
-            raw = await _call_litellm_async(model, messages, params)
+        raw = await _call_litellm_async(model, messages, params, schema_model=schema_model)
 
     validated = _validate_response(str(raw), schema_model, schema_name)
     _save_response(replay_manager, stage, model, messages, validated, params)

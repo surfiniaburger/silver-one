@@ -407,6 +407,12 @@ silver-one/
 
 See `AGENT.md` for repository-specific coding and review instructions.
 
+## References & Related Docs
+
+ - **BARRED: Synthetic Training of Custom Policy Guardrails via Asymmetric Debate** — Arnon Mazza*, Elad Levi* (Plurai Inc.), Preprint Jan 21, 2026. Role: scenario specification and debate-based synthetic-data generation algorithm; served as the blueprint for the BARRED scenario, gating rules, and the offline B-gate implementation used in this repo. (*equal contribution)
+
+ - **Pioneer Agent: Continual Improvement of Small Language Models in Production** — Dhruv Atreja, Julia White, Nikhil Nayak, Kelton Zhang, Henrijs Princis, George Hurn-Maloney, Ash Lewis, Urchade Zaratiana (Fastino Labs), arXiv:2604.09791, Apr 10, 2026. Role: engineering systems paper that inspired telemetry-driven adaptation loops used in our evaluation.
+
 ## License
 
 MIT License. See `LICENSE`.
