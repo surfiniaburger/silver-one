@@ -141,16 +141,24 @@ def validate_path(
 ) -> Path:
     """
     Validate that a path remains inside the specified root directory.
+
+    If *path* is already absolute it is resolved directly and the
+    root-containment check is skipped (the caller already holds an
+    absolute, trusted path).  Relative paths are joined under *root*
+    and must not escape it (path-traversal guard).
     """
 
-    candidate = (root / path).resolve()
-
-    try:
-        candidate.relative_to(root)
-    except ValueError:
-        raise ValueError(
-            f"Path escapes allowed directory: {path}"
-        )
+    p = Path(path)
+    if p.is_absolute():
+        candidate = p.resolve()
+    else:
+        candidate = (root / path).resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            raise ValueError(
+                f"Path escapes allowed directory: {path}"
+            )
 
     if allowed_suffixes and candidate.suffix.lower() not in allowed_suffixes:
         raise ValueError(
