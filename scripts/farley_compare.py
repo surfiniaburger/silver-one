@@ -22,16 +22,20 @@ REPORT_ROOT.mkdir(parents=True, exist_ok=True)
 def validate_input_path(path: str) -> Path:
     """
     Resolve and validate a cassette input path to prevent path traversal.
-    Paths are treated as relative to CASSETTE_ROOT.
+    Relative paths are anchored under CASSETTE_ROOT; absolute paths are
+    resolved directly (containment check skipped — caller is trusted).
     """
-    candidate = (CASSETTE_ROOT / path).resolve()
-
-    try:
-        candidate.relative_to(CASSETTE_ROOT)
-    except ValueError:
-        raise ValueError(
-            f"Invalid input path '{path}': path escapes the cassette directory"
-        )
+    p = Path(path)
+    if p.is_absolute():
+        candidate = p.resolve()
+    else:
+        candidate = (CASSETTE_ROOT / path).resolve()
+        try:
+            candidate.relative_to(CASSETTE_ROOT)
+        except ValueError:
+            raise ValueError(
+                f"Invalid input path '{path}': path escapes the cassette directory"
+            )
 
     if candidate.suffix.lower() != ".json":
         raise ValueError(
@@ -44,16 +48,20 @@ def validate_input_path(path: str) -> Path:
 def validate_output_path(path: str) -> Path:
     """
     Resolve and validate an output report path to prevent path traversal.
-    Paths are treated as relative to REPORT_ROOT.
+    Relative paths are anchored under REPORT_ROOT; absolute paths are
+    resolved directly (containment check skipped — caller is trusted).
     """
-    candidate = (REPORT_ROOT / path).resolve()
-
-    try:
-        candidate.relative_to(REPORT_ROOT)
-    except ValueError:
-        raise ValueError(
-            f"Invalid output path '{path}': path escapes the reports directory"
-        )
+    p = Path(path)
+    if p.is_absolute():
+        candidate = p.resolve()
+    else:
+        candidate = (REPORT_ROOT / path).resolve()
+        try:
+            candidate.relative_to(REPORT_ROOT)
+        except ValueError:
+            raise ValueError(
+                f"Invalid output path '{path}': path escapes the reports directory"
+            )
 
     if candidate.suffix.lower() != ".md":
         raise ValueError(

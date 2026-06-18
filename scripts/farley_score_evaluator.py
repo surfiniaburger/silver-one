@@ -241,7 +241,11 @@ def find_target_files(input_paths: List[str]) -> List[str]:
 
     for path in paths:
         try:
-            safe_path = validate_path(path, TEST_ROOT)
+            # Resolve relative paths against CWD first so that e.g.
+            # "tests/test_foo.py" doesn't get double-prefixed as
+            # TEST_ROOT/tests/test_foo.py inside validate_path.
+            resolved_path = str(Path(path).resolve())
+            safe_path = validate_path(resolved_path, TEST_ROOT)
         except ValueError as exc:
             print(f"\033[91mSkipping invalid path '{path}': {exc}\033[0m")
             continue
@@ -306,10 +310,10 @@ async def main_async():
     try:
 
         cassette_path = validate_path(
-        args.cassette,
-        CASSETTE_ROOT,
-        {".json"},
-    )
+            args.cassette,
+            CASSETTE_ROOT,
+            {".json"},
+        )
 
         safe_run_id = sanitize_run_id(args.run_id)
 
@@ -341,10 +345,10 @@ async def main_async():
     # Save replay cassette if recording
     if args.mode == "record" and replay_mgr is not None:
         run_record_path = validate_path(
-        f"{safe_run_id}/{args.seed}.json",
-        RUN_ROOT,
-        {".json"},
-    )
+            f"{safe_run_id}/{args.seed}.json",
+            RUN_ROOT,
+            {".json"},
+        )
 
         run_record_path.parent.mkdir(parents=True, exist_ok=True)
         try:

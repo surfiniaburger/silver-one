@@ -42,7 +42,7 @@ jobs:
 
       - name: Run Farley evaluator
         run: |
-          python3 scripts/farley_score_evaluator.py . --mode record --cassette artifacts/cassettes/farley_score-PR-${{ env.PR_NUMBER }}.json --run-id pr-${{ env.PR_NUMBER }} --model "ollama/qwen3.5:2b"
+          python3 scripts/farley_score_evaluator.py tests/ --mode record --cassette farley_score-PR-${{ env.PR_NUMBER }}.json --run-id pr-${{ env.PR_NUMBER }} --model "ollama/qwen3.5:2b"
 
       - name: Upload cassette
         uses: actions/upload-artifact@v4
@@ -53,9 +53,13 @@ jobs:
       - name: Compare to baseline and generate report
         run: |
           python3 scripts/farley_compare.py \
-            --baseline artifacts/cassettes/farley_score-main-latest.json \
-            --pr artifacts/cassettes/farley_score-PR-${{ env.PR_NUMBER }}.json \
-            --out report.md || true
+            --baseline $GITHUB_WORKSPACE/artifacts/cassettes/farley_score-main-latest.json \
+            --pr $GITHUB_WORKSPACE/artifacts/cassettes/farley_score-PR-${{ env.PR_NUMBER }}.json \
+            --out $GITHUB_WORKSPACE/report.md || true
+
+      - name: Ensure report.md exists
+        if: always()
+        run: touch $GITHUB_WORKSPACE/report.md
 
       - name: Upload report
         uses: actions/upload-artifact@v4
