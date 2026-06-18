@@ -1,12 +1,27 @@
 #!/usr/bin/env python3
 import os
+import re
 import sys
 import argparse
 import asyncio
 import ast
 import json
-import glob
-from typing import List, Dict, Any, Optional
+from pathlib import Path
+from typing import List, Dict, Any, Optional, Set
+
+TEST_PATTERNS = ("**/test_*.py", "**/*_test.py")
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+TEST_ROOT = (PROJECT_ROOT / "tests").resolve()
+CASSETTE_ROOT = (PROJECT_ROOT / "artifacts" / "cassettes").resolve()
+RUN_ROOT = (PROJECT_ROOT / "artifacts" / "runs").resolve()
+
+SAFE_RUN_ID = re.compile(r"[^a-zA-Z0-9._-]")
+
+TEST_ROOT.mkdir(parents=True, exist_ok=True)
+CASSETTE_ROOT.mkdir(parents=True, exist_ok=True)
+RUN_ROOT.mkdir(parents=True, exist_ok=True)
 
 # Add the project src directory to sys.path to enable local imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
@@ -119,12 +134,49 @@ class TestExtractor(ast.NodeVisitor):
     # Ensure async test functions are captured as well (async def test_...)
     visit_AsyncFunctionDef = visit_FunctionDef
 
+def validate_path(
+    path: str,
+    root: Path,
+    allowed_suffixes=None,
+) -> Path:
+    """
+    Validate that a path remains inside the specified root directory.
+    """
+
+    candidate = (root / path).resolve()
+
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        raise ValueError(
+            f"Path escapes allowed directory: {path}"
+        )
+
+    if allowed_suffixes and candidate.suffix.lower() not in allowed_suffixes:
+        raise ValueError(
+            f"Invalid file type '{candidate.suffix}'. "
+            f"Expected one of {allowed_suffixes}."
+        )
+
+    return candidate
+
+
+def sanitize_run_id(run_id: str) -> str:
+    return SAFE_RUN_ID.sub("_", run_id)
 
 def extract_tests_from_file(filepath: str) -> List[Dict[str, Any]]:
     """Extract individual test functions/methods from a python file using AST."""
+
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
+        safe_path = validate_path(
+            filepath,
+            TEST_ROOT,
+            {".py"},
+        )
+
+        with safe_path.open("r", encoding="utf-8") as f:
             content = f.read()
+
     except Exception as e:
         print(f"\033[91mError reading file {filepath}: {e}\033[0m")
         return []
@@ -133,43 +185,67 @@ def extract_tests_from_file(filepath: str) -> List[Dict[str, Any]]:
         tree = ast.parse(content)
         extractor = TestExtractor(content)
         extractor.visit(tree)
-        
-        # Fallback: if no test cases are found using standard naming, treat the whole file as a single case
+
         if not extractor.test_cases:
-            extractor.test_cases.append({
-                "name": os.path.basename(filepath),
-                "code": content,
-                "class_name": None
-            })
+            extractor.test_cases.append(
+                {
+                    "name": safe_path.name,
+                    "code": content,
+                    "class_name": None,
+                }
+            )
+
         return extractor.test_cases
+
     except SyntaxError as e:
-        print(f"\033[91mSyntax error parsing {filepath}: {e}\033[0m")
+        print(f"\033[91mSyntax error parsing {safe_path}: {e}\033[0m")
         return []
+
     except Exception as e:
-        print(f"\033[91mError parsing AST for {filepath}: {e}\033[0m")
+        print(f"\033[91mError parsing AST for {safe_path}: {e}\033[0m")
         return []
 
 
 
-# --- Helper functions (kept at module level) ---
-def find_target_files(input_paths: List[str]) -> List[str]:
-    paths = input_paths if input_paths else ["."]
-    target_files: List[str] = []
-    seen = set()
 
-    def add_file(f):
-        abs_f = os.path.abspath(f)
-        if abs_f not in seen:
-            seen.add(abs_f)
-            target_files.append(f)
+
+def add_file(path_obj: Path, target_files: List[str], seen: Set[str]) -> None:
+    resolved = str(path_obj.resolve())
+
+    if resolved not in seen:
+        seen.add(resolved)
+        target_files.append(resolved)
+
+
+def collect_test_files(directory: Path) -> List[Path]:
+    files: List[Path] = []
+
+    for pattern in TEST_PATTERNS:
+        files.extend(directory.glob(pattern))
+
+    return files
+
+
+def find_target_files(input_paths: List[str]) -> List[str]:
+    paths = input_paths or ["."]
+    target_files: List[str] = []
+    seen: Set[str] = set()
 
     for path in paths:
-        if os.path.isfile(path) and path.endswith('.py'):
-            add_file(path)
-        elif os.path.isdir(path):
-            for pattern in ["**/test_*.py", "**/*_test.py"]:
-                for f in glob.glob(os.path.join(path, pattern), recursive=True):
-                    add_file(f)
+        try:
+            safe_path = validate_path(path, TEST_ROOT)
+        except ValueError as exc:
+            print(f"\033[91mSkipping invalid path '{path}': {exc}\033[0m")
+            continue
+
+        if safe_path.is_file() and safe_path.suffix == ".py":
+            add_file(safe_path, target_files, seen)
+            continue
+
+        if safe_path.is_dir():
+            for file_path in collect_test_files(safe_path):
+                add_file(file_path, target_files, seen)
+
     return target_files
 
 
@@ -212,8 +288,26 @@ async def main_async():
     parser.add_argument("--run-id", type=str, default="farley-eval", help="Identifier for run metadata")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for determinism")
     parser.add_argument("--mode", choices=["record", "replay"], default="record", help="Cassette mode")
-    parser.add_argument("--cassette", type=str, default="artifacts/cassettes/farley_score.json", help="Path to replay cassette JSON")
+    parser.add_argument(
+    "--cassette",
+    type=str,
+    default="farley_score.json",
+    help="Cassette filename relative to artifacts/cassettes",
+)
     args = parser.parse_args()
+    try:
+
+        cassette_path = validate_path(
+        args.cassette,
+        CASSETTE_ROOT,
+        {".json"},
+    )
+
+        safe_run_id = sanitize_run_id(args.run_id)
+
+    except ValueError as e:
+        print(f"\033[91mInvalid input: {e}\033[0m")
+        sys.exit(1)
 
     target_files = find_target_files(args.paths)
     if not target_files:
@@ -223,7 +317,13 @@ async def main_async():
     print(f"\033[94mFound {len(target_files)} test file(s) to evaluate.\033[0m")
     print(f"\033[94mUsing model: {args.model} | Mode: {args.mode}\033[0m\n")
 
-    replay_mgr = _init_replay_manager(args.run_id, args.seed, args.cassette, args.mode, args.model)
+    replay_mgr = _init_replay_manager(
+    safe_run_id,
+    args.seed,
+    str(cassette_path),
+    args.mode,
+    args.model,
+    )
     if args.mode == "replay" and replay_mgr is None:
         print("\033[91mError: Replay mode requested but ReplayManager (agentbeats) is not available.\033[0m")
         sys.exit(1)
@@ -232,11 +332,16 @@ async def main_async():
 
     # Save replay cassette if recording
     if args.mode == "record" and replay_mgr is not None:
-        os.makedirs(os.path.dirname(args.cassette), exist_ok=True)
-        run_record_path = f"artifacts/runs/{args.run_id}/{args.seed}.json"
+        run_record_path = validate_path(
+        f"{safe_run_id}/{args.seed}.json",
+        RUN_ROOT,
+        {".json"},
+    )
+
+        run_record_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            replay_mgr.save_record(run_record_path)
-            print(f"\033[92mSaved run record to {run_record_path}\033[0m")
+            replay_mgr.save_record(str(run_record_path))
+            print(f"\033[92mSaved run record to {run_record_path.relative_to(PROJECT_ROOT)}\033[0m")
         except Exception:
             pass
 
