@@ -40,6 +40,26 @@ class DummyReplay:
         self.store[key] = payload
 
 
+class DummyReplayManager:
+    def __init__(self):
+        self.calls = []
+
+    async def acompletion(self, **kwargs):
+        await asyncio.sleep(0)
+        self.calls.append(kwargs)
+
+        class DummyMsg:
+            content = json.dumps(SAMPLE_FARLEY)
+
+        class DummyChoice:
+            message = DummyMsg()
+
+        class DummyResponse:
+            choices = [DummyChoice()]
+
+        return DummyResponse()
+
+
 @pytest.mark.asyncio
 async def test_call_structured_litellm(monkeypatch, tmp_path):
     # Patch internal litellm caller to return JSON string
@@ -53,6 +73,25 @@ async def test_call_structured_litellm(monkeypatch, tmp_path):
     result = await llm_adapter.call_structured(replay, "litellm/qwen3.5:2b", messages, "FarleyScoreBreakdown", evaluator.FarleyScoreBreakdown, "test_stage")
     assert result.summary == "Good test"
     assert result.understandable.score == 9
+
+
+@pytest.mark.asyncio
+async def test_call_structured_prefers_replay_manager_acompletion():
+    replay = DummyReplayManager()
+    messages = [{"role": "system", "content": "sys"}, {"role": "user", "content": "do it"}]
+
+    result = await llm_adapter.call_structured(
+        replay,
+        "litellm/qwen3.5:2b",
+        messages,
+        "FarleyScoreBreakdown",
+        evaluator.FarleyScoreBreakdown,
+        "test_stage",
+    )
+
+    assert result.summary == "Good test"
+    assert replay.calls[0]["model"] == "qwen3.5:2b"
+    assert replay.calls[0]["stage"] == "test_stage"
 
 
 @pytest.mark.asyncio
@@ -128,4 +167,3 @@ def test_qwen_disabled_thinking_ollama_payload(monkeypatch):
     llm_adapter._local_ollama_sync_call("ollama/qwen3.5:2b", [{"role": "user", "content": "hi"}])
     assert "posted_json" in call_info
     assert call_info["posted_json"].get("think") is False
-

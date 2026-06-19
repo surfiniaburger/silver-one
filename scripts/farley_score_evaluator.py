@@ -16,12 +16,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TEST_ROOT = (PROJECT_ROOT / "tests").resolve()
 CASSETTE_ROOT = (PROJECT_ROOT / "artifacts" / "cassettes").resolve()
 RUN_ROOT = (PROJECT_ROOT / "artifacts" / "runs").resolve()
+METRICS_ROOT = (PROJECT_ROOT / "artifacts" / "metrics").resolve()
 
 SAFE_RUN_ID = re.compile(r"[^a-zA-Z0-9._-]")
 
 TEST_ROOT.mkdir(parents=True, exist_ok=True)
 CASSETTE_ROOT.mkdir(parents=True, exist_ok=True)
 RUN_ROOT.mkdir(parents=True, exist_ok=True)
+METRICS_ROOT.mkdir(parents=True, exist_ok=True)
 
 # Add the project src directory to sys.path to enable local imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
@@ -293,6 +295,58 @@ async def evaluate_files(replay_mgr: ReplayManager, model: str, target_files: Li
     return all_indices, reviewed_count
 
 
+def persist_usage_artifacts(
+    replay_mgr: ReplayManager,
+    *,
+    run_id: str,
+    model: str,
+    cassette_path: Path,
+    reviewed_count: int,
+) -> Optional[Dict[str, Any]]:
+    if replay_mgr is None or not hasattr(replay_mgr, "get_usage_summary"):
+        return None
+
+    usage_summary = replay_mgr.get_usage_summary()
+    payload = {
+        "run_id": run_id,
+        "model": model,
+        "reviewed_test_cases": reviewed_count,
+        "cassette": str(cassette_path.relative_to(PROJECT_ROOT)),
+        "usage": usage_summary,
+    }
+
+    metrics_path = METRICS_ROOT / "token_spend.jsonl"
+    with metrics_path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, sort_keys=True) + "\n")
+
+    try:
+        cassette_data = {}
+        if cassette_path.exists():
+            with cassette_path.open("r", encoding="utf-8") as f:
+                cassette_data = json.load(f)
+        cassette_data["__metadata__"] = {
+            **cassette_data.get("__metadata__", {}),
+            "farley_usage_summary": payload,
+        }
+        with cassette_path.open("w", encoding="utf-8") as f:
+            json.dump(cassette_data, f, indent=2)
+    except Exception as exc:
+        print(f"\033[93mWarning: failed to write cassette usage metadata: {exc}\033[0m")
+
+    totals = usage_summary.get("totals", {})
+    print(
+        "\033[94mToken usage: "
+        f"{totals.get('total_tokens', 0)} total "
+        f"({totals.get('prompt_tokens', 0)} prompt, "
+        f"{totals.get('completion_tokens', 0)} completion) across "
+        f"{totals.get('calls', 0)} call(s); "
+        f"estimated cost ${float(totals.get('cost_usd', 0.0) or 0.0):.6f}"
+        "\033[0m"
+    )
+    print(f"\033[92mSaved token spend metrics to {metrics_path.relative_to(PROJECT_ROOT)}\033[0m")
+    return payload
+
+
 async def main_async():
     parser = argparse.ArgumentParser(description="MSEC Farley Score Evaluator")
     parser.add_argument("paths", nargs="*", help="Python test files or directories to review")
@@ -341,6 +395,14 @@ async def main_async():
         sys.exit(1)
 
     all_indices, reviewed_count = await evaluate_files(replay_mgr, args.model, target_files)
+
+    persist_usage_artifacts(
+        replay_mgr,
+        run_id=safe_run_id,
+        model=args.model,
+        cassette_path=cassette_path,
+        reviewed_count=reviewed_count,
+    )
 
     # Save replay cassette if recording
     if args.mode == "record" and replay_mgr is not None:

@@ -1,5 +1,9 @@
 import pytest
-from scripts.farley_compare import top_regressions, compute_suite_summary
+from scripts.farley_compare import (
+    compute_suite_summary,
+    get_usage_totals,
+    top_regressions,
+)
 
 
 def test_top_regressions_handles_missing_ids():
@@ -19,3 +23,26 @@ def test_compute_suite_summary_empty():
     summary = compute_suite_summary({'tests': []})
     assert summary['avg_index'] == pytest.approx(0.0)
     assert summary['count'] == 0
+
+
+def test_get_usage_totals_reads_farley_metadata():
+    cassette = {
+        "__metadata__": {
+            "farley_usage_summary": {
+                "usage": {
+                    "totals": {
+                        "calls": 2,
+                        "prompt_tokens": 100,
+                        "completion_tokens": 20,
+                        "total_tokens": 120,
+                        "cost_usd": 0.01,
+                    }
+                }
+            }
+        }
+    }
+
+    totals = get_usage_totals(cassette)
+
+    assert totals["calls"] == 2
+    assert totals["total_tokens"] == 120

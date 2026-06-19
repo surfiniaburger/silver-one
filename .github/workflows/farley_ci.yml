@@ -48,7 +48,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: farley-cassette-pr-${{ env.PR_NUMBER }}
-          path: artifacts/cassettes/farley_score-PR-${{ env.PR_NUMBER }}.json
+          path: |
+            artifacts/cassettes/farley_score-PR-${{ env.PR_NUMBER }}.json
+            artifacts/metrics/token_spend.jsonl
 
       - name: Compare to baseline and generate report
         run: |
