@@ -133,6 +133,16 @@ def compute_suite_summary(cassette):
     }
 
 
+def get_usage_totals(cassette):
+    metadata = cassette.get("__metadata__", {})
+    summary = metadata.get("farley_usage_summary", {})
+    usage = summary.get("usage", {})
+    totals = usage.get("totals", {})
+    if not isinstance(totals, dict):
+        return {}
+    return totals
+
+
 def top_regressions(base, pr, top_n=5):
     base_map = {
         test.get("id"): test
@@ -243,6 +253,18 @@ def write_report(out_path: str, bsum, psum, delta, verdict, reasons, base, pr):
         f.write(f"**Baseline avg**: {bsum['avg_index']:.2f}\n")
         f.write(f"**PR avg**: {psum['avg_index']:.2f}\n")
         f.write(f"**Delta**: {delta:+.2f}\n\n")
+
+        usage_totals = get_usage_totals(pr)
+        if usage_totals:
+            f.write(
+                "**Token spend**: "
+                f"{int(usage_totals.get('total_tokens') or 0)} total tokens "
+                f"({int(usage_totals.get('prompt_tokens') or 0)} prompt, "
+                f"{int(usage_totals.get('completion_tokens') or 0)} completion) "
+                f"across {int(usage_totals.get('calls') or 0)} LLM call(s); "
+                f"estimated cost ${float(usage_totals.get('cost_usd') or 0.0):.6f}\n\n"
+            )
+
         f.write(f"**Verdict**: {verdict}\n")
 
         if reasons:

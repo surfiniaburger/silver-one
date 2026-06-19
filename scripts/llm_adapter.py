@@ -125,10 +125,23 @@ def _local_ollama_sync_call(model: str, messages: List[Dict], schema_model: Type
     return _parse_ollama_response(r.json())
 
 
-def _extract_litellm_content(resp: Any) -> str:
-    """Extract text content from a LiteLLM completion response object."""
-    if not (hasattr(resp, "choices") and resp.choices):
-        return str(resp)
+def _extract_choice_dict_content(choice: Any) -> str:
+    if not isinstance(choice, dict):
+        return ""
+    msg = choice.get("message", {})
+    if isinstance(msg, dict):
+        return msg.get("content") or msg.get("reasoning_content") or msg.get("thinking") or ""
+    return choice.get("text", "")
+
+
+def _extract_litellm_dict_content(resp: Dict[str, Any]) -> str:
+    choices = resp.get("choices")
+    if isinstance(choices, list) and choices:
+        return _extract_choice_dict_content(choices[0])
+    return str(resp)
+
+
+def _extract_litellm_object_content(resp: Any) -> str:
     msg = resp.choices[0].message
     content = getattr(msg, "content", None) or ""
     if not content:
@@ -138,6 +151,52 @@ def _extract_litellm_content(resp: Any) -> str:
             or ""
         )
     return content
+
+
+def _extract_litellm_content(resp: Any) -> str:
+    """Extract text content from a LiteLLM completion response object."""
+    if isinstance(resp, dict):
+        return _extract_litellm_dict_content(resp)
+    if hasattr(resp, "choices") and resp.choices:
+        return _extract_litellm_object_content(resp)
+    return str(resp)
+
+
+def _build_response_format(schema_name: str, schema_model: Type) -> Any:
+    if hasattr(schema_model, "model_json_schema"):
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": schema_name,
+                "schema": schema_model.model_json_schema(),
+                "strict": False,
+            },
+        }
+    if hasattr(schema_model, "schema"):
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": schema_name,
+                "schema": schema_model.schema(),
+                "strict": False,
+            },
+        }
+    return {"type": "json_object"}
+
+
+def _likely_response_format_unsupported(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return any(
+        needle in msg
+        for needle in (
+            "response_format",
+            "json_schema",
+            "unsupported",
+            "not supported",
+            "badrequest",
+            "invalid request",
+        )
+    )
 
 
 def _build_litellm_kwargs(model: str, messages: List[Dict], params: Dict[str, Any], schema_model: Type) -> Dict[str, Any]:
@@ -169,6 +228,55 @@ async def _call_litellm_async(model: str, messages: List[Dict], params: Dict[str
 
     fn = lambda: _local_ollama_sync_call(model, messages, schema_model)
     return await asyncio.to_thread(lambda: _retry_sync(fn, retries=3, backoff=0.2))
+
+
+async def _call_replay_manager_async(
+    replay_manager: Any,
+    model: str,
+    messages: List[Dict],
+    params: Dict[str, Any],
+    schema_name: str,
+    schema_model: Type,
+    stage: str,
+) -> str:
+    clean_model = model.replace(LITELLM_PREFIX, "")
+    kwargs: Dict[str, Any] = {
+        "temperature": params.get("temperature", 0.0),
+        "max_tokens": params.get("max_tokens", 1024),
+        "response_format": _build_response_format(schema_name, schema_model),
+        "stage": stage,
+    }
+    if any(hint in model.lower() for hint in _THINKING_MODEL_HINTS):
+        kwargs["extra_body"] = {"think": False}
+        kwargs["drop_params"] = True
+
+    try:
+        response = await replay_manager.acompletion(
+            model=clean_model,
+            messages=messages,
+            **kwargs,
+        )
+    except Exception as exc:
+        if not _likely_response_format_unsupported(exc):
+            raise
+        fallback_kwargs = dict(kwargs)
+        fallback_kwargs.pop("response_format", None)
+        fallback_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Output MUST be a single valid JSON object and NOTHING else. "
+                    "Do not wrap in markdown. Do not include any non-JSON text."
+                ),
+            },
+            *messages,
+        ]
+        response = await replay_manager.acompletion(
+            model=clean_model,
+            messages=fallback_messages,
+            **fallback_kwargs,
+        )
+    return _extract_litellm_content(response)
 
 
 def estimate_tokens(text: str) -> int:
@@ -278,6 +386,26 @@ async def call_structured(
 
     params = dict(PRESETS.get(preset, PRESETS["instruct"]))  # copy so mutations are local
     provider = _select_provider(model)
+
+    if replay_manager is not None and hasattr(replay_manager, "acompletion"):
+        try:
+            raw = await _call_replay_manager_async(
+                replay_manager,
+                model,
+                messages,
+                params,
+                schema_name,
+                schema_model,
+                stage,
+            )
+            return _validate_response(str(raw), schema_model, schema_name)
+        except RuntimeError as exc:
+            if "Offline Replay Error" not in str(exc):
+                raise
+            replay_hit = _replay_lookup(replay_manager, model, messages, schema_model, params)
+            if replay_hit is not None:
+                return replay_hit
+            raise
 
     replay_hit = _replay_lookup(replay_manager, model, messages, schema_model, params)
     if replay_hit is not None:
