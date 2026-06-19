@@ -114,3 +114,110 @@ jobs:
               });
               core.info('Created new Farley comment');
             }
+
+  code-review:
+    permissions:
+      pull-requests: write
+      contents: read
+    runs-on: ubuntu-latest
+    env:
+      PR_NUMBER: ${{ github.event.number }}
+    services:
+      ollama:
+        image: ollama/ollama:latest
+        ports:
+          - 11434:11434
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install build tools and project deps
+        run: |
+          python -m pip install -U pip setuptools wheel build hatchling
+          python -m pip install -e .
+
+      - name: Pull Qwen3.5 2B model
+        run: |
+          curl --fail -sS -X POST http://localhost:11434/api/pull -H 'Content-Type: application/json' -d '{"name":"qwen3.5:2b"}' || true
+
+      - name: Run code review evaluator
+        run: |
+          python3 scripts/code_review_evaluator.py \
+            --base origin/main \
+            --cassette code_review-PR-${{ env.PR_NUMBER }}.json \
+            --run-id pr-cr-${{ env.PR_NUMBER }} \
+            --model "ollama/qwen3.5:2b"
+
+      - name: Upload cassette
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-review-cassette-pr-${{ env.PR_NUMBER }}
+          path: |
+            artifacts/cassettes/code_review-PR-${{ env.PR_NUMBER }}.json
+            artifacts/metrics/token_spend.jsonl
+
+      - name: Compare and gate
+        run: |
+          python3 scripts/code_review_compare.py \
+            --pr $GITHUB_WORKSPACE/artifacts/cassettes/code_review-PR-${{ env.PR_NUMBER }}.json \
+            --out $GITHUB_WORKSPACE/code_review_report.md
+
+      - name: Ensure report exists
+        if: always()
+        run: touch $GITHUB_WORKSPACE/code_review_report.md
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-review-report-pr-${{ env.PR_NUMBER }}
+          path: code_review_report.md
+
+      - name: Post code review report as PR comment
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- code-review-report -->';
+            let body;
+            try {
+              const raw = fs.readFileSync('code_review_report.md', 'utf8');
+              const maxLen = 60000;
+              const content = raw.length > maxLen
+                ? raw.slice(0, maxLen) + '\n\n_Report truncated — download the full artifact for details._'
+                : raw;
+              body = `${marker}\n${content}`;
+            } catch (e) {
+              body = `${marker}\n⚠️ Code review report could not be read: ${e.message}`;
+            }
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+

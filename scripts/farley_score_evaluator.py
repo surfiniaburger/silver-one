@@ -307,11 +307,19 @@ def persist_usage_artifacts(
         return None
 
     usage_summary = replay_mgr.get_usage_summary()
+    if not isinstance(usage_summary, dict):
+        usage_summary = {}
+
+    try:
+        cassette_str = str(cassette_path.relative_to(PROJECT_ROOT))
+    except ValueError:
+        cassette_str = str(cassette_path)
+
     payload = {
         "run_id": run_id,
         "model": model,
         "reviewed_test_cases": reviewed_count,
-        "cassette": str(cassette_path.relative_to(PROJECT_ROOT)),
+        "cassette": cassette_str,
         "usage": usage_summary,
     }
 
@@ -324,8 +332,15 @@ def persist_usage_artifacts(
         if cassette_path.exists():
             with cassette_path.open("r", encoding="utf-8") as f:
                 cassette_data = json.load(f)
+        if not isinstance(cassette_data, dict):
+            cassette_data = {}
+        
+        metadata = cassette_data.get("__metadata__")
+        if not isinstance(metadata, dict):
+            metadata = {}
+            
         cassette_data["__metadata__"] = {
-            **cassette_data.get("__metadata__", {}),
+            **metadata,
             "farley_usage_summary": payload,
         }
         with cassette_path.open("w", encoding="utf-8") as f:
@@ -333,7 +348,9 @@ def persist_usage_artifacts(
     except Exception as exc:
         print(f"\033[93mWarning: failed to write cassette usage metadata: {exc}\033[0m")
 
-    totals = usage_summary.get("totals", {})
+    totals = usage_summary.get("totals")
+    if not isinstance(totals, dict):
+        totals = {}
     print(
         "\033[94mToken usage: "
         f"{totals.get('total_tokens', 0)} total "

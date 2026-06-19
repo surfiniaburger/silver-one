@@ -134,10 +134,18 @@ def compute_suite_summary(cassette):
 
 
 def get_usage_totals(cassette):
-    metadata = cassette.get("__metadata__", {})
-    summary = metadata.get("farley_usage_summary", {})
-    usage = summary.get("usage", {})
-    totals = usage.get("totals", {})
+    if not isinstance(cassette, dict):
+        return {}
+    metadata = cassette.get("__metadata__")
+    if not isinstance(metadata, dict):
+        return {}
+    summary = metadata.get("farley_usage_summary")
+    if not isinstance(summary, dict):
+        return {}
+    usage = summary.get("usage")
+    if not isinstance(usage, dict):
+        return {}
+    totals = usage.get("totals")
     if not isinstance(totals, dict):
         return {}
     return totals
