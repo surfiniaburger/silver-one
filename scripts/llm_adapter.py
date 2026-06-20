@@ -79,6 +79,7 @@ def _retry_sync(fn, retries=2, backoff=0.5):
         except Exception as e:
             last = e
             time.sleep(backoff * (2 ** i))
+    assert last is not None  # loop always runs ≥1 time, so last is always set
     raise last
 
 

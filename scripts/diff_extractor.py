@@ -4,21 +4,10 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Any, Set, Tuple
 
+from scripts.path_utils import validate_path
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-
-def validate_path(path: str, root: Path) -> Path:
-    """Validate that a path does not escape the allowed root directory."""
-    p = Path(path)
-    if p.is_absolute():
-        candidate = p.resolve()
-    else:
-        candidate = (root / path).resolve()
-        try:
-            candidate.relative_to(root)
-        except ValueError:
-            raise ValueError(f"Path escapes allowed directory: {path}")
-    return candidate
 
 
 class FunctionVisitor(ast.NodeVisitor):

@@ -1,39 +1,12 @@
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Dict, Any, List, Tuple
 
+from scripts.path_utils import validate_input_path, validate_output_path
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
-
-def validate_input_path(path: str, root: Path = PROJECT_ROOT) -> Path:
-    p = Path(path)
-    if p.is_absolute():
-        candidate = p.resolve()
-    else:
-        candidate = (root / path).resolve()
-        try:
-            candidate.relative_to(root)
-        except ValueError:
-            raise ValueError(f"Path escapes allowed directory: {path}")
-    if not candidate.exists():
-        raise ValueError(f"Input path does not exist: {path}")
-    return candidate
-
-
-def validate_output_path(path: str, root: Path = PROJECT_ROOT) -> Path:
-    p = Path(path)
-    if p.is_absolute():
-        candidate = p.resolve()
-    else:
-        candidate = (root / path).resolve()
-        try:
-            candidate.relative_to(root)
-        except ValueError:
-            raise ValueError(f"Path escapes allowed directory: {path}")
-    return candidate
 
 
 def calculate_cqi(review: Dict[str, Any]) -> float:

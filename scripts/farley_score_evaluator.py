@@ -43,6 +43,7 @@ try:
 except Exception:
     pass
 from llm_adapter import call_structured
+from path_utils import validate_path
 
 try:
     from pydantic import BaseModel, Field
@@ -135,40 +136,6 @@ class TestExtractor(ast.NodeVisitor):
 
     # Ensure async test functions are captured as well (async def test_...)
     visit_AsyncFunctionDef = visit_FunctionDef
-
-def validate_path(
-    path: str,
-    root: Path,
-    allowed_suffixes=None,
-) -> Path:
-    """
-    Validate that a path remains inside the specified root directory.
-
-    If *path* is already absolute it is resolved directly and the
-    root-containment check is skipped (the caller already holds an
-    absolute, trusted path).  Relative paths are joined under *root*
-    and must not escape it (path-traversal guard).
-    """
-
-    p = Path(path)
-    if p.is_absolute():
-        candidate = p.resolve()
-    else:
-        candidate = (root / path).resolve()
-        try:
-            candidate.relative_to(root)
-        except ValueError:
-            raise ValueError(
-                f"Path escapes allowed directory: {path}"
-            )
-
-    if allowed_suffixes and candidate.suffix.lower() not in allowed_suffixes:
-        raise ValueError(
-            f"Invalid file type '{candidate.suffix}'. "
-            f"Expected one of {allowed_suffixes}."
-        )
-
-    return candidate
 
 
 def sanitize_run_id(run_id: str) -> str:
