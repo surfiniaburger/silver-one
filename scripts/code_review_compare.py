@@ -1,8 +1,12 @@
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Dict, Any, List, Tuple
+
+# Enable relative imports from parent directory
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from scripts.path_utils import validate_input_path, validate_output_path
 
