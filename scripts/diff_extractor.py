@@ -1,4 +1,5 @@
 import ast
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -78,6 +79,12 @@ def get_changed_lines(base_ref: str = "origin/main", cwd: Path = PROJECT_ROOT) -
     Run git diff base_ref --unified=0 and parse the line ranges that changed.
     Returns a dict mapping relative file paths (as strings) to lists of changed line numbers.
     """
+    # Sanitize base_ref to prevent option/command injection
+    if base_ref.startswith("-"):
+        raise ValueError(f"Git reference cannot start with a dash to prevent option injection: '{base_ref}'")
+    if not re.match(r"^[a-zA-Z0-9_\.\-\/\@\~\^]+$", base_ref):
+        raise ValueError(f"Git reference contains invalid characters: '{base_ref}'")
+
     cmd = ["git", "diff", base_ref, "--unified=0", "--", "*.py"]
     try:
         diff_output = subprocess.check_output(cmd, text=True, cwd=str(cwd))

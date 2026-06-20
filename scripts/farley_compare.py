@@ -16,6 +16,10 @@ FAIL_PERCENT_TESTS = 0.05
 CASSETTE_ROOT = Path("./cassettes").resolve()
 REPORT_ROOT = Path("./reports").resolve()
 
+# Allowed file extensions
+JSON_EXTENSIONS = frozenset({".json"})
+MD_EXTENSIONS = frozenset({".md"})
+
 # Ensure directories exist
 CASSETTE_ROOT.mkdir(parents=True, exist_ok=True)
 REPORT_ROOT.mkdir(parents=True, exist_ok=True)
@@ -24,7 +28,7 @@ REPORT_ROOT.mkdir(parents=True, exist_ok=True)
 
 def load_cassette(path: str):
     try:
-        safe_path = validate_input_path(path, CASSETTE_ROOT, frozenset({".json"}))
+        safe_path = validate_input_path(path, CASSETTE_ROOT, JSON_EXTENSIONS)
 
         with safe_path.open("r", encoding="utf-8") as f:
             return json.load(f)
@@ -274,9 +278,9 @@ def main():
 
     try:
         # Validate all paths up front
-        validate_input_path(args.baseline, CASSETTE_ROOT, frozenset({".json"}))
-        validate_input_path(args.pr, CASSETTE_ROOT, frozenset({".json"}))
-        validate_output_path(args.out, REPORT_ROOT, frozenset({".md"}))
+        validate_input_path(args.baseline, CASSETTE_ROOT, JSON_EXTENSIONS)
+        validate_input_path(args.pr, CASSETTE_ROOT, JSON_EXTENSIONS)
+        validate_output_path(args.out, REPORT_ROOT, MD_EXTENSIONS)
 
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)

@@ -278,7 +278,11 @@ async def main_async():
         sys.exit(1)
 
     print(f"\033[94mExtracting changed units against {args.base}...\033[0m")
-    all_units = diff_extractor.get_all_changed_units(args.base, PROJECT_ROOT)
+    try:
+        all_units = diff_extractor.get_all_changed_units(args.base, PROJECT_ROOT)
+    except ValueError as e:
+        print(f"\033[91mInvalid base reference: {e}\033[0m", file=sys.stderr)
+        sys.exit(1)
 
     if not all_units:
         print("\033[92mNo Python code modifications found. Skipping code review.\033[0m")
