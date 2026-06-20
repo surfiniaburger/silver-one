@@ -11,11 +11,14 @@ from typing_extensions import Literal
 # Enable relative imports from parent directory
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+ReplayManager = None
+LLMCassette = None
 try:
-    from agentbeats.replay import ReplayManager, LLMCassette
+    from agentbeats.replay import ReplayManager as RM, LLMCassette as LC
+    ReplayManager = RM
+    LLMCassette = LC
 except ImportError:
-    ReplayManager = None
-    LLMCassette = None
+    pass
 
 from scripts import llm_adapter
 from scripts import diff_extractor
