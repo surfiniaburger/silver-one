@@ -2,9 +2,15 @@
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from statistics import mean
+
+# Enable relative imports from parent directory
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from scripts.path_utils import validate_input_path, validate_output_path
 
 FAIL_DELTA = 0.25
 FAIL_PROP = 0.5
@@ -14,66 +20,19 @@ FAIL_PERCENT_TESTS = 0.05
 CASSETTE_ROOT = Path("./cassettes").resolve()
 REPORT_ROOT = Path("./reports").resolve()
 
+# Allowed file extensions
+JSON_EXTENSIONS = frozenset({".json"})
+MD_EXTENSIONS = frozenset({".md"})
+
 # Ensure directories exist
 CASSETTE_ROOT.mkdir(parents=True, exist_ok=True)
 REPORT_ROOT.mkdir(parents=True, exist_ok=True)
 
 
-def validate_input_path(path: str) -> Path:
-    """
-    Resolve and validate a cassette input path to prevent path traversal.
-    Relative paths are anchored under CASSETTE_ROOT; absolute paths are
-    resolved directly (containment check skipped — caller is trusted).
-    """
-    p = Path(path)
-    if p.is_absolute():
-        candidate = p.resolve()
-    else:
-        candidate = (CASSETTE_ROOT / path).resolve()
-        try:
-            candidate.relative_to(CASSETTE_ROOT)
-        except ValueError:
-            raise ValueError(
-                f"Invalid input path '{path}': path escapes the cassette directory"
-            )
-
-    if candidate.suffix.lower() != ".json":
-        raise ValueError(
-            f"Invalid input path '{path}': expected a .json file"
-        )
-
-    return candidate
-
-
-def validate_output_path(path: str) -> Path:
-    """
-    Resolve and validate an output report path to prevent path traversal.
-    Relative paths are anchored under REPORT_ROOT; absolute paths are
-    resolved directly (containment check skipped — caller is trusted).
-    """
-    p = Path(path)
-    if p.is_absolute():
-        candidate = p.resolve()
-    else:
-        candidate = (REPORT_ROOT / path).resolve()
-        try:
-            candidate.relative_to(REPORT_ROOT)
-        except ValueError:
-            raise ValueError(
-                f"Invalid output path '{path}': path escapes the reports directory"
-            )
-
-    if candidate.suffix.lower() != ".md":
-        raise ValueError(
-            f"Invalid output path '{path}': expected a .md file"
-        )
-
-    return candidate
-
 
 def load_cassette(path: str):
     try:
-        safe_path = validate_input_path(path)
+        safe_path = validate_input_path(path, CASSETTE_ROOT, JSON_EXTENSIONS)
 
         with safe_path.open("r", encoding="utf-8") as f:
             return json.load(f)
@@ -134,10 +93,18 @@ def compute_suite_summary(cassette):
 
 
 def get_usage_totals(cassette):
-    metadata = cassette.get("__metadata__", {})
-    summary = metadata.get("farley_usage_summary", {})
-    usage = summary.get("usage", {})
-    totals = usage.get("totals", {})
+    if not isinstance(cassette, dict):
+        return {}
+    metadata = cassette.get("__metadata__")
+    if not isinstance(metadata, dict):
+        return {}
+    summary = metadata.get("farley_usage_summary")
+    if not isinstance(summary, dict):
+        return {}
+    usage = summary.get("usage")
+    if not isinstance(usage, dict):
+        return {}
+    totals = usage.get("totals")
     if not isinstance(totals, dict):
         return {}
     return totals
@@ -243,7 +210,7 @@ def determine_verdict_and_reasons(delta, bsum, psum, pct_val):
 
 
 def write_report(out_path: str, bsum, psum, delta, verdict, reasons, base, pr):
-    safe_path = validate_output_path(out_path)
+    safe_path = validate_output_path(out_path, REPORT_ROOT, frozenset({".md"}))
 
     # Create any allowed nested directories
     safe_path.parent.mkdir(parents=True, exist_ok=True)
@@ -315,9 +282,9 @@ def main():
 
     try:
         # Validate all paths up front
-        validate_input_path(args.baseline)
-        validate_input_path(args.pr)
-        validate_output_path(args.out)
+        validate_input_path(args.baseline, CASSETTE_ROOT, JSON_EXTENSIONS)
+        validate_input_path(args.pr, CASSETTE_ROOT, JSON_EXTENSIONS)
+        validate_output_path(args.out, REPORT_ROOT, MD_EXTENSIONS)
 
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)

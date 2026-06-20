@@ -29,12 +29,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/4c/96/c33802d929b0f884cb6e509195d69914632536256d273bd7127e900d79ea/a2a_sdk-0.3.5-py3-none-any.whl", hash = "sha256:fd85b1e4e7be18a89b5d723e4013171510150a235275876f98de9e1ba869457e", size = 136911, upload-time = "2025-09-08T17:30:34.091Z" },
 ]
 
+[package.optional-dependencies]
+http-server = [
+    { name = "fastapi" },
+    { name = "sse-starlette" },
+    { name = "starlette" },
+]
+
 [[package]]
 name = "agentbeats-tutorial"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "a2a-sdk" },
+    { name = "a2a-sdk", extra = ["http-server"] },
     { name = "google-adk" },
     { name = "google-genai" },
     { name = "kaggle-benchmarks" },
@@ -55,7 +62,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "a2a-sdk", specifier = ">=0.3.5" },
-    { name = "google-adk", specifier = ">=2.2.0" },
+    { name = "a2a-sdk", extras = ["http-server"], specifier = ">=0.3.5" },
+    { name = "google-adk", specifier = ">=2.3.0" },
     { name = "google-genai", specifier = ">=1.39.0" },
     { name = "kaggle-benchmarks", specifier = ">=0.5.0" },
     { name = "litellm", specifier = ">=1.84.0" },
@@ -3678,6 +3686,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/47/2c/0a5f6f8ee0d5589e48c7640213ed5175d52cf540a06725b628cc1a45d6ce/soupsieve-2.8.4.tar.gz", hash = "sha256:e121fd02e975c695e4e9e8774a5ee35d74714b59307868dcc5319ad2d9e3328e", size = 121110, upload-time = "2026-05-24T13:55:57.154Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5e/f5/0c41cb68dcae6b7de4fac4188a3a9589e21fb31df21ea3a2e888db95e6c9/soupsieve-2.8.4-py3-none-any.whl", hash = "sha256:e7e6b0769c8f51ed59acab6e994b00621096cfb1c640a7509295987388fbaf65", size = 37304, upload-time = "2026-05-24T13:55:55.406Z" },
+]
+
+[[package]]
+name = "sse-starlette"
+version = "3.4.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "starlette" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f7/2b/58abc2d1fd397e7dde08e947e05c884d8ef2f78d5e2588c17a12d42d6994/sse_starlette-3.4.4.tar.gz", hash = "sha256:07e0fa0460138baf25cdd5fb28683472c3995dc1642225191b3832d62526bcb0", size = 31819, upload-time = "2026-05-12T17:37:17.019Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/dc/67/805710444ea8cc75fbf70b920ed431a560c4bf9c57f7d5a3117213189399/sse_starlette-3.4.4-py3-none-any.whl", hash = "sha256:3f4dd50d8aed2771a091f3a83000323fc3844541c16b4fe585ae2420cc6df973", size = 16514, upload-time = "2026-05-12T17:37:15.601Z" },
 ]
 
 [[package]]

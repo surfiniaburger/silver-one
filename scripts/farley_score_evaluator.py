@@ -43,6 +43,8 @@ try:
 except Exception:
     pass
 from llm_adapter import call_structured
+from path_utils import validate_path
+from telemetry_utils import persist_usage_artifacts as telemetry_persist_usage_artifacts
 
 try:
     from pydantic import BaseModel, Field
@@ -135,40 +137,6 @@ class TestExtractor(ast.NodeVisitor):
 
     # Ensure async test functions are captured as well (async def test_...)
     visit_AsyncFunctionDef = visit_FunctionDef
-
-def validate_path(
-    path: str,
-    root: Path,
-    allowed_suffixes=None,
-) -> Path:
-    """
-    Validate that a path remains inside the specified root directory.
-
-    If *path* is already absolute it is resolved directly and the
-    root-containment check is skipped (the caller already holds an
-    absolute, trusted path).  Relative paths are joined under *root*
-    and must not escape it (path-traversal guard).
-    """
-
-    p = Path(path)
-    if p.is_absolute():
-        candidate = p.resolve()
-    else:
-        candidate = (root / path).resolve()
-        try:
-            candidate.relative_to(root)
-        except ValueError:
-            raise ValueError(
-                f"Path escapes allowed directory: {path}"
-            )
-
-    if allowed_suffixes and candidate.suffix.lower() not in allowed_suffixes:
-        raise ValueError(
-            f"Invalid file type '{candidate.suffix}'. "
-            f"Expected one of {allowed_suffixes}."
-        )
-
-    return candidate
 
 
 def sanitize_run_id(run_id: str) -> str:
@@ -303,48 +271,17 @@ def persist_usage_artifacts(
     cassette_path: Path,
     reviewed_count: int,
 ) -> Optional[Dict[str, Any]]:
-    if replay_mgr is None or not hasattr(replay_mgr, "get_usage_summary"):
-        return None
-
-    usage_summary = replay_mgr.get_usage_summary()
-    payload = {
-        "run_id": run_id,
-        "model": model,
-        "reviewed_test_cases": reviewed_count,
-        "cassette": str(cassette_path.relative_to(PROJECT_ROOT)),
-        "usage": usage_summary,
-    }
-
-    metrics_path = METRICS_ROOT / "token_spend.jsonl"
-    with metrics_path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(payload, sort_keys=True) + "\n")
-
-    try:
-        cassette_data = {}
-        if cassette_path.exists():
-            with cassette_path.open("r", encoding="utf-8") as f:
-                cassette_data = json.load(f)
-        cassette_data["__metadata__"] = {
-            **cassette_data.get("__metadata__", {}),
-            "farley_usage_summary": payload,
-        }
-        with cassette_path.open("w", encoding="utf-8") as f:
-            json.dump(cassette_data, f, indent=2)
-    except Exception as exc:
-        print(f"\033[93mWarning: failed to write cassette usage metadata: {exc}\033[0m")
-
-    totals = usage_summary.get("totals", {})
-    print(
-        "\033[94mToken usage: "
-        f"{totals.get('total_tokens', 0)} total "
-        f"({totals.get('prompt_tokens', 0)} prompt, "
-        f"{totals.get('completion_tokens', 0)} completion) across "
-        f"{totals.get('calls', 0)} call(s); "
-        f"estimated cost ${float(totals.get('cost_usd', 0.0) or 0.0):.6f}"
-        "\033[0m"
+    return telemetry_persist_usage_artifacts(
+        replay_mgr,
+        run_id=run_id,
+        model=model,
+        cassette_path=cassette_path,
+        reviewed_count=reviewed_count,
+        project_root=PROJECT_ROOT,
+        metrics_root=METRICS_ROOT,
+        reviewed_key="reviewed_test_cases",
+        usage_key="farley_usage_summary",
     )
-    print(f"\033[92mSaved token spend metrics to {metrics_path.relative_to(PROJECT_ROOT)}\033[0m")
-    return payload
 
 
 async def main_async():
