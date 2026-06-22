@@ -4,7 +4,6 @@ import json
 
 import pytest
 import sys
-import os
 
 # Ensure scripts directory is importable
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'scripts')))
