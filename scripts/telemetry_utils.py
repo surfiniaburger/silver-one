@@ -82,5 +82,9 @@ def persist_usage_artifacts(
         f"estimated cost ${float(totals.get('cost_usd', 0.0) or 0.0):.6f}"
         "\033[0m"
     )
-    print(f"\033[92mSaved token spend metrics to {metrics_path.relative_to(project_root)}\033[0m")
+    try:
+        rel_metrics = metrics_path.relative_to(project_root)
+    except ValueError:
+        rel_metrics = metrics_path
+    print(f"\033[92mSaved token spend metrics to {rel_metrics}\033[0m")
     return payload
