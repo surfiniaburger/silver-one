@@ -243,9 +243,34 @@ def _init_replay_manager(run_id: str, seed: int, cassette: str, mode: str, model
     )
 
 
+def serialize_breakdown(report: Any) -> Dict[str, Any]:
+    if hasattr(report, "model_dump"):
+        return report.model_dump()
+
+    # Manual serialization for fallback dataclasses
+    def _pe_to_dict(pe):
+        return {
+            "score": pe.score,
+            "rationale": pe.rationale,
+            "suggestions": pe.suggestions
+        }
+    return {
+        "understandable": _pe_to_dict(report.understandable),
+        "maintainable": _pe_to_dict(report.maintainable),
+        "repeatable": _pe_to_dict(report.repeatable),
+        "atomic": _pe_to_dict(report.atomic),
+        "necessary": _pe_to_dict(report.necessary),
+        "granular": _pe_to_dict(report.granular),
+        "fast": _pe_to_dict(report.fast),
+        "first_tdd": _pe_to_dict(report.first_tdd),
+        "summary": report.summary
+    }
+
+
 async def evaluate_files(replay_mgr: ReplayManager, model: str, target_files: List[str]):
     all_indices: List[float] = []
     reviewed_count = 0
+    results = []
     for filepath in target_files:
         print(f"\033[90mParsing test cases from {filepath}...\033[0m")
         test_cases = extract_tests_from_file(filepath)
@@ -258,9 +283,53 @@ async def evaluate_files(replay_mgr: ReplayManager, model: str, target_files: Li
                 idx = display_report(filepath, tc["name"], tc.get("class_name"), report)
                 all_indices.append(idx)
                 reviewed_count += 1
+
+                try:
+                    rel_filepath = str(Path(filepath).relative_to(PROJECT_ROOT))
+                except Exception:
+                    rel_filepath = filepath
+
+                class_name = tc.get("class_name")
+                test_name = tc["name"]
+                test_id = f"{rel_filepath}::{class_name}::{test_name}" if class_name else f"{rel_filepath}::{test_name}"
+
+                results.append({
+                    "id": test_id,
+                    "file_path": rel_filepath,
+                    "test_name": test_name,
+                    "class_name": class_name,
+                    "farley_index": idx,
+                    "farley_breakdown": serialize_breakdown(report)
+                })
             except Exception as e:
                 print(f"\033[91mFailed to evaluate test case {tc.get('name')}: {e}\033[0m")
-    return all_indices, reviewed_count
+    return all_indices, reviewed_count, results
+
+
+def save_farley_cassette(cassette_path: Path, results: List[Dict[str, Any]]):
+    """Save the test evaluations separately to the cassette if not using ReplayManager."""
+    try:
+        data = {}
+        if cassette_path.exists():
+            try:
+                with cassette_path.open("r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                pass
+        if not isinstance(data, dict):
+            data = {}
+
+        data["tests"] = results
+        with cassette_path.open("w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        try:
+            rel_cassette = cassette_path.relative_to(PROJECT_ROOT)
+        except ValueError:
+            rel_cassette = cassette_path
+        print(f"\033[92mSaved tests to cassette at {rel_cassette}\033[0m")
+    except Exception as exc:
+        print(f"\033[91mError saving Farley cassette: {exc}\033[0m")
+
 
 
 def persist_usage_artifacts(
@@ -292,11 +361,12 @@ async def main_async():
     parser.add_argument("--seed", type=int, default=42, help="Random seed for determinism")
     parser.add_argument("--mode", choices=["record", "replay"], default="record", help="Cassette mode")
     parser.add_argument(
-    "--cassette",
-    type=str,
-    default="farley_score.json",
-    help="Cassette filename relative to artifacts/cassettes",
-)
+        "--cassette",
+        type=str,
+        default="farley_score.json",
+        help="Cassette filename relative to artifacts/cassettes",
+    )
+
     args = parser.parse_args()
     try:
 
@@ -331,7 +401,9 @@ async def main_async():
         print("\033[91mError: Replay mode requested but ReplayManager (agentbeats) is not available.\033[0m")
         sys.exit(1)
 
-    all_indices, reviewed_count = await evaluate_files(replay_mgr, args.model, target_files)
+    all_indices, reviewed_count, results = await evaluate_files(replay_mgr, args.model, target_files)
+
+    save_farley_cassette(cassette_path, results)
 
     persist_usage_artifacts(
         replay_mgr,

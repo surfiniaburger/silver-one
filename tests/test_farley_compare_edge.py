@@ -107,3 +107,58 @@ def test_main_exits_0_when_baseline_missing(tmp_path, monkeypatch):
     assert "No baseline cassette found" in report
     assert "PASS" in report
 
+
+@pytest.mark.asyncio
+async def test_farley_evaluator_saves_tests_to_cassette(tmp_path, monkeypatch):
+    """Verify that farley_score_evaluator writes the tests array to the cassette file."""
+    import sys
+    from scripts import farley_score_evaluator
+
+    # 1. Setup a dummy test file
+    test_file = tmp_path / "test_dummy.py"
+    test_file.write_text("def test_dummy_example():\n    assert True\n", encoding="utf-8")
+
+    # 2. Patch evaluate_test_case to return a mock breakdown
+    async def mock_evaluate_test_case(*args, **kwargs):
+        # We need mock evaluations for all 8 properties
+        from scripts.farley_score_evaluator import FarleyScoreBreakdown, PropertyEvaluation
+        pe = PropertyEvaluation(score=8, rationale="Good", suggestions=[])
+        return FarleyScoreBreakdown(
+            understandable=pe, maintainable=pe, repeatable=pe, atomic=pe,
+            necessary=pe, granular=pe, fast=pe, first_tdd=pe,
+            summary="Mocked report"
+        )
+    monkeypatch.setattr(farley_score_evaluator, "evaluate_test_case", mock_evaluate_test_case)
+    monkeypatch.setattr(farley_score_evaluator, "TEST_ROOT", tmp_path)
+    monkeypatch.setattr(farley_score_evaluator, "CASSETTE_ROOT", tmp_path)
+    monkeypatch.setattr(farley_score_evaluator, "RUN_ROOT", tmp_path)
+    monkeypatch.setattr(farley_score_evaluator, "METRICS_ROOT", tmp_path)
+
+    # 3. Define target cassette file path
+    cassette_path = tmp_path / "farley_score_dummy.json"
+
+    # 4. Invoke main_async with argv arguments
+    monkeypatch.setattr(
+        sys, "argv",
+        [
+            "farley_score_evaluator.py",
+            str(test_file),
+            "--cassette", str(cassette_path),
+            "--mode", "record"
+        ]
+    )
+
+    await farley_score_evaluator.main_async()
+
+    # 5. Assert the evaluator exited successfully and saved the tests key
+    assert cassette_path.exists()
+    with cassette_path.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    assert "tests" in data
+    assert len(data["tests"]) == 1
+    assert data["tests"][0]["test_name"] == "test_dummy_example"
+    assert data["tests"][0]["farley_index"] == pytest.approx(8.0)
+
+
+
