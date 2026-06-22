@@ -110,60 +110,56 @@ def get_usage_totals(cassette):
     return totals
 
 
-def top_regressions(base, pr, top_n=5):
-    base_map = {
-        test.get("id"): test
-        for test in base.get("tests", [])
-        if test.get("id") is not None
-    }
-
-    regressions = []
-
-    for test in pr.get("tests", []):
-        test_id = test.get("id")
-        baseline = base_map.get(test_id)
-
-        if baseline:
-            delta = (
-                test.get("farley_index", 0.0)
-                - baseline.get("farley_index", 0.0)
-            )
-
-            if delta < 0:
-                regressions.append((delta, baseline, test))
-
-    regressions.sort(key=lambda item: item[0])
-
-    return regressions[:top_n]
+def format_token_spend(pr) -> str:
+    usage_totals = get_usage_totals(pr)
+    if not usage_totals:
+        return ""
+    return (
+        "**Token spend**: "
+        f"{int(usage_totals.get('total_tokens') or 0)} total tokens "
+        f"({int(usage_totals.get('prompt_tokens') or 0)} prompt, "
+        f"{int(usage_totals.get('completion_tokens') or 0)} completion) "
+        f"across {int(usage_totals.get('calls') or 0)} LLM call(s); "
+        f"estimated cost ${float(usage_totals.get('cost_usd') or 0.0):.6f}\n\n"
+    )
 
 
-def compute_drops_and_pct(base_tests, pr_tests):
+def _compare_tests(base_tests, pr_tests):
+    """Align tests by ID and compute deltas (PR - Base)."""
     base_map = {
         test.get("id"): test
         for test in base_tests
         if test.get("id") is not None
     }
-
-    drops = 0
-    total = len(pr_tests)
-    biggest = []
-
+    deltas = []
     for test in pr_tests:
         test_id = test.get("id")
         baseline = base_map.get(test_id)
-
         if baseline:
-            delta = (
-                baseline.get("farley_index", 0.0)
-                - test.get("farley_index", 0.0)
-            )
+            delta = test.get("farley_index", 0.0) - baseline.get("farley_index", 0.0)
+            deltas.append((delta, baseline, test))
+    return deltas
 
-            if delta >= 2.0:
-                drops += 1
-                biggest.append((delta, baseline, test))
 
+def top_regressions(base, pr, top_n=5):
+    deltas = _compare_tests(base.get("tests", []), pr.get("tests", []))
+    regressions = [item for item in deltas if item[0] < 0]
+    regressions.sort(key=lambda item: item[0])
+    return regressions[:top_n]
+
+
+def compute_drops_and_pct(base_tests, pr_tests):
+    deltas = _compare_tests(base_tests, pr_tests)
+    drops = 0
+    biggest = []
+    for d, baseline, test in deltas:
+        drop_val = -d
+        if drop_val >= 2.0:
+            drops += 1
+            biggest.append((drop_val, baseline, test))
+
+    total = len(pr_tests)
     pct = (drops / total) if total else 0.0
-
     return drops, pct, biggest
 
 
@@ -221,16 +217,7 @@ def write_report(out_path: str, bsum, psum, delta, verdict, reasons, base, pr):
         f.write(f"**PR avg**: {psum['avg_index']:.2f}\n")
         f.write(f"**Delta**: {delta:+.2f}\n\n")
 
-        usage_totals = get_usage_totals(pr)
-        if usage_totals:
-            f.write(
-                "**Token spend**: "
-                f"{int(usage_totals.get('total_tokens') or 0)} total tokens "
-                f"({int(usage_totals.get('prompt_tokens') or 0)} prompt, "
-                f"{int(usage_totals.get('completion_tokens') or 0)} completion) "
-                f"across {int(usage_totals.get('calls') or 0)} LLM call(s); "
-                f"estimated cost ${float(usage_totals.get('cost_usd') or 0.0):.6f}\n\n"
-            )
+        f.write(format_token_spend(pr))
 
         f.write(f"**Verdict**: {verdict}\n")
 
@@ -260,6 +247,24 @@ def write_report(out_path: str, bsum, psum, delta, verdict, reasons, base, pr):
                 )
 
 
+def _write_no_baseline_report(out_path: str, pr: dict) -> None:
+    """Write a minimal report when no baseline cassette exists yet."""
+    out = validate_output_path(out_path, REPORT_ROOT, MD_EXTENSIONS)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    psum = compute_suite_summary(pr)
+    with out.open("w", encoding="utf-8") as f:
+        f.write("# Farley Compare Report\n\n")
+        f.write(
+            "> ⚠️ **No baseline cassette found.** "
+            "This is likely the first run on this branch. "
+            "A baseline will be established when this branch merges to `main`.\n\n"
+        )
+        f.write(f"**PR avg Farley Index**: {psum['avg_index']:.2f} "
+                f"({psum['count']} test(s) evaluated)\n\n")
+        f.write(format_token_spend(pr))
+        f.write("**Verdict**: PASS _(no baseline to compare against)_\n")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -280,18 +285,40 @@ def main():
 
     args = parser.parse_args()
 
+    # Validate the PR cassette and output path — these must always be present/valid.
     try:
-        # Validate all paths up front
-        validate_input_path(args.baseline, CASSETTE_ROOT, JSON_EXTENSIONS)
         validate_input_path(args.pr, CASSETTE_ROOT, JSON_EXTENSIONS)
         validate_output_path(args.out, REPORT_ROOT, MD_EXTENSIONS)
-
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    base = load_cassette(args.baseline)
+    # The baseline is optional: if it doesn't exist yet (first run / no prior merge),
+    # emit a warning and produce an informational report without failing.
+    baseline_exists = True
+    try:
+        validate_input_path(args.baseline, CASSETTE_ROOT, JSON_EXTENSIONS)
+    except ValueError as exc:
+        # Only treat "does not exist" as a soft warning; other errors (bad path,
+        # wrong extension) are still fatal.
+        if "does not exist" in str(exc):
+            print(
+                f"Warning: baseline cassette not found ({exc}). "
+                "Generating a first-run report with no comparison.",
+                file=sys.stderr,
+            )
+            baseline_exists = False
+        else:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+
     pr = load_cassette(args.pr)
+
+    if not baseline_exists:
+        _write_no_baseline_report(args.out, pr)
+        sys.exit(0)
+
+    base = load_cassette(args.baseline)
 
     bsum = compute_suite_summary(base)
     psum = compute_suite_summary(pr)
