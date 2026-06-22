@@ -120,6 +120,8 @@ async def test_farley_evaluator_saves_tests_to_cassette(tmp_path, monkeypatch):
 
     # 2. Patch evaluate_test_case to return a mock breakdown
     async def mock_evaluate_test_case(*args, **kwargs):
+        import asyncio
+        await asyncio.sleep(0)
         # We need mock evaluations for all 8 properties
         from scripts.farley_score_evaluator import FarleyScoreBreakdown, PropertyEvaluation
         pe = PropertyEvaluation(score=8, rationale="Good", suggestions=[])
@@ -128,6 +130,7 @@ async def test_farley_evaluator_saves_tests_to_cassette(tmp_path, monkeypatch):
             necessary=pe, granular=pe, fast=pe, first_tdd=pe,
             summary="Mocked report"
         )
+
     monkeypatch.setattr(farley_score_evaluator, "evaluate_test_case", mock_evaluate_test_case)
     monkeypatch.setattr(farley_score_evaluator, "TEST_ROOT", tmp_path)
     monkeypatch.setattr(farley_score_evaluator, "CASSETTE_ROOT", tmp_path)
