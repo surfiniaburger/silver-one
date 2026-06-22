@@ -110,60 +110,56 @@ def get_usage_totals(cassette):
     return totals
 
 
-def top_regressions(base, pr, top_n=5):
-    base_map = {
-        test.get("id"): test
-        for test in base.get("tests", [])
-        if test.get("id") is not None
-    }
-
-    regressions = []
-
-    for test in pr.get("tests", []):
-        test_id = test.get("id")
-        baseline = base_map.get(test_id)
-
-        if baseline:
-            delta = (
-                test.get("farley_index", 0.0)
-                - baseline.get("farley_index", 0.0)
-            )
-
-            if delta < 0:
-                regressions.append((delta, baseline, test))
-
-    regressions.sort(key=lambda item: item[0])
-
-    return regressions[:top_n]
+def format_token_spend(pr) -> str:
+    usage_totals = get_usage_totals(pr)
+    if not usage_totals:
+        return ""
+    return (
+        "**Token spend**: "
+        f"{int(usage_totals.get('total_tokens') or 0)} total tokens "
+        f"({int(usage_totals.get('prompt_tokens') or 0)} prompt, "
+        f"{int(usage_totals.get('completion_tokens') or 0)} completion) "
+        f"across {int(usage_totals.get('calls') or 0)} LLM call(s); "
+        f"estimated cost ${float(usage_totals.get('cost_usd') or 0.0):.6f}\n\n"
+    )
 
 
-def compute_drops_and_pct(base_tests, pr_tests):
+def _compare_tests(base_tests, pr_tests):
+    """Align tests by ID and compute deltas (PR - Base)."""
     base_map = {
         test.get("id"): test
         for test in base_tests
         if test.get("id") is not None
     }
-
-    drops = 0
-    total = len(pr_tests)
-    biggest = []
-
+    deltas = []
     for test in pr_tests:
         test_id = test.get("id")
         baseline = base_map.get(test_id)
-
         if baseline:
-            delta = (
-                baseline.get("farley_index", 0.0)
-                - test.get("farley_index", 0.0)
-            )
+            delta = test.get("farley_index", 0.0) - baseline.get("farley_index", 0.0)
+            deltas.append((delta, baseline, test))
+    return deltas
 
-            if delta >= 2.0:
-                drops += 1
-                biggest.append((delta, baseline, test))
 
+def top_regressions(base, pr, top_n=5):
+    deltas = _compare_tests(base.get("tests", []), pr.get("tests", []))
+    regressions = [item for item in deltas if item[0] < 0]
+    regressions.sort(key=lambda item: item[0])
+    return regressions[:top_n]
+
+
+def compute_drops_and_pct(base_tests, pr_tests):
+    deltas = _compare_tests(base_tests, pr_tests)
+    drops = 0
+    biggest = []
+    for d, baseline, test in deltas:
+        drop_val = -d
+        if drop_val >= 2.0:
+            drops += 1
+            biggest.append((drop_val, baseline, test))
+
+    total = len(pr_tests)
     pct = (drops / total) if total else 0.0
-
     return drops, pct, biggest
 
 
@@ -221,16 +217,7 @@ def write_report(out_path: str, bsum, psum, delta, verdict, reasons, base, pr):
         f.write(f"**PR avg**: {psum['avg_index']:.2f}\n")
         f.write(f"**Delta**: {delta:+.2f}\n\n")
 
-        usage_totals = get_usage_totals(pr)
-        if usage_totals:
-            f.write(
-                "**Token spend**: "
-                f"{int(usage_totals.get('total_tokens') or 0)} total tokens "
-                f"({int(usage_totals.get('prompt_tokens') or 0)} prompt, "
-                f"{int(usage_totals.get('completion_tokens') or 0)} completion) "
-                f"across {int(usage_totals.get('calls') or 0)} LLM call(s); "
-                f"estimated cost ${float(usage_totals.get('cost_usd') or 0.0):.6f}\n\n"
-            )
+        f.write(format_token_spend(pr))
 
         f.write(f"**Verdict**: {verdict}\n")
 
@@ -274,16 +261,7 @@ def _write_no_baseline_report(out_path: str, pr: dict) -> None:
         )
         f.write(f"**PR avg Farley Index**: {psum['avg_index']:.2f} "
                 f"({psum['count']} test(s) evaluated)\n\n")
-        usage_totals = get_usage_totals(pr)
-        if usage_totals:
-            f.write(
-                "**Token spend**: "
-                f"{int(usage_totals.get('total_tokens') or 0)} total tokens "
-                f"({int(usage_totals.get('prompt_tokens') or 0)} prompt, "
-                f"{int(usage_totals.get('completion_tokens') or 0)} completion) "
-                f"across {int(usage_totals.get('calls') or 0)} LLM call(s); "
-                f"estimated cost ${float(usage_totals.get('cost_usd') or 0.0):.6f}\n\n"
-            )
+        f.write(format_token_spend(pr))
         f.write("**Verdict**: PASS _(no baseline to compare against)_\n")
 
 
