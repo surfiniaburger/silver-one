@@ -244,6 +244,10 @@ def _init_replay_manager(run_id: str, seed: int, cassette: str, mode: str, model
 
 
 def serialize_breakdown(report: Any) -> Dict[str, Any]:
+    # Already a plain dict (e.g. cached/mock response) — return as-is.
+    if isinstance(report, dict):
+        return report
+
     if hasattr(report, "model_dump"):
         return report.model_dump()
 
@@ -281,8 +285,6 @@ async def evaluate_files(replay_mgr: ReplayManager, model: str, target_files: Li
             try:
                 report = await evaluate_test_case(replay_mgr, model, tc, filepath)
                 idx = display_report(filepath, tc["name"], tc.get("class_name"), report)
-                all_indices.append(idx)
-                reviewed_count += 1
 
                 try:
                     rel_filepath = str(Path(filepath).relative_to(PROJECT_ROOT))
@@ -293,23 +295,32 @@ async def evaluate_files(replay_mgr: ReplayManager, model: str, target_files: Li
                 test_name = tc["name"]
                 test_id = f"{rel_filepath}::{class_name}::{test_name}" if class_name else f"{rel_filepath}::{test_name}"
 
+                # Build result entry — do this BEFORE incrementing counters so a
+                # serialization failure doesn't leave counters out of sync with results.
+                serialized = serialize_breakdown(report)
                 results.append({
                     "id": test_id,
                     "file_path": rel_filepath,
                     "test_name": test_name,
                     "class_name": class_name,
                     "farley_index": idx,
-                    "farley_breakdown": serialize_breakdown(report)
+                    "farley_breakdown": serialized,
                 })
+                # Only count after the full result is successfully recorded.
+                all_indices.append(idx)
+                reviewed_count += 1
             except Exception as e:
                 print(f"\033[91mFailed to evaluate test case {tc.get('name')}: {e}\033[0m")
     return all_indices, reviewed_count, results
 
 
 def save_farley_cassette(cassette_path: Path, results: List[Dict[str, Any]]):
-    """Save the test evaluations separately to the cassette if not using ReplayManager."""
+    """Save the test evaluations to the cassette using an atomic write (temp + os.replace)
+    so that an interrupted write never leaves a half-corrupt JSON file.
+    """
+    import tempfile
     try:
-        data = {}
+        data: Dict[str, Any] = {}
         if cassette_path.exists():
             try:
                 with cassette_path.open("r", encoding="utf-8") as f:
@@ -320,8 +331,28 @@ def save_farley_cassette(cassette_path: Path, results: List[Dict[str, Any]]):
             data = {}
 
         data["tests"] = results
-        with cassette_path.open("w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+
+        # Atomic write: write to a temp file in the same directory, then
+        # os.replace() it over the target — rename is atomic on POSIX.
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w",
+            dir=str(cassette_path.parent),
+            delete=False,
+            suffix=".tmp",
+            encoding="utf-8",
+        )
+        try:
+            json.dump(data, tmp, indent=2)
+            tmp.close()
+            os.replace(tmp.name, str(cassette_path))
+        except Exception:
+            # Clean up the temp file if the replace fails.
+            try:
+                os.remove(tmp.name)
+            except OSError:
+                pass
+            raise
+
         try:
             rel_cassette = cassette_path.relative_to(PROJECT_ROOT)
         except ValueError:
@@ -425,8 +456,8 @@ async def main_async():
         try:
             replay_mgr.save_record(str(run_record_path))
             print(f"\033[92mSaved run record to {run_record_path.relative_to(PROJECT_ROOT)}\033[0m")
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"\033[93mWarning: could not save run record to {run_record_path}: {exc}\033[0m")
 
     if reviewed_count > 0:
         suite_average = sum(all_indices) / len(all_indices)
