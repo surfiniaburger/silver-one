@@ -118,11 +118,12 @@ async def test_farley_evaluator_saves_tests_to_cassette(tmp_path, monkeypatch):
     test_file = tmp_path / "test_dummy.py"
     test_file.write_text("def test_dummy_example():\n    assert True\n", encoding="utf-8")
 
-    # 2. Patch evaluate_test_case to return a mock breakdown
+    # 2. Patch evaluate_test_case to return a mock breakdown.
+    # *args/**kwargs intentionally mirrors the real signature so monkeypatch works
+    # without coupling this helper to the exact call signature of evaluate_test_case.
     async def mock_evaluate_test_case(*args, **kwargs):
         import asyncio
-        await asyncio.sleep(0)
-        # We need mock evaluations for all 8 properties
+        await asyncio.sleep(0)  # Required to use async features (SonarQube S7503)
         from scripts.farley_score_evaluator import FarleyScoreBreakdown, PropertyEvaluation
         pe = PropertyEvaluation(score=8, rationale="Good", suggestions=[])
         return FarleyScoreBreakdown(
@@ -130,6 +131,7 @@ async def test_farley_evaluator_saves_tests_to_cassette(tmp_path, monkeypatch):
             necessary=pe, granular=pe, fast=pe, first_tdd=pe,
             summary="Mocked report"
         )
+
 
     monkeypatch.setattr(farley_score_evaluator, "evaluate_test_case", mock_evaluate_test_case)
     monkeypatch.setattr(farley_score_evaluator, "TEST_ROOT", tmp_path)
