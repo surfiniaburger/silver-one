@@ -104,34 +104,65 @@ graph TD
   * We can supply rich, metric-specific instruction templates and examples.
 * **Cons**:
   * 9x increase in LLM calls (higher token spend, potential API rate-limit bottlenecks).
-  * Slower completion times (though mitigated by running calls concurrently via `asyncio.gather`).
+  * Slower completion times if run sequentially or on a single CPU.
+
+### Option C: CI-Distributed Job Matrix (Parallel Runners)
+Instead of running all 9 properties in a single job execution, we use a GitHub Actions **Build Matrix** to distribute evaluation. We spawn 9 parallel runner instances (one for each property). 
+
+```mermaid
+graph TD
+    Trigger[PR Push] --> Matrix[GA Job Matrix: 9 Runners]
+    Matrix --> R1[Runner 1: Understandable]
+    Matrix --> R2[Runner 2: Maintainable]
+    Matrix --> R9[Runner 9: Compatibility]
+    R1 --> U1[Upload Cassette/Report 1]
+    R2 --> U2[Upload Cassette/Report 2]
+    R9 --> U9[Upload Cassette/Report 9]
+    U1 --> Agg[Aggregate & Merge Job]
+    U2 --> Agg
+    U9 --> Agg
+    Agg --> Final[Unified PR Comment & Cassette]
+```
+
+* **Pros**:
+  * **Free Concurrency**: Leverages GitHub's parallel runners (virtual machines) to run model inference in parallel across separate CPU clusters.
+  * **Zero Cloud Costs**: Uses the local Qwen model running in a sidecar container on each VM runner, incurring $0 in external API costs.
+  * **Fault Isolation**: If one evaluation fails or runs slowly, it does not block or crash the other properties.
+* **Cons**:
+  * **Startup Overhead**: Each of the 9 jobs must spin up, install python dependencies, and pull the Qwen model file (~1.2GB). This adds ~1-2 minutes of flat setup latency per run.
+  * **Complexity**: Requires writing a cassette-merging script that runs in the final aggregation job to merge the separate properties into one combined report.
 
 ---
 
-## 5. Environmental Analysis: Local CPU (Ollama) vs. Hosted APIs (e.g., Nebius, Groq)
+## 5. Environmental Analysis: Local CPU vs. Hosted APIs vs. CI-Distributed Matrix
 
-The choice between **Option A (Monolithic)** and **Option B (Modular Multi-Call)** is heavily dependent on the runtime environment (Local CPU execution vs. Cloud API hosting).
+The choice between **Option A (Monolithic)**, **Option B (Modular Multi-Call)**, and **Option C (CI-Distributed Matrix)** depends on the execution environment.
 
-### A. Local CPU Execution (Ollama / Qwen 3.5)
-When running models like Qwen 3.5 locally on a CPU:
-* **The Concurrency Illusion**: While `asyncio.gather` allows submitting 9 calls concurrently in Python code, a local CPU runner can only handle them sequentially or with extreme resource contention (queuing at the Ollama server level). Running 9 parallel inferences on CPU will drive CPU utilization to 100%, causing massive context-switching overhead and extending total execution latency significantly.
-* **Cost Advantage**: API calls are free (ignoring local electricity/hardware wear), making token volume a non-issue financially.
-* **Latency Penalty**: Since execution is effectively sequential, 9 calls will take roughly 9 times longer than a single call. If one monolithic review takes 10 seconds, 9 modular reviews will take ~90 seconds per code unit, which is highly disruptive for local pre-commit hooks or local CI.
-* **Mitigation (GEPA - Gradient-based Evolutionary Prompt Alignment)**: We can use prompt optimization frameworks (like GEPA) to optimize the system prompt templates for each of the 9 flows. By stripping out redundant instructional tokens and fine-tuning the prompt layout, we can drastically reduce context/prompt token evaluation time, speeding up CPU execution.
+### A. Local CPU Execution (Local Machine / Single Threaded Ollama)
+When a developer runs evaluations on their own computer before committing:
+* **The Concurrency Bottleneck**: Ollama running locally on CPU evaluates sequentially. Running 9 separate properties per unit takes 9x longer, creating excessive waiting times.
+* **Best Choice**: **Option A (Monolithic)**. Keep the prompts inside a single call to preserve developer workflow velocity.
 
 ### B. Hosted APIs (Nebius, Together, Groq, DeepSeek)
-When utilizing a cloud provider:
-* **True Concurrency**: Cloud providers run massive, highly parallel GPU clusters. Submitting 9 requests concurrently via `asyncio.gather` returns all 9 outputs in parallel. The total latency is simply the latency of the single slowest call (typically 1.5 to 3 seconds).
-* **Cost Penalty**: We pay per token. However, small open-source models (like Qwen 3.5 or Llama 3 8B) are priced extremely low (e.g., $0.05 to $0.15 per million tokens). A 9-call modular run on a file still costs less than a single cent.
-* **Reasoning Quality**: Hosted environments make it easy to use larger, higher-reasoning models (like Qwen 72B or Llama 70B) that would be far too slow or heavy to run on a local developer laptop.
+When cloud GPUs are accessible:
+* **Parallel Cloud Scaling**: Concurrency is handled instantly by the provider's API. 9 concurrent calls finish in parallel in <3 seconds.
+* **Best Choice**: **Option B (Modular Multi-Call)**. Gives the highest quality, focused review at minimal cost (fractions of a cent).
+
+### C. CI Execution on Free Runners (GitHub Actions + Ollama Sidecar)
+When executing inside a PR validation workflow:
+* **Distributed VM Scaling**: By defining a matrix of 9 properties, GitHub spins up **9 separate runners** concurrently. Each runner executes its own local Qwen/Ollama container.
+* **Eliminating Latency**: The sequential CPU queue bottleneck is eliminated because the 9 CPU inferences occur on 9 physically distinct virtual machines.
+* **Best Choice**: **Option C (CI-Distributed Job Matrix)**. Gives the deep-dive benefits of modular prompts (Option B) and the free cost of local models, without the sequential execution penalty.
 
 ### Recommendation Grid
 
-| Metric / Need | Local CPU (Ollama) | Hosted API (Nebius/Groq/etc.) |
-| :--- | :--- | :--- |
-| **Primary Choice** | **Option A (Monolithic + thinking)** | **Option B (Modular Multi-Call)** |
-| **Reason** | Sequential bottleneck of CPU means 9 calls creates excessive developer wait times. | Parallel GPU inference handles 9 calls instantly at negligible cost. |
-| **Optimization Path** | Apply GEPA prompt compression to minimize token footprint of the single prompt. | Apply GEPA to optimize the 9 distinct modular templates to minimize token cost. |
+| Metric / Need | Local Developer Machine | CI Runner (Local Model) | CI Runner (Cloud API) |
+| :--- | :--- | :--- | :--- |
+| **Primary Choice** | **Option A (Monolithic)** | **Option C (CI Matrix)** | **Option B (Modular Multi-Call)** |
+| **Execution Latency** | Low (~10-15s per unit) | Medium (~2m startup + 10s run) | Ultra-Low (~3s total) |
+| **Inference Cost** | $0 | $0 | Low (<$0.01 per run) |
+| **Attention Focus** | Distributed (Monolithic) | Highly Focused (Modular) | Highly Focused (Modular) |
+| **Complexity** | Low | High (Requires merging artifacts) | Medium |
 
 ---
 
