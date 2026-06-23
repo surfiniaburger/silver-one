@@ -5,6 +5,7 @@
 __pycache__/
 *.pyc
 artifacts/
+!artifacts/cassettes/
 training_corpus*.jsonl
 *_corpus*.jsonl
 todo.md

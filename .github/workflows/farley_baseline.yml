@@ -54,7 +54,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add artifacts/cassettes/farley_score-main-latest.json
+          git add -f artifacts/cassettes/farley_score-main-latest.json
           # Only commit if the cassette actually changed.
           if git diff --cached --quiet; then
             echo "Baseline cassette unchanged — nothing to commit."
