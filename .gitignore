@@ -4,7 +4,8 @@
 .venv/
 __pycache__/
 *.pyc
-artifacts/
+artifacts/*
+!artifacts/cassettes/
 training_corpus*.jsonl
 *_corpus*.jsonl
 todo.md
