@@ -102,3 +102,28 @@ For instance, we can run:
 3. `correctness_reviewer` (Checks for logic errors, edge cases, and assertion robustness)
 
 Since these only run on the 1 or 2 changed tests, the total calls are kept low, yielding high-precision feedback without bloat.
+
+
+PHASE 1
+Fix evaluation methodology
+
+- Diff-only review
+- Diff-only Farley
+- Virtual Suite
+- Compatibility metric
+
+PHASE 2
+Validate quality improvements
+
+- Prompt experiments
+- Benchmark runs
+- Measure precision/recall
+- Compare reviewers
+
+PHASE 3
+Introduce specialization
+
+- Security reviewer
+- Compatibility reviewer
+- Correctness reviewer
+
