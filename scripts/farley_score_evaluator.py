@@ -7,7 +7,7 @@ import asyncio
 import ast
 import json
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Set
+from typing import List, Dict, Any, Optional, Set, Tuple, Callable
 
 TEST_PATTERNS = ("**/test_*.py", "**/*_test.py")
 
@@ -49,12 +49,28 @@ from llm_adapter import call_structured
 from path_utils import validate_path
 from telemetry_utils import persist_usage_artifacts as telemetry_persist_usage_artifacts
 
+def log_info(msg: str) -> None:
+    print(f"\033[94m{msg}\033[0m")
+
+def log_success(msg: str) -> None:
+    print(f"\033[92m{msg}\033[0m")
+
+def log_warn(msg: str) -> None:
+    print(f"\033[93m{msg}\033[0m")
+
+def log_error(msg: str) -> None:
+    print(f"\033[91m{msg}\033[0m")
+
+def log_debug(msg: str) -> None:
+    print(f"\033[90m{msg}\033[0m")
+
 # diff_extractor is optional — only needed when --base is supplied.
+_get_changed_lines: Optional[Callable[[str, Path], Dict[str, List[int]]]] = None
 try:
-    from diff_extractor import get_changed_lines as _get_changed_lines
+    from diff_extractor import get_changed_lines as _get_changed_lines_impl
+    _get_changed_lines = _get_changed_lines_impl
     _DIFF_AVAILABLE = True
 except ImportError:
-    _get_changed_lines = None  # type: ignore[assignment]
     _DIFF_AVAILABLE = False
 
 try:
@@ -180,7 +196,7 @@ def extract_tests_from_file(
             content = f.read()
 
     except Exception as e:
-        print(f"\033[91mError reading file {filepath}: {e}\033[0m")
+        log_error(f"Error reading file {filepath}: {e}")
         return []
 
     try:
@@ -208,19 +224,20 @@ def extract_tests_from_file(
                 sl = tc.get("start_line")
                 el = tc.get("end_line")
                 # Include if: no line metadata (conservative) OR range overlaps the diff.
-                if sl is None or el is None or set(range(sl, el + 1)).intersection(changed_set):
+                if sl is None or el is None or any(sl <= line <= el for line in changed_set):
                     filtered.append(tc)
             extractor.test_cases = filtered
 
         return extractor.test_cases
 
     except SyntaxError as e:
-        print(f"\033[91mSyntax error parsing {safe_path}: {e}\033[0m")
+        log_error(f"Syntax error parsing {safe_path}: {e}")
         return []
 
     except Exception as e:
-        print(f"\033[91mError parsing AST for {safe_path}: {e}\033[0m")
+        log_error(f"Error parsing AST for {safe_path}: {e}")
         return []
+
 
 
 
@@ -256,7 +273,7 @@ def find_target_files(input_paths: List[str]) -> List[str]:
             resolved_path = str(Path(path).resolve())
             safe_path = validate_path(resolved_path, TEST_ROOT)
         except ValueError as exc:
-            print(f"\033[91mSkipping invalid path '{path}': {exc}\033[0m")
+            log_error(f"Skipping invalid path '{path}': {exc}")
             continue
 
         if safe_path.is_file() and safe_path.suffix == ".py":
@@ -310,6 +327,11 @@ def serialize_breakdown(report: Any) -> Dict[str, Any]:
     }
 
 
+def _build_test_id(rel_filepath: str, class_name: Optional[str], test_name: str) -> str:
+    """Construct a unique test ID matching the pytest naming pattern."""
+    return f"{rel_filepath}::{class_name}::{test_name}" if class_name else f"{rel_filepath}::{test_name}"
+
+
 async def _evaluate_single_test(
     replay_mgr: ReplayManager,
     model: str,
@@ -321,18 +343,16 @@ async def _evaluate_single_test(
         report = await evaluate_test_case(replay_mgr, model, tc, filepath)
         idx = display_report(filepath, tc["name"], tc.get("class_name"), report)
 
+        rel_filepath = filepath
         try:
-            rel_filepath = str(Path(filepath).relative_to(PROJECT_ROOT))
-        except Exception:
-            rel_filepath = filepath
+            if PROJECT_ROOT:
+                rel_filepath = str(Path(filepath).relative_to(PROJECT_ROOT))
+        except (ValueError, TypeError):
+            pass
 
         class_name = tc.get("class_name")
         test_name = tc["name"]
-        test_id = (
-            f"{rel_filepath}::{class_name}::{test_name}"
-            if class_name
-            else f"{rel_filepath}::{test_name}"
-        )
+        test_id = _build_test_id(rel_filepath, class_name, test_name)
 
         # Build result entry before touching counters so a serialization failure
         # doesn't leave counters out of sync with results.
@@ -346,7 +366,7 @@ async def _evaluate_single_test(
             "farley_breakdown": serialized,
         }
     except Exception as e:
-        print(f"\033[91mFailed to evaluate test case {tc.get('name')}: {e}\033[0m")
+        log_error(f"Failed to evaluate test case {tc.get('name')}: {e}")
         return None
 
 
@@ -355,7 +375,7 @@ async def evaluate_files(
     model: str,
     target_files: List[str],
     changed_lines_by_file: Optional[Dict[str, List[int]]] = None,
-):
+) -> Tuple[List[float], int, List[Dict[str, Any]]]:
     """Evaluate test files, optionally restricting to diff-intersecting functions.
 
     Args:
@@ -363,16 +383,19 @@ async def evaluate_files(
             numbers (diff-only mode).  ``None`` means evaluate every test
             (full-suite mode, backward-compatible default).
     """
+    if not target_files:
+        return [], 0, []
+
     all_indices: List[float] = []
     reviewed_count = 0
     results = []
     for filepath in target_files:
-        print(f"\033[90mParsing test cases from {filepath}...\033[0m")
+        log_debug(f"Parsing test cases from {filepath}...")
         cl = changed_lines_by_file.get(filepath) if changed_lines_by_file is not None else None
         test_cases = extract_tests_from_file(filepath, cl)
         if not test_cases:
             continue
-        print(f"\033[90mEvaluating {len(test_cases)} case(s) in {os.path.basename(filepath)}...\033[0m")
+        log_debug(f"Evaluating {len(test_cases)} case(s) in {os.path.basename(filepath)}...")
         for tc in test_cases:
             result = await _evaluate_single_test(replay_mgr, model, tc, filepath)
             if result is not None:
@@ -380,6 +403,7 @@ async def evaluate_files(
                 all_indices.append(result["farley_index"])
                 reviewed_count += 1
     return all_indices, reviewed_count, results
+
 
 
 def save_farley_cassette(cassette_path: Path, results: List[Dict[str, Any]]):
@@ -425,9 +449,10 @@ def save_farley_cassette(cassette_path: Path, results: List[Dict[str, Any]]):
             rel_cassette = cassette_path.relative_to(PROJECT_ROOT)
         except ValueError:
             rel_cassette = cassette_path
-        print(f"\033[92mSaved tests to cassette at {rel_cassette}\033[0m")
+        log_success(f"Saved tests to cassette at {rel_cassette}")
     except Exception as exc:
-        print(f"\033[91mError saving Farley cassette: {exc}\033[0m")
+        log_error(f"Error saving Farley cassette: {exc}")
+
 
 
 
@@ -484,14 +509,25 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _parse_and_validate_args(parser: argparse.ArgumentParser):
+def _parse_and_validate_args(
+    parser: argparse.ArgumentParser,
+    args_list: Optional[List[str]] = None,
+) -> Tuple[argparse.Namespace, Path, str]:
     """Parse CLI args and validate the cassette path and run-id. Exits on error."""
-    args = parser.parse_args()
+    args = parser.parse_args(args_list)
     try:
+        if not hasattr(args, "cassette") or not args.cassette:
+            raise ValueError("Cassette path argument is missing or empty.")
+        if not hasattr(args, "run_id") or not args.run_id:
+            raise ValueError("Run ID argument is missing or empty.")
+
         cassette_path = validate_path(args.cassette, CASSETTE_ROOT, {".json"})
         safe_run_id = sanitize_run_id(args.run_id)
-    except ValueError as e:
-        print(f"\033[91mInvalid input: {e}\033[0m")
+    except (ValueError, TypeError) as e:
+        log_error(f"Invalid input: {e}")
+        sys.exit(1)
+    except Exception as e:
+        log_error(f"Unexpected error during argument validation: {e}")
         sys.exit(1)
     return args, cassette_path, safe_run_id
 
@@ -506,6 +542,8 @@ def _filter_changed_test_files(raw_changed: Dict[str, List[int]]) -> Dict[str, L
         abs_path = PROJECT_ROOT / rel_path
         try:
             safe = validate_path(str(abs_path), TEST_ROOT, {".py"})
+            # Verify containment explicitly for absolute paths
+            safe.relative_to(TEST_ROOT)
             if safe.exists():
                 result[str(safe)] = lines
         except ValueError:
@@ -514,9 +552,9 @@ def _filter_changed_test_files(raw_changed: Dict[str, List[int]]) -> Dict[str, L
 
 
 def _resolve_target_files(
-    args,
+    args: argparse.Namespace,
     cassette_path: Path,
-) -> tuple:
+) -> Tuple[List[str], Optional[Dict[str, List[int]]]]:
     """Return ``(target_files, changed_lines_by_file)`` for the chosen mode.
 
     Writes an empty cassette and exits with code 0 when the diff produces no
@@ -525,59 +563,62 @@ def _resolve_target_files(
     """
     if args.base is None:
         # Full-suite mode — unchanged legacy behaviour.
-        target_files = find_target_files(args.paths)
+        try:
+            target_files = find_target_files(args.paths)
+        except Exception as exc:
+            log_error(f"Error finding target files: {exc}")
+            sys.exit(1)
         if not target_files:
-            print("\033[91mNo python test files found to evaluate.\033[0m")
+            log_error("No python test files found to evaluate.")
             sys.exit(1)
         return target_files, None
 
     # Diff-only mode.
     if not _DIFF_AVAILABLE or _get_changed_lines is None:
-        print(
-            "\033[91mError: --base requires diff_extractor to be importable. "
-            "Ensure the scripts package is on sys.path.\033[0m"
+        log_error(
+            "Error: --base requires diff_extractor to be importable. "
+            "Ensure the scripts package is on sys.path."
         )
         sys.exit(1)
 
-    print(f"\033[94mDiff-only mode: extracting changed lines against '{args.base}'...\033[0m")
+    log_info(f"Diff-only mode: extracting changed lines against '{args.base}'...")
     try:
         raw_changed: Dict[str, List[int]] = _get_changed_lines(args.base, PROJECT_ROOT)
     except ValueError as exc:
-        print(f"\033[91mInvalid base reference: {exc}\033[0m")
+        log_error(f"Invalid base reference: {exc}")
+        sys.exit(1)
+    except Exception as exc:
+        log_error(f"Error extracting diff: {exc}")
         sys.exit(1)
 
-    if not raw_changed:
-        print("\033[92mNo Python file changes found against base. Skipping Farley evaluation.\033[0m")
-        save_farley_cassette(cassette_path, [])
-        sys.exit(0)
+    test_file_changed_lines = _filter_changed_test_files(raw_changed) if raw_changed else {}
 
-    test_file_changed_lines = _filter_changed_test_files(raw_changed)
-
-    if not test_file_changed_lines:
-        print("\033[92mNo test file changes found in diff. Skipping Farley evaluation.\033[0m")
+    if not raw_changed or not test_file_changed_lines:
+        log_success("No relevant test file changes found in diff. Skipping Farley evaluation.")
         save_farley_cassette(cassette_path, [])
         sys.exit(0)
 
     target_files = list(test_file_changed_lines.keys())
-    print(f"\033[94mDiff-only: {len(target_files)} test file(s) with changes to evaluate.\033[0m")
+    log_info(f"Diff-only: {len(target_files)} test file(s) with changes to evaluate.")
     return target_files, test_file_changed_lines
 
 
-def _save_run_record(replay_mgr, safe_run_id: str, seed: int) -> None:
+def _save_run_record(replay_mgr: Any, safe_run_id: str, seed: int) -> None:
     """Persist the replay cassette when recording mode is active."""
     if replay_mgr is None:
         return
-    run_record_path = validate_path(
-        f"{safe_run_id}/{seed}.json",
-        RUN_ROOT,
-        {".json"},
-    )
-    run_record_path.parent.mkdir(parents=True, exist_ok=True)
     try:
+        run_record_path = validate_path(
+            f"{safe_run_id}/{seed}.json",
+            RUN_ROOT,
+            {".json"},
+        )
+        run_record_path.parent.mkdir(parents=True, exist_ok=True)
         replay_mgr.save_record(str(run_record_path))
-        print(f"\033[92mSaved run record to {run_record_path.relative_to(PROJECT_ROOT)}\033[0m")
+        log_success(f"Saved run record to {run_record_path.relative_to(PROJECT_ROOT)}")
     except Exception as exc:
-        print(f"\033[93mWarning: could not save run record to {run_record_path}: {exc}\033[0m")
+        log_warn(f"Warning: could not save run record: {exc}")
+
 
 
 def _print_suite_summary(all_indices: List[float], reviewed_count: int) -> None:
@@ -591,20 +632,20 @@ def _print_suite_summary(all_indices: List[float], reviewed_count: int) -> None:
         print(f"Suite Farley Index Average: {avg_color}{suite_average:.2f}/10\033[0m")
         print("=" * 80)
     else:
-        print("\033[93mNo test cases were successfully evaluated.\033[0m")
+        log_warn("No test cases were successfully evaluated.")
 
 
-async def main_async():
+async def main_async() -> None:
     args, cassette_path, safe_run_id = _parse_and_validate_args(_build_arg_parser())
 
     target_files, changed_lines_by_file = _resolve_target_files(args, cassette_path)
 
-    print(f"\033[94mFound {len(target_files)} test file(s) to evaluate.\033[0m")
-    print(f"\033[94mUsing model: {args.model} | Mode: {args.mode}\033[0m\n")
+    log_info(f"Found {len(target_files)} test file(s) to evaluate.")
+    log_info(f"Using model: {args.model} | Mode: {args.mode}\n")
 
     replay_mgr = _init_replay_manager(safe_run_id, args.seed, str(cassette_path), args.mode, args.model)
     if args.mode == "replay" and replay_mgr is None:
-        print("\033[91mError: Replay mode requested but ReplayManager (agentbeats) is not available.\033[0m")
+        log_error("Error: Replay mode requested but ReplayManager (agentbeats) is not available.")
         sys.exit(1)
 
     all_indices, reviewed_count, results = await evaluate_files(
@@ -620,10 +661,11 @@ async def main_async():
         reviewed_count=reviewed_count,
     )
 
-    if args.mode == "record":
+    if args.mode == "record" and replay_mgr is not None:
         _save_run_record(replay_mgr, safe_run_id, args.seed)
 
     _print_suite_summary(all_indices, reviewed_count)
+
 
 
 
