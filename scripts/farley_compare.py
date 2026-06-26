@@ -6,6 +6,7 @@ import os
 import sys
 from pathlib import Path
 from statistics import mean
+from typing import Dict
 
 # Enable relative imports from parent directory
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -139,6 +140,33 @@ def _compare_tests(base_tests, pr_tests):
             delta = test.get("farley_index", 0.0) - baseline.get("farley_index", 0.0)
             deltas.append((delta, baseline, test))
     return deltas
+
+
+def merge_virtual_suite(base: dict, pr: dict) -> dict:
+    """Build a Virtual PR Suite for mathematically valid suite-wide comparison.
+
+    When the PR cassette only contains a subset of tests (diff-only evaluation
+    mode), a direct average comparison against the full baseline is invalid.
+    This function solves that by overlaying PR scores onto the baseline suite
+    by test ID, producing a complete virtual suite where:
+
+    * Tests evaluated in the PR  → use their new PR score.
+    * Tests NOT evaluated in the PR → keep their original baseline score.
+    * Tests NEW in the PR (no baseline entry) → added as new entries.
+
+    If the PR cassette contains the full suite (legacy full-suite mode), the
+    result is identical to a plain PR comparison — backward-compatible.
+    """
+    base_map: Dict[str, dict] = {
+        t["id"]: t for t in base.get("tests", []) if t.get("id") is not None
+    }
+    pr_map: Dict[str, dict] = {
+        t["id"]: t for t in pr.get("tests", []) if t.get("id") is not None
+    }
+
+    # Start from the full baseline; overlay any PR results.
+    merged: Dict[str, dict] = {**base_map, **pr_map}
+    return {"tests": list(merged.values())}
 
 
 def top_regressions(base, pr, top_n=5):
@@ -321,7 +349,13 @@ def main():
     base = load_cassette(args.baseline)
 
     bsum = compute_suite_summary(base)
-    psum = compute_suite_summary(pr)
+
+    # Build Virtual PR Suite: overlay PR-evaluated tests onto the full baseline
+    # by test ID.  This makes the delta calculation valid even when the PR
+    # cassette only contains a diff-only subset of the test suite.
+    # If the PR cassette has the full suite (legacy mode), the merge is a no-op.
+    virtual_suite = merge_virtual_suite(base, pr)
+    psum = compute_suite_summary(virtual_suite)
 
     delta = psum["avg_index"] - bsum["avg_index"]
 
