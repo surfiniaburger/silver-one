@@ -35,7 +35,7 @@ def test_parse_and_validate_args_valid():
     mock_path = Path("/mock/cassettes/farley_score.json")
     with patch("scripts.farley_score_evaluator.validate_path", return_value=mock_path) as mock_val, \
          patch("scripts.farley_score_evaluator.sanitize_run_id", return_value="farley_run") as mock_san:
-        args, cassette_path, safe_run_id = _parse_and_validate_args(
+        _, cassette_path, safe_run_id = _parse_and_validate_args(
             parser,
             ["tests/", "--cassette", "farley_score.json", "--run-id", "farley-run"]
         )
