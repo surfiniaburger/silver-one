@@ -29,6 +29,9 @@ METRICS_ROOT.mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 # Ensure scripts dir is importable
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+# Ensure project root is importable so that diff_extractor can resolve
+# its own `from scripts.path_utils import ...` dependency.
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 try:
     from dotenv import load_dotenv
@@ -45,6 +48,14 @@ except Exception:
 from llm_adapter import call_structured
 from path_utils import validate_path
 from telemetry_utils import persist_usage_artifacts as telemetry_persist_usage_artifacts
+
+# diff_extractor is optional — only needed when --base is supplied.
+try:
+    from diff_extractor import get_changed_lines as _get_changed_lines
+    _DIFF_AVAILABLE = True
+except ImportError:
+    _get_changed_lines = None  # type: ignore[assignment]
+    _DIFF_AVAILABLE = False
 
 try:
     from pydantic import BaseModel, Field
@@ -131,7 +142,10 @@ class TestExtractor(ast.NodeVisitor):
             self.test_cases.append({
                 "name": node.name,
                 "code": code_segment or "",
-                "class_name": self.current_class
+                "class_name": self.current_class,
+                # Line-range metadata required for diff-intersection filtering.
+                "start_line": node.lineno,
+                "end_line": getattr(node, "end_lineno", node.lineno),
             })
         self.generic_visit(node)
 
@@ -142,8 +156,18 @@ class TestExtractor(ast.NodeVisitor):
 def sanitize_run_id(run_id: str) -> str:
     return SAFE_RUN_ID.sub("_", run_id)
 
-def extract_tests_from_file(filepath: str) -> List[Dict[str, Any]]:
-    """Extract individual test functions/methods from a python file using AST."""
+def extract_tests_from_file(
+    filepath: str,
+    changed_lines: Optional[List[int]] = None,
+) -> List[Dict[str, Any]]:
+    """Extract individual test functions/methods from a python file using AST.
+
+    Args:
+        filepath: Absolute path to the test file.
+        changed_lines: When provided (diff-only mode), only test functions whose
+            source-line range intersects this set are returned.  Pass ``None``
+            to return every test in the file (full-suite mode).
+    """
 
     try:
         safe_path = validate_path(
@@ -172,6 +196,21 @@ def extract_tests_from_file(filepath: str) -> List[Dict[str, Any]]:
                     "class_name": None,
                 }
             )
+
+        # --- Diff-intersection filter (Seam B) ---
+        # When changed_lines is provided, keep only test functions whose line
+        # range overlaps with the modified lines.  Test cases that lack line
+        # metadata (e.g. the module-level fallback above) are kept conservatively.
+        if changed_lines is not None:
+            changed_set: Set[int] = set(changed_lines)
+            filtered: List[Dict[str, Any]] = []
+            for tc in extractor.test_cases:
+                sl = tc.get("start_line")
+                el = tc.get("end_line")
+                # Include if: no line metadata (conservative) OR range overlaps the diff.
+                if sl is None or el is None or set(range(sl, el + 1)).intersection(changed_set):
+                    filtered.append(tc)
+            extractor.test_cases = filtered
 
         return extractor.test_cases
 
@@ -271,46 +310,75 @@ def serialize_breakdown(report: Any) -> Dict[str, Any]:
     }
 
 
-async def evaluate_files(replay_mgr: ReplayManager, model: str, target_files: List[str]):
+async def _evaluate_single_test(
+    replay_mgr: ReplayManager,
+    model: str,
+    tc: Dict[str, Any],
+    filepath: str,
+) -> Optional[Dict[str, Any]]:
+    """Evaluate one test case and return a result dict, or None on failure."""
+    try:
+        report = await evaluate_test_case(replay_mgr, model, tc, filepath)
+        idx = display_report(filepath, tc["name"], tc.get("class_name"), report)
+
+        try:
+            rel_filepath = str(Path(filepath).relative_to(PROJECT_ROOT))
+        except Exception:
+            rel_filepath = filepath
+
+        class_name = tc.get("class_name")
+        test_name = tc["name"]
+        test_id = (
+            f"{rel_filepath}::{class_name}::{test_name}"
+            if class_name
+            else f"{rel_filepath}::{test_name}"
+        )
+
+        # Build result entry before touching counters so a serialization failure
+        # doesn't leave counters out of sync with results.
+        serialized = serialize_breakdown(report)
+        return {
+            "id": test_id,
+            "file_path": rel_filepath,
+            "test_name": test_name,
+            "class_name": class_name,
+            "farley_index": idx,
+            "farley_breakdown": serialized,
+        }
+    except Exception as e:
+        print(f"\033[91mFailed to evaluate test case {tc.get('name')}: {e}\033[0m")
+        return None
+
+
+async def evaluate_files(
+    replay_mgr: ReplayManager,
+    model: str,
+    target_files: List[str],
+    changed_lines_by_file: Optional[Dict[str, List[int]]] = None,
+):
+    """Evaluate test files, optionally restricting to diff-intersecting functions.
+
+    Args:
+        changed_lines_by_file: Maps absolute file path → list of changed line
+            numbers (diff-only mode).  ``None`` means evaluate every test
+            (full-suite mode, backward-compatible default).
+    """
     all_indices: List[float] = []
     reviewed_count = 0
     results = []
     for filepath in target_files:
         print(f"\033[90mParsing test cases from {filepath}...\033[0m")
-        test_cases = extract_tests_from_file(filepath)
+        cl = changed_lines_by_file.get(filepath) if changed_lines_by_file is not None else None
+        test_cases = extract_tests_from_file(filepath, cl)
         if not test_cases:
             continue
         print(f"\033[90mEvaluating {len(test_cases)} case(s) in {os.path.basename(filepath)}...\033[0m")
         for tc in test_cases:
-            try:
-                report = await evaluate_test_case(replay_mgr, model, tc, filepath)
-                idx = display_report(filepath, tc["name"], tc.get("class_name"), report)
-
-                try:
-                    rel_filepath = str(Path(filepath).relative_to(PROJECT_ROOT))
-                except Exception:
-                    rel_filepath = filepath
-
-                class_name = tc.get("class_name")
-                test_name = tc["name"]
-                test_id = f"{rel_filepath}::{class_name}::{test_name}" if class_name else f"{rel_filepath}::{test_name}"
-
-                # Build result entry — do this BEFORE incrementing counters so a
-                # serialization failure doesn't leave counters out of sync with results.
-                serialized = serialize_breakdown(report)
-                results.append({
-                    "id": test_id,
-                    "file_path": rel_filepath,
-                    "test_name": test_name,
-                    "class_name": class_name,
-                    "farley_index": idx,
-                    "farley_breakdown": serialized,
-                })
-                # Only count after the full result is successfully recorded.
-                all_indices.append(idx)
+            result = await _evaluate_single_test(replay_mgr, model, tc, filepath)
+            if result is not None:
+                results.append(result)
+                all_indices.append(result["farley_index"])
                 reviewed_count += 1
-            except Exception as e:
-                print(f"\033[91mFailed to evaluate test case {tc.get('name')}: {e}\033[0m")
     return all_indices, reviewed_count, results
 
 
@@ -384,10 +452,15 @@ def persist_usage_artifacts(
     )
 
 
-async def main_async():
+def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="MSEC Farley Score Evaluator")
     parser.add_argument("paths", nargs="*", help="Python test files or directories to review")
-    parser.add_argument("--model", type=str, default=os.getenv("FARLEY_EVALUATOR_MODEL", "ollama/gpt-oss:120b-cloud"), help="LiteLLM model string")
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=os.getenv("FARLEY_EVALUATOR_MODEL", "ollama/gpt-oss:120b-cloud"),
+        help="LiteLLM model string",
+    )
     parser.add_argument("--run-id", type=str, default="farley-eval", help="Identifier for run metadata")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for determinism")
     parser.add_argument("--mode", choices=["record", "replay"], default="record", help="Cassette mode")
@@ -397,68 +470,118 @@ async def main_async():
         default="farley_score.json",
         help="Cassette filename relative to artifacts/cassettes",
     )
+    parser.add_argument(
+        "--base",
+        type=str,
+        default=None,
+        help=(
+            "Git ref to diff against (e.g. 'origin/main'). "
+            "When set, only test functions whose source lines intersect "
+            "the diff are evaluated (diff-only mode). "
+            "Omit to evaluate all tests in the supplied paths (full-suite mode)."
+        ),
+    )
+    return parser
 
+
+def _parse_and_validate_args(parser: argparse.ArgumentParser):
+    """Parse CLI args and validate the cassette path and run-id. Exits on error."""
     args = parser.parse_args()
     try:
-
-        cassette_path = validate_path(
-            args.cassette,
-            CASSETTE_ROOT,
-            {".json"},
-        )
-
+        cassette_path = validate_path(args.cassette, CASSETTE_ROOT, {".json"})
         safe_run_id = sanitize_run_id(args.run_id)
-
     except ValueError as e:
         print(f"\033[91mInvalid input: {e}\033[0m")
         sys.exit(1)
+    return args, cassette_path, safe_run_id
 
-    target_files = find_target_files(args.paths)
-    if not target_files:
-        print("\033[91mNo python test files found to evaluate.\033[0m")
-        sys.exit(1)
 
-    print(f"\033[94mFound {len(target_files)} test file(s) to evaluate.\033[0m")
-    print(f"\033[94mUsing model: {args.model} | Mode: {args.mode}\033[0m\n")
-
-    replay_mgr = _init_replay_manager(
-    safe_run_id,
-    args.seed,
-    str(cassette_path),
-    args.mode,
-    args.model,
-    )
-    if args.mode == "replay" and replay_mgr is None:
-        print("\033[91mError: Replay mode requested but ReplayManager (agentbeats) is not available.\033[0m")
-        sys.exit(1)
-
-    all_indices, reviewed_count, results = await evaluate_files(replay_mgr, args.model, target_files)
-
-    save_farley_cassette(cassette_path, results)
-
-    persist_usage_artifacts(
-        replay_mgr,
-        run_id=safe_run_id,
-        model=args.model,
-        cassette_path=cassette_path,
-        reviewed_count=reviewed_count,
-    )
-
-    # Save replay cassette if recording
-    if args.mode == "record" and replay_mgr is not None:
-        run_record_path = validate_path(
-            f"{safe_run_id}/{args.seed}.json",
-            RUN_ROOT,
-            {".json"},
-        )
-
-        run_record_path.parent.mkdir(parents=True, exist_ok=True)
+def _filter_changed_test_files(raw_changed: Dict[str, List[int]]) -> Dict[str, List[int]]:
+    """Filter a git-diff map to validated test files inside TEST_ROOT."""
+    result: Dict[str, List[int]] = {}
+    for rel_path, lines in raw_changed.items():
+        p = Path(rel_path)
+        if not (p.name.startswith("test_") or p.name.endswith("_test.py")):
+            continue
+        abs_path = PROJECT_ROOT / rel_path
         try:
-            replay_mgr.save_record(str(run_record_path))
-            print(f"\033[92mSaved run record to {run_record_path.relative_to(PROJECT_ROOT)}\033[0m")
-        except Exception as exc:
-            print(f"\033[93mWarning: could not save run record to {run_record_path}: {exc}\033[0m")
+            safe = validate_path(str(abs_path), TEST_ROOT, {".py"})
+            if safe.exists():
+                result[str(safe)] = lines
+        except ValueError:
+            pass
+    return result
 
+
+def _resolve_target_files(
+    args,
+    cassette_path: Path,
+) -> tuple:
+    """Return ``(target_files, changed_lines_by_file)`` for the chosen mode.
+
+    Writes an empty cassette and exits with code 0 when the diff produces no
+    relevant test changes (so the rest of the pipeline still has a cassette
+    to compare against).  Exits with code 1 for hard errors.
+    """
+    if args.base is None:
+        # Full-suite mode — unchanged legacy behaviour.
+        target_files = find_target_files(args.paths)
+        if not target_files:
+            print("\033[91mNo python test files found to evaluate.\033[0m")
+            sys.exit(1)
+        return target_files, None
+
+    # Diff-only mode.
+    if not _DIFF_AVAILABLE or _get_changed_lines is None:
+        print(
+            "\033[91mError: --base requires diff_extractor to be importable. "
+            "Ensure the scripts package is on sys.path.\033[0m"
+        )
+        sys.exit(1)
+
+    print(f"\033[94mDiff-only mode: extracting changed lines against '{args.base}'...\033[0m")
+    try:
+        raw_changed: Dict[str, List[int]] = _get_changed_lines(args.base, PROJECT_ROOT)
+    except ValueError as exc:
+        print(f"\033[91mInvalid base reference: {exc}\033[0m")
+        sys.exit(1)
+
+    if not raw_changed:
+        print("\033[92mNo Python file changes found against base. Skipping Farley evaluation.\033[0m")
+        save_farley_cassette(cassette_path, [])
+        sys.exit(0)
+
+    test_file_changed_lines = _filter_changed_test_files(raw_changed)
+
+    if not test_file_changed_lines:
+        print("\033[92mNo test file changes found in diff. Skipping Farley evaluation.\033[0m")
+        save_farley_cassette(cassette_path, [])
+        sys.exit(0)
+
+    target_files = list(test_file_changed_lines.keys())
+    print(f"\033[94mDiff-only: {len(target_files)} test file(s) with changes to evaluate.\033[0m")
+    return target_files, test_file_changed_lines
+
+
+def _save_run_record(replay_mgr, safe_run_id: str, seed: int) -> None:
+    """Persist the replay cassette when recording mode is active."""
+    if replay_mgr is None:
+        return
+    run_record_path = validate_path(
+        f"{safe_run_id}/{seed}.json",
+        RUN_ROOT,
+        {".json"},
+    )
+    run_record_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        replay_mgr.save_record(str(run_record_path))
+        print(f"\033[92mSaved run record to {run_record_path.relative_to(PROJECT_ROOT)}\033[0m")
+    except Exception as exc:
+        print(f"\033[93mWarning: could not save run record to {run_record_path}: {exc}\033[0m")
+
+
+def _print_suite_summary(all_indices: List[float], reviewed_count: int) -> None:
+    """Print the final suite-level Farley Index summary."""
     if reviewed_count > 0:
         suite_average = sum(all_indices) / len(all_indices)
         avg_color = get_color_for_score(suite_average)
@@ -469,6 +592,40 @@ async def main_async():
         print("=" * 80)
     else:
         print("\033[93mNo test cases were successfully evaluated.\033[0m")
+
+
+async def main_async():
+    args, cassette_path, safe_run_id = _parse_and_validate_args(_build_arg_parser())
+
+    target_files, changed_lines_by_file = _resolve_target_files(args, cassette_path)
+
+    print(f"\033[94mFound {len(target_files)} test file(s) to evaluate.\033[0m")
+    print(f"\033[94mUsing model: {args.model} | Mode: {args.mode}\033[0m\n")
+
+    replay_mgr = _init_replay_manager(safe_run_id, args.seed, str(cassette_path), args.mode, args.model)
+    if args.mode == "replay" and replay_mgr is None:
+        print("\033[91mError: Replay mode requested but ReplayManager (agentbeats) is not available.\033[0m")
+        sys.exit(1)
+
+    all_indices, reviewed_count, results = await evaluate_files(
+        replay_mgr, args.model, target_files, changed_lines_by_file
+    )
+
+    save_farley_cassette(cassette_path, results)
+    persist_usage_artifacts(
+        replay_mgr,
+        run_id=safe_run_id,
+        model=args.model,
+        cassette_path=cassette_path,
+        reviewed_count=reviewed_count,
+    )
+
+    if args.mode == "record":
+        _save_run_record(replay_mgr, safe_run_id, args.seed)
+
+    _print_suite_summary(all_indices, reviewed_count)
+
+
 
 # --- LLM Review Orchestrator ---
 

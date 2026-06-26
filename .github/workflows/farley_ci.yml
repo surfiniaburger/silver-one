@@ -42,7 +42,12 @@ jobs:
 
       - name: Run Farley evaluator
         run: |
-          python3 scripts/farley_score_evaluator.py tests/ --mode record --cassette farley_score-PR-${{ env.PR_NUMBER }}.json --run-id pr-${{ env.PR_NUMBER }} --model "ollama/qwen3.5:2b"
+          python3 scripts/farley_score_evaluator.py \
+            --base origin/main \
+            --mode record \
+            --cassette farley_score-PR-${{ env.PR_NUMBER }}.json \
+            --run-id pr-${{ env.PR_NUMBER }} \
+            --model "ollama/qwen3.5:2b"
 
       - name: Upload cassette
         uses: actions/upload-artifact@v4
