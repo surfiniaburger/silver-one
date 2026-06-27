@@ -224,9 +224,10 @@ def extract_tests_from_file(
                 sl = tc.get("start_line")
                 el = tc.get("end_line")
                 # Include if: no line metadata (conservative) OR range overlaps the diff.
-                if sl is None or el is None or any(sl <= line <= el for line in changed_set):
+                if sl is None or el is None or any(line in changed_set for line in range(sl, el + 1)):
                     filtered.append(tc)
             extractor.test_cases = filtered
+
 
         return extractor.test_cases
 

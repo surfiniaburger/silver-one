@@ -59,44 +59,33 @@ def test_parse_and_validate_args_invalid():
 
 def test_filter_changed_test_files_containment(tmp_path: Path):
     """Verify _filter_changed_test_files properly filters out files outside of TEST_ROOT."""
-    # Create test files inside and outside TEST_ROOT
-    inside_test_dir = TEST_ROOT
-    outside_dir = PROJECT_ROOT / "scripts"
+    inside_test_dir = tmp_path / "tests"
+    outside_dir = tmp_path / "scripts"
 
     inside_test_file = inside_test_dir / "test_dummy_inside.py"
     outside_file = outside_dir / "test_dummy_outside.py"
 
-    # Make sure parent directories exist (TEST_ROOT is already created, but let's be safe)
     inside_test_dir.mkdir(parents=True, exist_ok=True)
     outside_dir.mkdir(parents=True, exist_ok=True)
 
     inside_test_file.touch()
     outside_file.touch()
 
-    try:
-        # Create raw_changed dictionary mapping rel_path -> line list
-        # To get relative path, we compute them relative to PROJECT_ROOT
-        rel_inside = str(inside_test_file.relative_to(PROJECT_ROOT))
-        rel_outside = str(outside_file.relative_to(PROJECT_ROOT))
+    rel_inside = str(inside_test_file.relative_to(tmp_path))
+    rel_outside = str(outside_file.relative_to(tmp_path))
 
-        raw_changed = {
-            rel_inside: [10, 15],
-            rel_outside: [2, 5]
-        }
+    raw_changed = {
+        rel_inside: [10, 15],
+        rel_outside: [2, 5]
+    }
 
+    with patch("scripts.farley_score_evaluator.TEST_ROOT", inside_test_dir), \
+         patch("scripts.farley_score_evaluator.PROJECT_ROOT", tmp_path):
         filtered = _filter_changed_test_files(raw_changed)
 
-        # The inside test file should be present in the filtered map (under absolute string path)
-        assert str(inside_test_file.resolve()) in filtered
-        # The outside test file must be filtered out because it's not inside TEST_ROOT
-        assert str(outside_file.resolve()) not in filtered
+    assert str(inside_test_file.resolve()) in filtered
+    assert str(outside_file.resolve()) not in filtered
 
-    finally:
-        # Cleanup
-        if inside_test_file.exists():
-            inside_test_file.unlink()
-        if outside_file.exists():
-            outside_file.unlink()
 
 
 def test_resolve_target_files_full_suite():
