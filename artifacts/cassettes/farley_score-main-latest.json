@@ -631,6 +631,431 @@
       }
     },
     {
+      "id": "tests/test_evaluator_robustness.py::test_build_test_id",
+      "file_path": "tests/test_evaluator_robustness.py",
+      "test_name": "test_build_test_id",
+      "class_name": null,
+      "farley_index": 7.875,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 9,
+          "rationale": "The test clearly states its intent: verifying that the `_build_test_id` function correctly handles both class-less and class-based identifiers. The business rule is explicit.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 8,
+          "rationale": "The test relies on a private helper function (`_build_test_id`) which may be fragile if that logic changes or becomes coupled to specific file paths. It tests 'what' (the output format) but not the internal implementation details.",
+          "suggestions": [
+            "Move `_build_test_id` into `silver-one/tests/test_utils.py`.",
+            "Ensure this utility function is unit-tested separately and does not depend on external state like file paths or class names in a brittle way."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test relies entirely on the internal logic of `_build_test_id`. If that function is refactored to use different string formatting libraries (e.g., `f-string` vs. `.format()`), this specific test will break without modification.",
+          "suggestions": [
+            "Ensure all tests depend only on stable, explicit assertions about the expected output strings."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: string concatenation of a file path and an identifier. If it fails, the cause is instantly obvious (e.g., `AssertionError`), making debugging trivial.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test covers specific edge cases for class-less and class-based IDs. However, it does not cover the general case of a simple filename without any identifier suffix (e.g., `test_demo.py`), which might be necessary depending on how `_build_test_id` is intended to work.",
+          "suggestions": [
+            "Review if this specific test covers all edge cases or if there are other tests that verify the general behavior of ID generation."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The assertion is precise: it checks for exact string equality. It isolates the specific logic of combining a path and an identifier.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "There are no artificial sleeps, heavy setups, or slow I/O operations in this test. The execution is purely string manipulation.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 7,
+          "rationale": "The code follows the Arrange-Act-Assert pattern (calling `_build_test_id` then asserting). However, it does not explicitly demonstrate a 'specification' or design property being tested; it simply verifies an implementation detail.",
+          "suggestions": [
+            "Refactor this test to assert that `test_build_test_id` *produces* the expected output based on input arguments. This forces you to define what behavior is correct before writing code, which aligns with TDD principles."
+          ]
+        },
+        "summary": "The test passes all criteria except for 'necessary' (potentially redundant if general cases are covered elsewhere) and slightly weakens the first_tdd score by not explicitly defining a design specification to be verified. It is highly maintainable and fast but risks becoming brittle as internal helper functions change."
+      }
+    },
+    {
+      "id": "tests/test_evaluator_robustness.py::test_parse_and_validate_args_valid",
+      "file_path": "tests/test_evaluator_robustness.py",
+      "test_name": "test_parse_and_validate_args_valid",
+      "class_name": null,
+      "farley_index": 6.375,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the business rule: valid command-line arguments should be parsed and validated successfully. The intent is unambiguous.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 6,
+          "rationale": "While decoupled from implementation details (mocking `validate_path`), it relies heavily on external shared state (`patched functions`) which creates fragility if those mocks are removed or changed. It tests 'how' the mock behaves rather than just validating input format.",
+          "suggestions": [
+            "Remove explicit mocking of internal logic; instead, test that `_parse_and_validate_args` raises `ArgumentError` for invalid inputs without relying on mocked side effects."
+          ]
+        },
+        "repeatable": {
+          "score": 4,
+          "rationale": "The test relies entirely on external shared state: the mock functions and their return values. If these mocks are removed or modified in production code (e.g., by a refactoring of `scripts.farley_score_evaluator`), this specific test will fail immediately.",
+          "suggestions": [
+            "Remove all `patch()` calls from this test. The logic should be self-contained within `_parse_and_validate_args`. Assert that the function raises an exception for invalid arguments, not on mocked return values."
+          ]
+        },
+        "atomic": {
+          "score": 7,
+          "rationale": "The test verifies exactly one behavior: successful parsing of valid args and correct argument passing to internal functions. The failure cause is obvious (assertions fail).",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 5,
+          "rationale": "This test duplicates coverage already provided by other tests in the suite that likely cover `ArgumentError` for invalid inputs or missing required arguments.",
+          "suggestions": [
+            "Review existing test cases to ensure this specific 'valid args' scenario is not redundant. If no prior test covers valid parsing without mocking, it may be necessary; otherwise, remove."
+          ]
+        },
+        "granular": {
+          "score": 6,
+          "rationale": "The assertion `mock_val.assert_called_once()` checks the internal implementation detail of how many times a function was called, rather than isolating just the input validation logic.",
+          "suggestions": [
+            "Assert that `_parse_and_validate_args` raises an exception for invalid inputs. Asserting call counts on mocked internals is not testing the core business rule."
+          ]
+        },
+        "fast": {
+          "score": 7,
+          "rationale": "The test executes quickly as it uses `patch()` to mock external dependencies and avoids heavy setups or slow I/O.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 8,
+          "rationale": "This is a classic Arrange-Act-Assert pattern. It sets up the parser (Arrange), calls `_parse_and_validate_args` with valid inputs to trigger side effects (Act), and asserts specific behaviors (Assert).",
+          "suggestions": []
+        },
+        "summary": "The test demonstrates strong TDD principles but suffers from brittle maintainability due to excessive mocking of internal logic, which violates the principle that tests should be self-contained. It risks becoming obsolete if `scripts.farley_score_evaluator` is refactored."
+      }
+    },
+    {
+      "id": "tests/test_evaluator_robustness.py::test_parse_and_validate_args_invalid",
+      "file_path": "tests/test_evaluator_robustness.py",
+      "test_name": "test_parse_and_validate_args_invalid",
+      "class_name": null,
+      "farley_index": 7.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the input (invalid args) and expected outcome (sys.exit(1)). However, it lacks a descriptive docstring explaining *why* this specific combination of arguments is invalid.",
+          "suggestions": [
+            "Add an explicit `assert False` or check for missing required flags to make the 'business rule' obvious without relying on external behavior like sys.exit()."
+          ]
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "The test uses a mock parser and isolated function call (`_parse_and_validate_args`). It does not depend on any shared state or system internals.",
+          "suggestions": [
+            "Ensure the helper function `_parse_and_validate_args` is unit-tested itself to prevent hidden dependencies from propagating into this test."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test relies entirely on `pytest.raises(SystemExit)`. If a different exception type or code value is raised in the future (e.g., due to internal logic changes), the test will fail without modification.",
+          "suggestions": [
+            "Assert specific error codes and messages directly within the assertion block rather than relying solely on an external library's behavior."
+          ]
+        },
+        "atomic": {
+          "score": 8,
+          "rationale": "The test verifies exactly one rule: that invalid arguments trigger a non-zero exit code. The cause is obvious (invalid args -> sys.exit(1)).",
+          "suggestions": [
+            "Add `assert False` or an explicit check to ensure the failure mode matches expectations precisely."
+          ]
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test duplicates coverage of other tests that likely verify argument parsing logic. It does not add new design properties.",
+          "suggestions": [
+            "Refactor this test into a dedicated 'parse_and_validate_args' function and have it be the sole responsibility for validating arguments."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The assertion is broad (any non-zero exit code). It does not isolate specific edge cases or error conditions.",
+          "suggestions": [
+            "Assert `excinfo.value.code == 1` and check that the message contains a descriptive string indicating invalid arguments."
+          ]
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "The test uses no artificial delays, sleeps, or heavy I/O. It is purely synchronous logic.",
+          "suggestions": [
+            "Remove any `time.sleep()` calls if they exist in similar tests to ensure consistent execution times across the suite."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The test follows a clean Arrange-Act-Assert pattern: setup (mock parser), act (call function with invalid args), assert (check exit code).",
+          "suggestions": [
+            "Ensure the helper function `_parse_and_validate_args` is written first as an isolated unit before this integration-style test."
+          ]
+        },
+        "summary": "The test demonstrates strong adherence to TDD principles and follows Farley's guidelines well. However, it risks redundancy if other tests cover argument validation logic directly."
+      }
+    },
+    {
+      "id": "tests/test_evaluator_robustness.py::test_filter_changed_test_files_containment",
+      "file_path": "tests/test_evaluator_robustness.py",
+      "test_name": "test_filter_changed_test_files_containment",
+      "class_name": null,
+      "farley_index": 7.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the business rule: files inside `TEST_ROOT` should be included while those outside are excluded. The use of relative paths and explicit directory creation makes intent unambiguous.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 7,
+          "rationale": "While decoupled from system internals (no database/network), the test relies heavily on `tmp_path` which is a common anti-pattern in production. It also mocks specific module paths (`scripts.farley_score_evaluator`) that may change during refactoring.",
+          "suggestions": [
+            "Replace `tmp_path` with standard library fixtures like `pytest.fixture('path')`."
+          ]
+        },
+        "repeatable": {
+          "score": 9,
+          "rationale": "The test is fully self-contained. It creates its own directories and files without relying on external state or network calls. The logic for filtering relies solely on the provided dictionary.",
+          "suggestions": []
+        },
+        "atomic": {
+          "score": 8,
+          "rationale": "It verifies exactly one behavior: containment of specific file paths relative to `TEST_ROOT`. If it fails, the cause is immediately obvious (either a path mismatch or an unexpected filter result).",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test duplicates coverage already provided by other tests likely checking `_filter_changed_test_files` in isolation. It does not add unique value to the suite.",
+          "suggestions": [
+            "Remove this specific file-path assertion if it is covered elsewhere or remove entirely as a standalone unit test."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The test isolates 'containment logic' but asserts on absolute paths (`resolve()`). This mixes logical containment with filesystem resolution details.",
+          "suggestions": [
+            "Assert the file exists in `inside_test_dir` without resolving to an absolute path. Assert that it is not present outside."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes rapidly; there are no artificial sleeps, heavy setups beyond directory creation (which is fast), or unneeded I/O operations.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 8,
+          "rationale": "It follows the Arrange-Act-Assert pattern: it sets up directories/files (`Arrange`), calls `_filter_changed_test_files()` with mocked context (`Act`), and asserts results (`Assert`).",
+          "suggestions": [
+            "Explicitly name variables for `arrange`, `act`, and `assert`."
+          ]
+        },
+        "summary": "This test is well-structured, fast, and follows TDD principles. However, it risks being redundant if other tests cover the filtering logic directly or rely on absolute paths that change during refactoring."
+      }
+    },
+    {
+      "id": "tests/test_evaluator_robustness.py::test_resolve_target_files_full_suite",
+      "file_path": "tests/test_evaluator_robustness.py",
+      "test_name": "test_resolve_target_files_full_suite",
+      "class_name": null,
+      "farley_index": 7.5,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the business rule (full-suite resolution) and uses a clear assertion (`assert target_files == mock_files`). However, it lacks context on *why* this specific file path matters or what 'resolution mode' implies for other tests.",
+          "suggestions": [
+            "Add comments explaining why `tests/` is chosen over `./.` or relative paths. Define the expected behavior of 'full-suite resolution' in a docstring to ensure future maintainers understand the scope."
+          ]
+        },
+        "maintainable": {
+          "score": 7,
+          "rationale": "The test uses mocks (`MagicMock`, `patch`) which are generally good for isolation. However, it relies on `_resolve_target_files` being deterministic and not brittle if its internal logic changes slightly without updating this specific assertion.",
+          "suggestions": [
+            "Ensure the mock setup is robust against future refactors of `_resolve_target_files`. Consider adding a unit test specifically for `test_resolve_target_files_full_suite` to verify the function's behavior in isolation before integration."
+          ]
+        },
+        "repeatable": {
+          "score": 6,
+          "rationale": "The test uses external state (`MagicMock`, `patch`) and relies on file system paths. While it avoids network/database calls, relying on mocked filesystems can be brittle if those mocks are updated or the underlying implementation changes.",
+          "suggestions": [
+            "Remove reliance on mocking for this specific integration-like behavior to ensure repeatability across environments (e.g., unit tests vs CI). If external state is required, make it explicit and isolated."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one rule: that `target_files` matches the mocked return value. The assertion logic (`assert target_files == mock_files`) isolates this single behavior cleanly.",
+          "suggestions": [
+            "Ensure no side effects occur outside these assertions (e.g., print statements). If `_resolve_target_files` modifies state, ensure it's reset or isolated within this test."
+          ]
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "This specific test covers the 'full-suite' resolution path. It does not duplicate coverage of other tests that might cover partial suites or different file patterns.",
+          "suggestions": [
+            "Review if there are existing unit tests for `test_resolve_target_files_full_suite` to ensure no duplication exists."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The test isolates the resolution logic and asserts specific values. However, it could be more granular by checking edge cases like empty paths or nested directory structures.",
+          "suggestions": [
+            "Add assertions for edge cases (e.g., `assert target_files == []` if no files are found). This makes the behavior of 'resolution' clearer."
+          ]
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "The test uses mocks and avoids heavy I/O or sleeps. The execution time is dominated by mocking overhead rather than actual file system operations.",
+          "suggestions": [
+            "Ensure `patch` does not introduce artificial delays in CI/CD pipelines if the underlying implementation has slow setup logic."
+          ]
+        },
+        "first_tdd": {
+          "score": 7,
+          "rationale": "The test follows Arrange-Act-Pattern (Arrange: mock args; Act: call function with mocks; Assert: verify results). However, it lacks a clear 'specification' of what the resolved files should be before running.",
+          "suggestions": [
+            "Refactor to strictly follow TDD principles by writing tests for specific edge cases first. Ensure the test suite is designed such that each new file path requires an explicit unit test rather than relying on this integration-style mock."
+          ]
+        },
+        "summary": "The test demonstrates good structure and isolation but suffers from over-reliance on mocking, which can reduce repeatability in CI/CD environments. It lacks specific edge-case coverage for 'resolution' logic and could benefit from more granular assertions to fully validate the business rule of full-suite resolution."
+      }
+    },
+    {
+      "id": "tests/test_evaluator_robustness.py::test_resolve_target_files_diff_empty_or_no_changes",
+      "file_path": "tests/test_evaluator_robustness.py",
+      "test_name": "test_resolve_target_files_diff_empty_or_no_changes",
+      "class_name": null,
+      "farley_index": 7.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly states the intent: verifying graceful exit with code 0 when no changes exist. The domain language is clear ('no changes found', 'exits gracefully').",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 7,
+          "rationale": "While decoupled from implementation logic (mocking `_get_changed_lines`), it relies heavily on `pytest.raises(SystemExit)`. This couples the test to a specific exception handling pattern that may break if other error types are raised in production.",
+          "suggestions": [
+            "Replace `SystemExit` with an explicit return code assertion or use `assert_called_once_with(...)` directly instead of catching exceptions, ensuring tests pass regardless of how errors propagate."
+          ]
+        },
+        "repeatable": {
+          "score": 9,
+          "rationale": "The test is fully self-contained. It mocks only the necessary dependencies (`_DIFF_AVAILABLE`, `_get_changed_lines`) and uses a deterministic path structure.",
+          "suggestions": []
+        },
+        "atomic": {
+          "score": 8,
+          "rationale": "It verifies exactly one behavior: that no changes trigger an exit code of 0. The cause is obvious (no diff found).",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test duplicates coverage for the 'empty input' case already covered by other tests in this suite or similar robustness checks.",
+          "suggestions": [
+            "Review existing `test_resolve_target_files_diff_*` cases to ensure no redundant assertions are made here."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "It isolates the specific edge-case behavior of 'no changes'. However, it mixes logic (exit code) with side effects (mocking), making assertion isolation slightly less clean than pure unit tests.",
+          "suggestions": [
+            "Refactor to separate the exit code check from any mock setup assertions for better clarity."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes immediately without artificial delays or heavy I/O. It relies solely on mocked functions and path operations.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 8,
+          "rationale": "It follows the Arrange-Act-Assert pattern: setup mocks (Arrange), perform action with mock data (Act), verify outcome/assertions (Assert).",
+          "suggestions": [
+            "Ensure the 'act' step is purely functional without side effects; if using `pytest.raises`, ensure it's a pure assertion of behavior, not an implementation detail."
+          ]
+        },
+        "summary": "The test demonstrates strong adherence to TDD principles and good isolation. However, reliance on exception handling (`SystemExit`) reduces maintainability compared to direct assertions, and the specific 'empty input' case may be redundant if covered elsewhere in the suite."
+      }
+    },
+    {
+      "id": "tests/test_evaluator_robustness.py::test_extract_tests_from_file_range_optimization",
+      "file_path": "tests/test_evaluator_robustness.py",
+      "test_name": "test_extract_tests_from_file_range_optimization",
+      "class_name": null,
+      "farley_index": 7.375,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the business rule: extracting specific lines from a file and verifying which tests remain. The domain language is clear (file ranges vs. function names), avoiding implementation clutter.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 7,
+          "rationale": "While decoupled from system internals via mocking `validate_path`, the test relies on a hardcoded file path (`tmp_path / \"test_range_sample.py\"`). This creates brittle behavior if that specific filename changes or is moved.",
+          "suggestions": [
+            "Remove hardcoding of filenames. Use dynamic paths based on input arguments instead."
+          ]
+        },
+        "repeatable": {
+          "score": 6,
+          "rationale": "The test relies heavily on `tmp_path` and file system operations (`write_text`, `patch`). While deterministic in isolation, it is not truly self-contained as the path dependency makes it fragile to environment changes.",
+          "suggestions": [
+            "Remove all filesystem dependencies. Use a pure function or unit tests that do not require writing files."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: extracting lines from a file and checking if specific functions are included/removed based on line overlap logic.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "This test specifically validates the edge case where no overlapping changes exist (Scenario C), ensuring the optimization doesn't incorrectly merge unrelated tests. It fills a gap in coverage for 'no-change' scenarios.",
+          "suggestions": [
+            "Ensure this specific scenario is covered by other existing tests if possible to avoid duplication."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The test isolates the logic of line extraction and name filtering. However, it mixes file I/O with pure function testing in a single block, slightly reducing granularity compared to separating setup from assertion.",
+          "suggestions": [
+            "Separate the `write_text` step into its own unit tests or fixtures if possible."
+          ]
+        },
+        "fast": {
+          "score": 5,
+          "rationale": "The test performs file I/O operations (`write_text`, `patch`) and relies on a mocked path. This introduces unnecessary overhead compared to pure function testing.",
+          "suggestions": [
+            "Replace all filesystem calls with direct assertions or mocks that do not involve disk writes."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The test follows the Arrange-Act-Assert pattern: it sets up a specific file content (Arrange), acts by calling `extract_tests_from_file` and checking results (Act/Assert). It explicitly tests boundary conditions.",
+          "suggestions": []
+        },
+        "summary": "Overall Score: 7.5 | The test is well-designed as a TDD spec but suffers from brittle dependencies on the filesystem path, making it hard to maintain in production environments without refactoring."
+      }
+    },
+    {
       "id": "tests/test_code_review.py::test_function_visitor",
       "file_path": "tests/test_code_review.py",
       "test_name": "test_function_visitor",
@@ -1688,32 +2113,32 @@
     "farley_usage_summary": {
       "run_id": "main-baseline",
       "model": "ollama/qwen3.5:2b",
-      "reviewed_test_cases": 18,
+      "reviewed_test_cases": 25,
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 21,
-          "prompt_tokens": 12143,
-          "completion_tokens": 16481,
-          "total_tokens": 28624,
+          "calls": 28,
+          "prompt_tokens": 16262,
+          "completion_tokens": 21252,
+          "total_tokens": 37514,
           "cost_usd": 0.0,
           "missing_usage_calls": 0
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 21,
-            "prompt_tokens": 12143,
-            "completion_tokens": 16481,
-            "total_tokens": 28624,
+            "calls": 28,
+            "prompt_tokens": 16262,
+            "completion_tokens": 21252,
+            "total_tokens": 37514,
             "cost_usd": 0.0
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 21,
-            "prompt_tokens": 12143,
-            "completion_tokens": 16481,
-            "total_tokens": 28624,
+            "calls": 28,
+            "prompt_tokens": 16262,
+            "completion_tokens": 21252,
+            "total_tokens": 37514,
             "cost_usd": 0.0
           }
         },
@@ -1738,6 +2163,90 @@
             "prompt_tokens": 756,
             "completion_tokens": 1024,
             "total_tokens": 1780,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 478,
+            "completion_tokens": 801,
+            "total_tokens": 1279,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 616,
+            "completion_tokens": 671,
+            "total_tokens": 1287,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 496,
+            "completion_tokens": 651,
+            "total_tokens": 1147,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 644,
+            "completion_tokens": 592,
+            "total_tokens": 1236,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 503,
+            "completion_tokens": 835,
+            "total_tokens": 1338,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 571,
+            "completion_tokens": 597,
+            "total_tokens": 1168,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 811,
+            "completion_tokens": 624,
+            "total_tokens": 1435,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -1986,6 +2495,195 @@
           ]
         }
       }
+    }
+  },
+  "749fe66e9f136413c132421f88e4b67b374f0f4a0206b1213f8f52b6157995de": {
+    "id": "chatcmpl-86c71b0c-4403-4305-8d78-31270b8d67ff",
+    "created": 1782586098,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 9,\n    \"rationale\": \"The test clearly states its intent: verifying that the `_build_test_id` function correctly handles both class-less and class-based identifiers. The business rule is explicit.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 8,\n    \"rationale\": \"The test relies on a private helper function (`_build_test_id`) which may be fragile if that logic changes or becomes coupled to specific file paths. It tests 'what' (the output format) but not the internal implementation details.\",\n    \"suggestions\": [\n      \"Move `_build_test_id` into `silver-one/tests/test_utils.py`.\",\n      \"Ensure this utility function is unit-tested separately and does not depend on external state like file paths or class names in a brittle way.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test relies entirely on the internal logic of `_build_test_id`. If that function is refactored to use different string formatting libraries (e.g., `f-string` vs. `.format()`), this specific test will break without modification.\",\n    \"suggestions\": [\n      \"Ensure all tests depend only on stable, explicit assertions about the expected output strings.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: string concatenation of a file path and an identifier. If it fails, the cause is instantly obvious (e.g., `AssertionError`), making debugging trivial.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test covers specific edge cases for class-less and class-based IDs. However, it does not cover the general case of a simple filename without any identifier suffix (e.g., `test_demo.py`), which might be necessary depending on how `_build_test_id` is intended to work.\",\n    \"suggestions\": [\n      \"Review if this specific test covers all edge cases or if there are other tests that verify the general behavior of ID generation.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The assertion is precise: it checks for exact string equality. It isolates the specific logic of combining a path and an identifier.\",\n    \"suggestions\": []\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"There are no artificial sleeps, heavy setups, or slow I/O operations in this test. The execution is purely string manipulation.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"The code follows the Arrange-Act-Assert pattern (calling `_build_test_id` then asserting). However, it does not explicitly demonstrate a 'specification' or design property being tested; it simply verifies an implementation detail.\",\n    \"suggestions\": [\n      \"Refactor this test to assert that `test_build_test_id` *produces* the expected output based on input arguments. This forces you to define what behavior is correct before writing code, which aligns with TDD principles.\"\n    ]\n  },\n  \"summary\": \"The test passes all criteria except for 'necessary' (potentially redundant if general cases are covered elsewhere) and slightly weakens the first_tdd score by not explicitly defining a design specification to be verified. It is highly maintainable and fast but risks becoming brittle as internal helper functions change.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 801,
+      "prompt_tokens": 478,
+      "total_tokens": 1279,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "cab31cde3f565ec878c592895a42dc780ca87d7a8657c3514f64c5727b080b07": {
+    "id": "chatcmpl-60d180f9-b64a-4a63-88b3-7c641fbd2c09",
+    "created": 1782586157,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the business rule: valid command-line arguments should be parsed and validated successfully. The intent is unambiguous.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 6, \"rationale\": \"While decoupled from implementation details (mocking `validate_path`), it relies heavily on external shared state (`patched functions`) which creates fragility if those mocks are removed or changed. It tests 'how' the mock behaves rather than just validating input format.\", \"suggestions\": [\"Remove explicit mocking of internal logic; instead, test that `_parse_and_validate_args` raises `ArgumentError` for invalid inputs without relying on mocked side effects.\"]},\n  \"repeatable\": {\"score\": 4, \"rationale\": \"The test relies entirely on external shared state: the mock functions and their return values. If these mocks are removed or modified in production code (e.g., by a refactoring of `scripts.farley_score_evaluator`), this specific test will fail immediately.\", \"suggestions\": [\"Remove all `patch()` calls from this test. The logic should be self-contained within `_parse_and_validate_args`. Assert that the function raises an exception for invalid arguments, not on mocked return values.\"]},\n  \"atomic\": {\"score\": 7, \"rationale\": \"The test verifies exactly one behavior: successful parsing of valid args and correct argument passing to internal functions. The failure cause is obvious (assertions fail).\", \"suggestions\": []},\n  \"necessary\": {\"score\": 5, \"rationale\": \"This test duplicates coverage already provided by other tests in the suite that likely cover `ArgumentError` for invalid inputs or missing required arguments.\", \"suggestions\": [\"Review existing test cases to ensure this specific 'valid args' scenario is not redundant. If no prior test covers valid parsing without mocking, it may be necessary; otherwise, remove.\"]},\n  \"granular\": {\"score\": 6, \"rationale\": \"The assertion `mock_val.assert_called_once()` checks the internal implementation detail of how many times a function was called, rather than isolating just the input validation logic.\", \"suggestions\": [\"Assert that `_parse_and_validate_args` raises an exception for invalid inputs. Asserting call counts on mocked internals is not testing the core business rule.\"]},\n  \"fast\": {\"score\": 7, \"rationale\": \"The test executes quickly as it uses `patch()` to mock external dependencies and avoids heavy setups or slow I/O.\", \"suggestions\": []},\n  \"first_tdd\": {\"score\": 8, \"rationale\": \"This is a classic Arrange-Act-Assert pattern. It sets up the parser (Arrange), calls `_parse_and_validate_args` with valid inputs to trigger side effects (Act), and asserts specific behaviors (Assert).\", \"suggestions\": []},\"summary\": \"The test demonstrates strong TDD principles but suffers from brittle maintainability due to excessive mocking of internal logic, which violates the principle that tests should be self-contained. It risks becoming obsolete if `scripts.farley_score_evaluator` is refactored.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 671,
+      "prompt_tokens": 616,
+      "total_tokens": 1287,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "4d0da800fd1a2f6f15ba6f8ec647b573e3b580e1621e2848b5e763d211c53c88": {
+    "id": "chatcmpl-b8696af5-2ef6-48fe-a3c6-be01103107cc",
+    "created": 1782586211,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the input (invalid args) and expected outcome (sys.exit(1)). However, it lacks a descriptive docstring explaining *why* this specific combination of arguments is invalid.\", \"suggestions\": [\"Add an explicit `assert False` or check for missing required flags to make the 'business rule' obvious without relying on external behavior like sys.exit().\"]},\n  \"maintainable\": {\"score\": 9, \"rationale\": \"The test uses a mock parser and isolated function call (`_parse_and_validate_args`). It does not depend on any shared state or system internals.\", \"suggestions\": [\"Ensure the helper function `_parse_and_validate_args` is unit-tested itself to prevent hidden dependencies from propagating into this test.\"]},\n  \"repeatable\": {\"score\": 7, \"rationale\": \"The test relies entirely on `pytest.raises(SystemExit)`. If a different exception type or code value is raised in the future (e.g., due to internal logic changes), the test will fail without modification.\", \"suggestions\": [\"Assert specific error codes and messages directly within the assertion block rather than relying solely on an external library's behavior.\"]},\n  \"atomic\": {\"score\": 8, \"rationale\": \"The test verifies exactly one rule: that invalid arguments trigger a non-zero exit code. The cause is obvious (invalid args -> sys.exit(1)).\", \"suggestions\": [\"Add `assert False` or an explicit check to ensure the failure mode matches expectations precisely.\"]},\n  \"necessary\": {\"score\": 6, \"rationale\": \"This test duplicates coverage of other tests that likely verify argument parsing logic. It does not add new design properties.\", \"suggestions\": [\"Refactor this test into a dedicated 'parse_and_validate_args' function and have it be the sole responsibility for validating arguments.\"]},\n  \"granular\": {\"score\": 7, \"rationale\": \"The assertion is broad (any non-zero exit code). It does not isolate specific edge cases or error conditions.\", \"suggestions\": [\"Assert `excinfo.value.code == 1` and check that the message contains a descriptive string indicating invalid arguments.\"]},\n  \"fast\": {\"score\": 8, \"rationale\": \"The test uses no artificial delays, sleeps, or heavy I/O. It is purely synchronous logic.\", \"suggestions\": [\"Remove any `time.sleep()` calls if they exist in similar tests to ensure consistent execution times across the suite.\"]},\n  \"first_tdd\": {\"score\": 9, \"rationale\": \"The test follows a clean Arrange-Act-Assert pattern: setup (mock parser), act (call function with invalid args), assert (check exit code).\", \"suggestions\": [\"Ensure the helper function `_parse_and_validate_args` is written first as an isolated unit before this integration-style test.\"]},\n  \"summary\": \"The test demonstrates strong adherence to TDD principles and follows Farley's guidelines well. However, it risks redundancy if other tests cover argument validation logic directly.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 651,
+      "prompt_tokens": 496,
+      "total_tokens": 1147,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "051704c8e9a0a2fb3fae7b4087040fda420367bdd2084b239fa2f4796bb810b7": {
+    "id": "chatcmpl-99d15364-912f-4a1d-9eaa-dd903737a069",
+    "created": 1782586265,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the business rule: files inside `TEST_ROOT` should be included while those outside are excluded. The use of relative paths and explicit directory creation makes intent unambiguous.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 7, \"rationale\": \"While decoupled from system internals (no database/network), the test relies heavily on `tmp_path` which is a common anti-pattern in production. It also mocks specific module paths (`scripts.farley_score_evaluator`) that may change during refactoring.\", \"suggestions\": [\"Replace `tmp_path` with standard library fixtures like `pytest.fixture('path')`.\"]\n},\"repeatable\": {\"score\": 9, \"rationale\": \"The test is fully self-contained. It creates its own directories and files without relying on external state or network calls. The logic for filtering relies solely on the provided dictionary.\", \"suggestions\": []},\n\"atomic\": {\"score\": 8, \"rationale\": \"It verifies exactly one behavior: containment of specific file paths relative to `TEST_ROOT`. If it fails, the cause is immediately obvious (either a path mismatch or an unexpected filter result).\", \"suggestions\": []},\n\"necessary\": {\"score\": 6, \"rationale\": \"This test duplicates coverage already provided by other tests likely checking `_filter_changed_test_files` in isolation. It does not add unique value to the suite.\", \"suggestions\": [\"Remove this specific file-path assertion if it is covered elsewhere or remove entirely as a standalone unit test.\"]},\"granular\": {\"score\": 7, \"rationale\": \"The test isolates 'containment logic' but asserts on absolute paths (`resolve()`). This mixes logical containment with filesystem resolution details.\", \"suggestions\": [\"Assert the file exists in `inside_test_dir` without resolving to an absolute path. Assert that it is not present outside.\"]},\"fast\": {\"score\": 9, \"rationale\": \"The test executes rapidly; there are no artificial sleeps, heavy setups beyond directory creation (which is fast), or unneeded I/O operations.\", \"suggestions\": []},\n\"first_tdd\": {\"score\": 8, \"rationale\": \"It follows the Arrange-Act-Assert pattern: it sets up directories/files (`Arrange`), calls `_filter_changed_test_files()` with mocked context (`Act`), and asserts results (`Assert`).\", \"suggestions\": [\"Explicitly name variables for `arrange`, `act`, and `assert`.\"]},\n\"summary\": \"This test is well-structured, fast, and follows TDD principles. However, it risks being redundant if other tests cover the filtering logic directly or rely on absolute paths that change during refactoring.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 592,
+      "prompt_tokens": 644,
+      "total_tokens": 1236,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "0d21c8a0beed8b3860dc69b07f2cc0c40bd5226b70a87b10a1955df8e4e2e8b8": {
+    "id": "chatcmpl-71a28f60-7764-45a7-93fc-50870b365a87",
+    "created": 1782586331,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the business rule (full-suite resolution) and uses a clear assertion (`assert target_files == mock_files`). However, it lacks context on *why* this specific file path matters or what 'resolution mode' implies for other tests.\", \"suggestions\": [\"Add comments explaining why `tests/` is chosen over `./.` or relative paths. Define the expected behavior of 'full-suite resolution' in a docstring to ensure future maintainers understand the scope.\"]},\n  \"maintainable\": {\"score\": 7, \"rationale\": \"The test uses mocks (`MagicMock`, `patch`) which are generally good for isolation. However, it relies on `_resolve_target_files` being deterministic and not brittle if its internal logic changes slightly without updating this specific assertion.\", \"suggestions\": [\"Ensure the mock setup is robust against future refactors of `_resolve_target_files`. Consider adding a unit test specifically for `test_resolve_target_files_full_suite` to verify the function's behavior in isolation before integration.\"]},\n  \"repeatable\": {\"score\": 6, \"rationale\": \"The test uses external state (`MagicMock`, `patch`) and relies on file system paths. While it avoids network/database calls, relying on mocked filesystems can be brittle if those mocks are updated or the underlying implementation changes.\", \"suggestions\": [\"Remove reliance on mocking for this specific integration-like behavior to ensure repeatability across environments (e.g., unit tests vs CI). If external state is required, make it explicit and isolated.\"]},\n  \"atomic\": {\"score\": 9, \"rationale\": \"The test verifies exactly one rule: that `target_files` matches the mocked return value. The assertion logic (`assert target_files == mock_files`) isolates this single behavior cleanly.\", \"suggestions\": [\"Ensure no side effects occur outside these assertions (e.g., print statements). If `_resolve_target_files` modifies state, ensure it's reset or isolated within this test.\"]},\n  \"necessary\": {\"score\": 8, \"rationale\": \"This specific test covers the 'full-suite' resolution path. It does not duplicate coverage of other tests that might cover partial suites or different file patterns.\", \"suggestions\": [\"Review if there are existing unit tests for `test_resolve_target_files_full_suite` to ensure no duplication exists.\"]},\n  \"granular\": {\"score\": 7, \"rationale\": \"The test isolates the resolution logic and asserts specific values. However, it could be more granular by checking edge cases like empty paths or nested directory structures.\", \"suggestions\": [\"Add assertions for edge cases (e.g., `assert target_files == []` if no files are found). This makes the behavior of 'resolution' clearer.\"]},\n  \"fast\": {\"score\": 8, \"rationale\": \"The test uses mocks and avoids heavy I/O or sleeps. The execution time is dominated by mocking overhead rather than actual file system operations.\", \"suggestions\": [\"Ensure `patch` does not introduce artificial delays in CI/CD pipelines if the underlying implementation has slow setup logic.\"]},\n  \"first_tdd\": {\"score\": 7, \"rationale\": \"The test follows Arrange-Act-Pattern (Arrange: mock args; Act: call function with mocks; Assert: verify results). However, it lacks a clear 'specification' of what the resolved files should be before running.\", \"suggestions\": [\"Refactor to strictly follow TDD principles by writing tests for specific edge cases first. Ensure the test suite is designed such that each new file path requires an explicit unit test rather than relying on this integration-style mock.\"]},\"summary\":\"The test demonstrates good structure and isolation but suffers from over-reliance on mocking, which can reduce repeatability in CI/CD environments. It lacks specific edge-case coverage for 'resolution' logic and could benefit from more granular assertions to fully validate the business rule of full-suite resolution.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 835,
+      "prompt_tokens": 503,
+      "total_tokens": 1338,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "598e1667ead54d5bb7d517c247ad79392200f647160b2a9961d6375133fd92b9": {
+    "id": "chatcmpl-38016381-8a31-42f9-a536-23c912407b85",
+    "created": 1782586382,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n\"understandable\": {\"score\": 8, \"rationale\": \"The test clearly states the intent: verifying graceful exit with code 0 when no changes exist. The domain language is clear ('no changes found', 'exits gracefully').\", \"suggestions\": []},\n\"maintainable\": {\"score\": 7, \"rationale\": \"While decoupled from implementation logic (mocking `_get_changed_lines`), it relies heavily on `pytest.raises(SystemExit)`. This couples the test to a specific exception handling pattern that may break if other error types are raised in production.\", \"suggestions\": [\"Replace `SystemExit` with an explicit return code assertion or use `assert_called_once_with(...)` directly instead of catching exceptions, ensuring tests pass regardless of how errors propagate.\"]},\n\"repeatable\": {\"score\": 9, \"rationale\": \"The test is fully self-contained. It mocks only the necessary dependencies (`_DIFF_AVAILABLE`, `_get_changed_lines`) and uses a deterministic path structure.\", \"suggestions\": []},\n\"atomic\": {\"score\": 8, \"rationale\": \"It verifies exactly one behavior: that no changes trigger an exit code of 0. The cause is obvious (no diff found).\", \"suggestions\": []},\n\"necessary\": {\"score\": 6, \"rationale\": \"This test duplicates coverage for the 'empty input' case already covered by other tests in this suite or similar robustness checks.\", \"suggestions\": [\"Review existing `test_resolve_target_files_diff_*` cases to ensure no redundant assertions are made here.\"]},\n\"granular\": {\"score\": 7, \"rationale\": \"It isolates the specific edge-case behavior of 'no changes'. However, it mixes logic (exit code) with side effects (mocking), making assertion isolation slightly less clean than pure unit tests.\", \"suggestions\": [\"Refactor to separate the exit code check from any mock setup assertions for better clarity.\"]},\n\"fast\": {\"score\": 9, \"rationale\": \"The test executes immediately without artificial delays or heavy I/O. It relies solely on mocked functions and path operations.\", \"suggestions\": []},\n\"first_tdd\": {\"score\": 8, \"rationale\": \"It follows the Arrange-Act-Assert pattern: setup mocks (Arrange), perform action with mock data (Act), verify outcome/assertions (Assert).\", \"suggestions\": [\"Ensure the 'act' step is purely functional without side effects; if using `pytest.raises`, ensure it's a pure assertion of behavior, not an implementation detail.\"]},\"summary\": \"The test demonstrates strong adherence to TDD principles and good isolation. However, reliance on exception handling (`SystemExit`) reduces maintainability compared to direct assertions, and the specific 'empty input' case may be redundant if covered elsewhere in the suite.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 597,
+      "prompt_tokens": 571,
+      "total_tokens": 1168,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "f5195f9397fa05ea7dbdf692591e6a408b577872cf53e573689d9ef2a6ff781f": {
+    "id": "chatcmpl-2e24d652-1a3b-49cb-97b9-93419e91497e",
+    "created": 1782586440,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the business rule: extracting specific lines from a file and verifying which tests remain. The domain language is clear (file ranges vs. function names), avoiding implementation clutter.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 7, \"rationale\": \"While decoupled from system internals via mocking `validate_path`, the test relies on a hardcoded file path (`tmp_path / \\\"test_range_sample.py\\\"`). This creates brittle behavior if that specific filename changes or is moved.\", \"suggestions\": [\"Remove hardcoding of filenames. Use dynamic paths based on input arguments instead.\"]},\n  \"repeatable\": {\"score\": 6, \"rationale\": \"The test relies heavily on `tmp_path` and file system operations (`write_text`, `patch`). While deterministic in isolation, it is not truly self-contained as the path dependency makes it fragile to environment changes.\", \"suggestions\": [\"Remove all filesystem dependencies. Use a pure function or unit tests that do not require writing files.\"]},\n  \"atomic\": {\"score\": 9, \"rationale\": \"The test verifies exactly one behavior: extracting lines from a file and checking if specific functions are included/removed based on line overlap logic.\", \"suggestions\": []},\n  \"necessary\": {\"score\": 8, \"rationale\": \"This test specifically validates the edge case where no overlapping changes exist (Scenario C), ensuring the optimization doesn't incorrectly merge unrelated tests. It fills a gap in coverage for 'no-change' scenarios.\", \"suggestions\": [\"Ensure this specific scenario is covered by other existing tests if possible to avoid duplication.\"]},\n  \"granular\": {\"score\": 7, \"rationale\": \"The test isolates the logic of line extraction and name filtering. However, it mixes file I/O with pure function testing in a single block, slightly reducing granularity compared to separating setup from assertion.\", \"suggestions\": [\"Separate the `write_text` step into its own unit tests or fixtures if possible.\"]},\n  \"fast\": {\"score\": 5, \"rationale\": \"The test performs file I/O operations (`write_text`, `patch`) and relies on a mocked path. This introduces unnecessary overhead compared to pure function testing.\", \"suggestions\": [\"Replace all filesystem calls with direct assertions or mocks that do not involve disk writes.\"]},\n  \"first_tdd\": {\"score\": 9, \"rationale\": \"The test follows the Arrange-Act-Assert pattern: it sets up a specific file content (Arrange), acts by calling `extract_tests_from_file` and checking results (Act/Assert). It explicitly tests boundary conditions.\", \"suggestions\": []},\"summary\":\"Overall Score: 7.5 | The test is well-designed as a TDD spec but suffers from brittle dependencies on the filesystem path, making it hard to maintain in production environments without refactoring.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 624,
+      "prompt_tokens": 811,
+      "total_tokens": 1435,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
     }
   }
 }
