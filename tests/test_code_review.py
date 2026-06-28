@@ -61,14 +61,32 @@ def test_extract_units_from_file(tmp_path):
     assert units[0]["name"] == "<module>"
 
 
-def test_estimate_pr_tokens():
-    units = [
-        {"code": "def short(): pass"},
-        {"code": "def longer_function():\n    print('hello')\n    return 42"}
-    ]
-    # short is 17 chars (17 // 4 = 4 tokens) + 400 = 404
-    # longer is 54 chars (54 // 4 = 13 tokens) + 400 = 413
-    assert code_review_evaluator.estimate_pr_tokens(units) == 817
+def test_estimate_pr_tokens_empty():
+    """An empty collection of code units should estimate to zero tokens."""
+    assert code_review_evaluator.estimate_pr_tokens([]) == 0
+
+
+def test_estimate_pr_tokens_scales_with_code_length():
+    """Token estimation should scale monotonically with the length of the code."""
+    short_unit = [{"code": "def short(): pass"}]
+    long_unit = [{"code": "def longer():\n" + "    print('line')\n" * 50}]
+
+    short_tokens = code_review_evaluator.estimate_pr_tokens(short_unit)
+    long_tokens = code_review_evaluator.estimate_pr_tokens(long_unit)
+
+    assert long_tokens > short_tokens
+
+
+def test_estimate_pr_tokens_accumulates_overhead():
+    """Estimating multiple units should account for cumulative per-unit overhead."""
+    single_unit = [{"code": "def foo(): pass"}]
+    multiple_units = [{"code": "def foo(): pass"}, {"code": "def bar(): pass"}]
+
+    single_tokens = code_review_evaluator.estimate_pr_tokens(single_unit)
+    multiple_tokens = code_review_evaluator.estimate_pr_tokens(multiple_units)
+
+    assert single_tokens == 403
+    assert multiple_tokens == 806
 
 
 def test_filter_units_by_budget():
