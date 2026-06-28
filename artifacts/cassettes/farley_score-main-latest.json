@@ -1168,69 +1168,181 @@
       }
     },
     {
-      "id": "tests/test_code_review.py::test_estimate_pr_tokens",
+      "id": "tests/test_code_review.py::test_estimate_pr_tokens_empty",
       "file_path": "tests/test_code_review.py",
-      "test_name": "test_estimate_pr_tokens",
+      "test_name": "test_estimate_pr_tokens_empty",
       "class_name": null,
-      "farley_index": 1.875,
+      "farley_index": 7.875,
       "farley_breakdown": {
         "understandable": {
-          "score": 2,
-          "rationale": "The test lacks any business rule or domain context; it is a pure implementation detail of the `code_review_evaluator` class. The logic for calculating tokens (char count / 4 + constant) appears to be an arbitrary heuristic rather than a defined policy.",
+          "score": 9,
+          "rationale": "The test name and docstring are clear; however, the assertion `code_review_evaluator.estimate_pr_tokens([])` mixes a method call with an empty list argument in a way that obscures intent for some readers.",
           "suggestions": [
-            "Remove all hardcoded constants and arithmetic from assertions unless they are part of a documented, stable business rule."
+            "Refactor to explicitly pass arguments: `assert code_review_evaluator.estimate_pr_tokens([], []) == 0` or simply rely on the function signature if it takes only one positional arg (which is ambiguous here).",
+            "Consider adding a unit test for edge cases like empty strings, whitespace-only inputs, and non-string types to ensure robustness."
           ]
         },
         "maintainable": {
-          "score": 1,
-          "rationale": "The test is brittle to any change in the `estimate_pr_tokens` logic. If the formula changes (e.g., division operator or constant value), this specific assertion will fail immediately without a refactoring plan.",
+          "score": 8,
+          "rationale": "The test verifies the function's behavior with an empty list. However, it lacks isolation from other tests that might rely on shared state or specific implementation details of `estimate_pr_tokens`.",
           "suggestions": [
-            "Decouple assertions from implementation details by using unit tests for internal functions rather than relying on external state."
+            "Ensure no external dependencies (like a database) are used in this test to prevent flakiness during refactoring.",
+            "Add assertions for edge cases such as empty strings, whitespace-only inputs, and non-string types."
           ]
         },
         "repeatable": {
-          "score": 3,
-          "rationale": "The test relies heavily on the `code_review_evaluator` class and its internal logic. It is not self-contained; it depends entirely on an existing implementation that may change between runs.",
+          "score": 7,
+          "rationale": "The test is deterministic but relies on the internal state of `code_review_evaluator`, which may be shared across tests or influenced by external factors like timing.",
           "suggestions": [
-            "Isolate this behavior into a dedicated unit function or module to ensure determinism without external dependencies."
+            "Isolate this test to avoid reliance on global state. Ensure no network calls, database queries, or filesystem operations occur within the test scope."
           ]
         },
         "atomic": {
-          "score": 2,
-          "rationale": "The test verifies only one specific calculation. If the `estimate_pr_tokens` logic is refactored (e.g., changed from division to modulo), this single assertion will fail while others pass.",
+          "score": 9,
+          "rationale": "The single assertion clearly verifies one behavior: that an empty collection yields zero tokens.",
           "suggestions": [
-            "Ensure that any change in internal implementation does not break other tests, or refactor the test itself."
+            "No additional assertions needed for atomicity in this specific case."
           ]
         },
         "necessary": {
-          "score": 1,
-          "rationale": "This test duplicates coverage of logic already present elsewhere (e.g., `test_estimate_pr_tokens` might be a unit function). It adds no value to system testing and risks masking bugs in the evaluator.",
+          "score": 6,
+          "rationale": "While the test covers a valid edge case (empty input), it may not be strictly necessary if other tests already cover empty collections or similar scenarios.",
           "suggestions": [
-            "Remove this specific assertion if it is covered by other tests or internal functions. Focus on integration/contract tests instead."
+            "Review existing coverage reports to ensure this specific scenario is adequately tested by other unit tests."
           ]
         },
         "granular": {
-          "score": 1,
-          "rationale": "The test asserts a global sum (817) rather than verifying individual token counts per line of code. It is too coarse-grained to be useful for debugging or regression.",
+          "score": 8,
+          "rationale": "The test targets a precise behavior: the estimation of tokens for an empty collection.",
           "suggestions": [
-            "Assert the correct number of tokens per specific input unit, not just the total."
+            "Ensure no extraneous assertions are made. The current scope is well-defined."
           ]
         },
         "fast": {
-          "score": 4,
-          "rationale": "The test is relatively fast as it contains no sleeps or heavy I/O. However, if `estimate_pr_tokens` involves network calls or database lookups (which are not shown here but implied by the name), this score would drop.",
+          "score": 9,
+          "rationale": "The test executes rapidly with minimal setup or I/O overhead.",
           "suggestions": [
-            "Ensure there are no external dependencies like DB/network calls that could slow execution."
+            "No performance concerns detected in this specific implementation."
           ]
         },
         "first_tdd": {
-          "score": 1,
-          "rationale": "This is a pure implementation test. It does not demonstrate the Arrange-Act-Assert pattern or verify design properties; it simply checks if an existing function returns a specific value.",
+          "score": 7,
+          "rationale": "While the structure follows Arrange-Act-Assert principles (Arrange: implicit setup via function call; Act: empty list input; Assert: zero tokens), it lacks explicit separation of concerns and clear specification.",
           "suggestions": [
-            "Refactor this into unit tests for internal functions to enforce clean separation of concerns and proper TDD practices."
+            "Explicitly define inputs/outputs in a dedicated 'setup' block or use fixtures to ensure clarity. Ensure the test explicitly states what behavior is expected before any code execution."
           ]
         },
-        "summary": "This test is highly brittle, non-atomic regarding implementation changes, and lacks any business rule context. It should be removed or refactored entirely as a pure functional unit test rather than an integration contract check."
+        "summary": "The test demonstrates good TDD practices but could benefit from explicit input/output definitions and isolation of external dependencies for higher maintainability scores."
+      }
+    },
+    {
+      "id": "tests/test_code_review.py::test_estimate_pr_tokens_scales_with_code_length",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_estimate_pr_tokens_scales_with_code_length",
+      "class_name": null,
+      "farley_index": 7.875,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test name and docstring clearly articulate the business rule: token estimation must scale monotonically with code length. The implementation details (the `estimate_pr_tokens` function) are hidden behind a clean interface call.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "The test is decoupled from the internal logic of how tokens are calculated. It only cares about input (code strings) and output (token counts), making it robust against refactoring changes in `estimate_pr_tokens`.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic but relies on the external state of a shared evaluator instance (`code_review_evaluator`). If this object's internal logic changes or if timing varies between runs (e.g., due to caching), results may not be reproducible.",
+          "suggestions": [
+            "Remove reliance on any global/shared singleton instances. Instantiate `estimate_pr_tokens` fresh for each test case within the function scope."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: that longer code produces more tokens than shorter code. The assertion is direct and unambiguous.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "While this specific test covers the 'scaling' aspect of token estimation, it does not cover edge cases like empty strings or whitespace-only inputs. It may be redundant if other tests already verify basic functionality.",
+          "suggestions": [
+            "Add a dedicated test for `estimate_pr_tokens('')` to ensure zero tokens are returned for empty input."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The assertion is granular enough; it isolates the specific relationship between code length and token count without asserting implementation specifics.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "There are no artificial sleeps or heavy I/O operations. The test is purely computational logic execution.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 7,
+          "rationale": "The code follows a basic Arrange-Act-Assert pattern (setup inputs -> call function -> assert), but the docstring and test name are slightly verbose for TDD. The 'Arrange' phase is implicit in setup.",
+          "suggestions": [
+            "Refactor to explicitly separate `setUp` from logic using fixtures or context managers if possible, ensuring a cleaner separation of concerns."
+          ]
+        },
+        "summary": "The test demonstrates strong adherence to TDD principles regarding isolation and determinism. However, it risks being brittle due to shared state reliance (repeatability) and lacks edge-case coverage for empty inputs (necessary). The implementation is clean but the external dependency on a global evaluator instance introduces maintainability friction."
+      }
+    },
+    {
+      "id": "tests/test_code_review.py::test_estimate_pr_tokens_accumulates_overhead",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_estimate_pr_tokens_accumulates_overhead",
+      "class_name": null,
+      "farley_index": 8.125,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 9,
+          "rationale": "The test clearly defines the business rule: estimating tokens for a list of PRs should sum up overhead per unit. The language is domain-appropriate (PR estimation), avoiding implementation clutter.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 8,
+          "rationale": "The logic depends entirely on the `code_review_evaluator` class's internal calculation of 'overhead'. If that evaluator changes its formula or adds new overhead factors without updating this test, it breaks. It is not brittle to refactoring the *evaluator* as long as the rule remains consistent.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test relies on `code_review_evaluator` which likely uses a database or network call. If these external dependencies change (e.g., rate limiting, DB schema changes), the result becomes non-deterministic and hard to reproduce locally.",
+          "suggestions": [
+            "The evaluator should be mocked in this specific unit test if it performs I/O/Databases/Network calls."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The assertion `multiple_tokens == 806` is a single atomic check. If the calculation logic changes (e.g., adding an extra overhead factor), this specific test will immediately fail and reveal the bug.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 9,
+          "rationale": "This test specifically validates that 'overhead' is additive per unit. It does not duplicate coverage of other tests (e.g., single-unit overhead) or trivial things like syntax validation; it targets a specific architectural property.",
+          "suggestions": []
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "It isolates the 'accumulation' behavior precisely. It does not test edge cases (empty lists), error conditions, or performance bottlenecks in isolation; it strictly tests the mathematical property of accumulation.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 6,
+          "rationale": "The code is syntactically fast and has no artificial sleeps. However, if `code_review_evaluator` performs a slow DB query or network call to fetch 'overhead' data for each unit before calculating the sum, this test will be significantly slower than necessary.",
+          "suggestions": [
+            "Ensure `estimate_pr_tokens` does not perform I/O/Databases/Network calls in its internal logic. If it must, move that heavy operation outside of these specific calculation assertions or use mocks."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The test follows the Arrange-Act-Assert pattern implicitly: `Arrange` (create lists), `Act` (call evaluator twice and assert sum), no explicit setup/teardown. It demonstrates a clean separation of intent.",
+          "suggestions": []
+        },
+        "summary": "This is an excellent, high-quality TDD unit test that strictly adheres to the 8 Properties of Good Tests. The logic is clear, atomic, and necessary for verifying the 'overhead accumulation' business rule without relying on external state."
       }
     },
     {
@@ -2113,32 +2225,32 @@
     "farley_usage_summary": {
       "run_id": "main-baseline",
       "model": "ollama/qwen3.5:2b",
-      "reviewed_test_cases": 25,
+      "reviewed_test_cases": 27,
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 28,
-          "prompt_tokens": 16262,
-          "completion_tokens": 21252,
-          "total_tokens": 37514,
+          "calls": 30,
+          "prompt_tokens": 17159,
+          "completion_tokens": 22612,
+          "total_tokens": 39771,
           "cost_usd": 0.0,
           "missing_usage_calls": 0
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 28,
-            "prompt_tokens": 16262,
-            "completion_tokens": 21252,
-            "total_tokens": 37514,
+            "calls": 30,
+            "prompt_tokens": 17159,
+            "completion_tokens": 22612,
+            "total_tokens": 39771,
             "cost_usd": 0.0
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 28,
-            "prompt_tokens": 16262,
-            "completion_tokens": 21252,
-            "total_tokens": 37514,
+            "calls": 30,
+            "prompt_tokens": 17159,
+            "completion_tokens": 22612,
+            "total_tokens": 39771,
             "cost_usd": 0.0
           }
         },
@@ -2170,7 +2282,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 478,
             "completion_tokens": 801,
@@ -2182,7 +2294,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 616,
             "completion_tokens": 671,
@@ -2194,7 +2306,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 496,
             "completion_tokens": 651,
@@ -2206,7 +2318,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 644,
             "completion_tokens": 592,
@@ -2218,7 +2330,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 503,
             "completion_tokens": 835,
@@ -2230,7 +2342,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 571,
             "completion_tokens": 597,
@@ -2242,7 +2354,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 811,
             "completion_tokens": 624,
@@ -2278,11 +2390,35 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "cache",
+            "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 503,
-            "completion_tokens": 848,
-            "total_tokens": 1351,
+            "prompt_tokens": 413,
+            "completion_tokens": 799,
+            "total_tokens": 1212,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 492,
+            "completion_tokens": 705,
+            "total_tokens": 1197,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 495,
+            "completion_tokens": 704,
+            "total_tokens": 1199,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -2682,6 +2818,87 @@
       "completion_tokens": 624,
       "prompt_tokens": 811,
       "total_tokens": 1435,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "68a31dd05f31a08dedeee5e0ecb0c8405097eddfcc58a1e74dbfe3b84b736165": {
+    "id": "chatcmpl-b65cb439-e92e-43d1-8398-4d4cc26260fc",
+    "created": 1782607554,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 9,\n    \"rationale\": \"The test name and docstring are clear; however, the assertion `code_review_evaluator.estimate_pr_tokens([])` mixes a method call with an empty list argument in a way that obscures intent for some readers.\",\n    \"suggestions\": [\n      \"Refactor to explicitly pass arguments: `assert code_review_evaluator.estimate_pr_tokens([], []) == 0` or simply rely on the function signature if it takes only one positional arg (which is ambiguous here).\",\n      \"Consider adding a unit test for edge cases like empty strings, whitespace-only inputs, and non-string types to ensure robustness.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 8,\n    \"rationale\": \"The test verifies the function's behavior with an empty list. However, it lacks isolation from other tests that might rely on shared state or specific implementation details of `estimate_pr_tokens`.\",\n    \"suggestions\": [\n      \"Ensure no external dependencies (like a database) are used in this test to prevent flakiness during refactoring.\",\n      \"Add assertions for edge cases such as empty strings, whitespace-only inputs, and non-string types.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic but relies on the internal state of `code_review_evaluator`, which may be shared across tests or influenced by external factors like timing.\",\n    \"suggestions\": [\n      \"Isolate this test to avoid reliance on global state. Ensure no network calls, database queries, or filesystem operations occur within the test scope.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The single assertion clearly verifies one behavior: that an empty collection yields zero tokens.\",\n    \"suggestions\": [\n      \"No additional assertions needed for atomicity in this specific case.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"While the test covers a valid edge case (empty input), it may not be strictly necessary if other tests already cover empty collections or similar scenarios.\",\n    \"suggestions\": [\n      \"Review existing coverage reports to ensure this specific scenario is adequately tested by other unit tests.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The test targets a precise behavior: the estimation of tokens for an empty collection.\",\n    \"suggestions\": [\n      \"Ensure no extraneous assertions are made. The current scope is well-defined.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes rapidly with minimal setup or I/O overhead.\",\n    \"suggestions\": [\n      \"No performance concerns detected in this specific implementation.\"\n    ]\n  },\"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"While the structure follows Arrange-Act-Assert principles (Arrange: implicit setup via function call; Act: empty list input; Assert: zero tokens), it lacks explicit separation of concerns and clear specification.\",\n    \"suggestions\": [\n      \"Explicitly define inputs/outputs in a dedicated 'setup' block or use fixtures to ensure clarity. Ensure the test explicitly states what behavior is expected before any code execution.\"\n    ]\n  },\"summary\":\"The test demonstrates good TDD practices but could benefit from explicit input/output definitions and isolation of external dependencies for higher maintainability scores.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 799,
+      "prompt_tokens": 413,
+      "total_tokens": 1212,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "540229bd132483d6f3c48073a17bf4d7a0dbaa84591d0a380badefc50637404d": {
+    "id": "chatcmpl-54e1eba8-0f94-4549-9825-be8a67ca3bf7",
+    "created": 1782607612,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and docstring clearly articulate the business rule: token estimation must scale monotonically with code length. The implementation details (the `estimate_pr_tokens` function) are hidden behind a clean interface call.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"The test is decoupled from the internal logic of how tokens are calculated. It only cares about input (code strings) and output (token counts), making it robust against refactoring changes in `estimate_pr_tokens`.\",\n    \"suggestions\": []\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic but relies on the external state of a shared evaluator instance (`code_review_evaluator`). If this object's internal logic changes or if timing varies between runs (e.g., due to caching), results may not be reproducible.\",\n    \"suggestions\": [\n      \"Remove reliance on any global/shared singleton instances. Instantiate `estimate_pr_tokens` fresh for each test case within the function scope.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: that longer code produces more tokens than shorter code. The assertion is direct and unambiguous.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"While this specific test covers the 'scaling' aspect of token estimation, it does not cover edge cases like empty strings or whitespace-only inputs. It may be redundant if other tests already verify basic functionality.\",\n    \"suggestions\": [\n      \"Add a dedicated test for `estimate_pr_tokens('')` to ensure zero tokens are returned for empty input.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The assertion is granular enough; it isolates the specific relationship between code length and token count without asserting implementation specifics.\",\n    \"suggestions\": []\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"There are no artificial sleeps or heavy I/O operations. The test is purely computational logic execution.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"The code follows a basic Arrange-Act-Assert pattern (setup inputs -> call function -> assert), but the docstring and test name are slightly verbose for TDD. The 'Arrange' phase is implicit in setup.\",\n    \"suggestions\": [\n      \"Refactor to explicitly separate `setUp` from logic using fixtures or context managers if possible, ensuring a cleaner separation of concerns.\"\n    ]\n  },\n  \"summary\": \"The test demonstrates strong adherence to TDD principles regarding isolation and determinism. However, it risks being brittle due to shared state reliance (repeatability) and lacks edge-case coverage for empty inputs (necessary). The implementation is clean but the external dependency on a global evaluator instance introduces maintainability friction.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 705,
+      "prompt_tokens": 492,
+      "total_tokens": 1197,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "bca42bec60f9062f458cf6891b68e1cad7ccdea551c83ea97a3d213fd8062090": {
+    "id": "chatcmpl-9929c269-1e0b-4dd6-b198-fe6a27836a9e",
+    "created": 1782607672,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n\"understandable\": {\n\"score\": 9,\n\"rationale\": \"The test clearly defines the business rule: estimating tokens for a list of PRs should sum up overhead per unit. The language is domain-appropriate (PR estimation), avoiding implementation clutter.\",\n\"suggestions\": []\n},\n\"maintainable\": {\n\"score\": 8,\n\"rationale\": \"The logic depends entirely on the `code_review_evaluator` class's internal calculation of 'overhead'. If that evaluator changes its formula or adds new overhead factors without updating this test, it breaks. It is not brittle to refactoring the *evaluator* as long as the rule remains consistent.\",\n\"suggestions\": []\n},\n\"repeatable\": {\n\"score\": 7,\n\"rationale\": \"The test relies on `code_review_evaluator` which likely uses a database or network call. If these external dependencies change (e.g., rate limiting, DB schema changes), the result becomes non-deterministic and hard to reproduce locally.\",\n\"suggestions\": [\n\"The evaluator should be mocked in this specific unit test if it performs I/O/Databases/Network calls.\"\n]\n},\n\"atomic\": {\n\"score\": 9,\n\"rationale\": \"The assertion `multiple_tokens == 806` is a single atomic check. If the calculation logic changes (e.g., adding an extra overhead factor), this specific test will immediately fail and reveal the bug.\",\n\"suggestions\": []\n},\n\"necessary\": {\n\"score\": 9,\n\"rationale\": \"This test specifically validates that 'overhead' is additive per unit. It does not duplicate coverage of other tests (e.g., single-unit overhead) or trivial things like syntax validation; it targets a specific architectural property.\",\n\"suggestions\": []\n},\n\"granular\": {\n\"score\": 8,\n\"rationale\": \"It isolates the 'accumulation' behavior precisely. It does not test edge cases (empty lists), error conditions, or performance bottlenecks in isolation; it strictly tests the mathematical property of accumulation.\",\n\"suggestions\": []\n},\n\"fast\": {\n\"score\": 6,\n\"rationale\": \"The code is syntactically fast and has no artificial sleeps. However, if `code_review_evaluator` performs a slow DB query or network call to fetch 'overhead' data for each unit before calculating the sum, this test will be significantly slower than necessary.\",\n\"suggestions\": [\n\"Ensure `estimate_pr_tokens` does not perform I/O/Databases/Network calls in its internal logic. If it must, move that heavy operation outside of these specific calculation assertions or use mocks.\"\n]\n},\n\"first_tdd\": {\n\"score\": 9,\n\"rationale\": \"The test follows the Arrange-Act-Assert pattern implicitly: `Arrange` (create lists), `Act` (call evaluator twice and assert sum), no explicit setup/teardown. It demonstrates a clean separation of intent.\",\n\"suggestions\": []\n},\"summary\": \"This is an excellent, high-quality TDD unit test that strictly adheres to the 8 Properties of Good Tests. The logic is clear, atomic, and necessary for verifying the 'overhead accumulation' business rule without relying on external state.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 704,
+      "prompt_tokens": 495,
+      "total_tokens": 1199,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
