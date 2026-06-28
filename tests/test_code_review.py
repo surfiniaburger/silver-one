@@ -85,7 +85,8 @@ def test_estimate_pr_tokens_accumulates_overhead():
     single_tokens = code_review_evaluator.estimate_pr_tokens(single_unit)
     multiple_tokens = code_review_evaluator.estimate_pr_tokens(multiple_units)
 
-    assert multiple_tokens > single_tokens
+    assert single_tokens == 403
+    assert multiple_tokens == 806
 
 
 def test_filter_units_by_budget():
