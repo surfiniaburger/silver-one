@@ -2390,7 +2390,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 413,
             "completion_tokens": 799,
@@ -2402,7 +2402,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 492,
             "completion_tokens": 705,
@@ -2414,7 +2414,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 495,
             "completion_tokens": 704,
