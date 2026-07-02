@@ -140,10 +140,10 @@ def test_pydantic_validators():
 
     # 1. Test score clamping and scaling (e.g. 15 -> 1.5, 85 -> 8.5)
     prop = PropertyEvaluation.model_validate({"score": 15, "rationale": "Over limit"})
-    assert prop.score == 1.5
+    assert prop.score == pytest.approx(1.5)
     
     prop_ok = PropertyEvaluation.model_validate({"score": 8.5, "rationale": "Ok"})
-    assert prop_ok.score == 8.5
+    assert prop_ok.score == pytest.approx(8.5)
 
     # 2. Test confidence parsing (98 -> 0.98, out of bounds clamping)
     finding = EngineeringFinding.model_validate({
@@ -160,7 +160,7 @@ def test_pydantic_validators():
         "confidence": 98,
         "recommended_action": "Fix it"
     })
-    assert finding.confidence == 0.98
+    assert finding.confidence == pytest.approx(0.98)
     assert finding.evidence.path == "main.py"  # path leading slash lstrip
 
     # 3. Test empty strings fallbacks
