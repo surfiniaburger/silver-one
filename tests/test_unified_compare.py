@@ -160,3 +160,61 @@ def test_write_unified_report_null_values(tmp_path):
     assert "Score: 10.0/10" in content
 
 
+def test_write_unified_report_with_findings(tmp_path):
+    from scripts.unified_compare import write_unified_report
+    out_file = tmp_path / "report.md"
+
+    cr_units = [
+        {
+            "file_path": "src/utils.py",
+            "name": "helper",
+            "review": {
+                "severity": "WARN",
+                "summary": "Some issues with helper",
+                "complexity": {"score": 6.5, "rationale": "High complexity", "suggestions": ["Simplify"]},
+                "findings": [
+                    {
+                        "title": "Uncaught ValueError",
+                        "category": "Correctness",
+                        "severity": "WARN",
+                        "evidence": {
+                            "location_type": "code",
+                            "path": "src/utils.py",
+                            "details": {"start_line": 15, "end_line": 20, "function_name": "helper"}
+                        },
+                        "engineering_rationale": "Parsing raw strings directly can throw ValueError.",
+                        "engineering_consequence": "Uncaught exceptions will crash the program.",
+                        "impact": {"correctness": "MEDIUM"},
+                        "confidence": 0.9,
+                        "recommended_action": "Wrap statement in a try-except block."
+                    }
+                ]
+            }
+        }
+    ]
+
+    write_unified_report(
+        out_path=out_file,
+        unified_verdict="FAIL",
+        reasons=["Code review quality warning"],
+        spend_str="**Token spend**: 100 total tokens\n\n",
+        cr_data={"units": cr_units, "verdict": "WARN"},
+        farley_data={
+            "bsum": {"avg_index": 8.0},
+            "psum": {"avg_index": 7.5},
+            "delta": -0.5,
+            "verdict": "PASS",
+            "regressions": [],
+            "baseline_exists": True,
+        },
+        compat_data={"ok": True, "score": 10.0, "regressions": []}
+    )
+    content = out_file.read_text(encoding="utf-8")
+    assert "##### Structured Engineering Findings" in content
+    assert "Uncaught ValueError" in content
+    assert "Lines 15-20" in content
+    assert "Uncaught exceptions will crash the program." in content
+    assert "Wrap statement in a try-except block." in content
+
+
+
