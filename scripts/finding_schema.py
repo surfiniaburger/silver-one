@@ -1,5 +1,5 @@
 from typing import Dict, Any, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing_extensions import Literal
 
 
@@ -16,6 +16,16 @@ class Evidence(BaseModel):
         default_factory=dict,
         description="Extensible location details (e.g., line numbers, function/method names, API signatures)."
     )
+
+    @field_validator("path", mode="before")
+    @classmethod
+    def validate_path(cls, v):
+        if not v:
+            return v
+        path_str = str(v).strip()
+        if path_str.startswith("/"):
+            path_str = path_str.lstrip("/")
+        return path_str
 
 
 class EngineeringImpact(BaseModel):
@@ -50,3 +60,21 @@ class EngineeringFinding(BaseModel):
         description="LLM confidence score from 0.0 to 1.0."
     )
     recommended_action: str = Field(..., description="Concrete steps to resolve the issue.")
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def validate_confidence(cls, v):
+        try:
+            val = float(v)
+            if val > 1.0:
+                val = val / 100.0
+            return max(0.0, min(1.0, val))
+        except (ValueError, TypeError):
+            return 1.0
+
+    @field_validator("engineering_rationale", "engineering_consequence", "recommended_action", mode="before")
+    @classmethod
+    def validate_non_empty_strings(cls, v):
+        if not v or not str(v).strip():
+            return "No details provided."
+        return str(v).strip()

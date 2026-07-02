@@ -132,3 +132,53 @@ def test_validate_path_escapes(tmp_path):
     # Escaping path
     with pytest.raises(ValueError, match="escapes allowed directory"):
         diff_extractor.validate_path("../outside.py", root)
+
+
+def test_pydantic_validators():
+    from scripts.finding_schema import EngineeringFinding, Evidence
+    from scripts.code_review_evaluator import PropertyEvaluation
+
+    # 1. Test score clamping and scaling (e.g. 15 -> 1.5, 85 -> 8.5)
+    prop = PropertyEvaluation.model_validate({"score": 15, "rationale": "Over limit"})
+    assert prop.score == 1.5
+    
+    prop_ok = PropertyEvaluation.model_validate({"score": 8.5, "rationale": "Ok"})
+    assert prop_ok.score == 8.5
+
+    # 2. Test confidence parsing (98 -> 0.98, out of bounds clamping)
+    finding = EngineeringFinding.model_validate({
+        "title": "Test Finding",
+        "category": "Correctness",
+        "severity": "WARN",
+        "evidence": {
+            "location_type": "code",
+            "path": "/main.py",
+            "details": {"start_line": 1}
+        },
+        "engineering_rationale": "Some rationale",
+        "engineering_consequence": "Some consequence",
+        "confidence": 98,
+        "recommended_action": "Fix it"
+    })
+    assert finding.confidence == 0.98
+    assert finding.evidence.path == "main.py"  # path leading slash lstrip
+
+    # 3. Test empty strings fallbacks
+    finding_empty = EngineeringFinding.model_validate({
+        "title": "Test Finding",
+        "category": "Correctness",
+        "severity": "WARN",
+        "evidence": {
+            "location_type": "code",
+            "path": "main.py",
+            "details": {}
+        },
+        "engineering_rationale": "  ",
+        "engineering_consequence": "",
+        "confidence": 0.8,
+        "recommended_action": ""
+    })
+    assert finding_empty.engineering_rationale == "No details provided."
+    assert finding_empty.engineering_consequence == "No details provided."
+    assert finding_empty.recommended_action == "No details provided."
+
