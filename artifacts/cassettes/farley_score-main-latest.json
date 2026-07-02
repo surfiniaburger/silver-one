@@ -568,6 +568,632 @@
   },
   "tests": [
     {
+      "id": "tests/test_compatibility.py::test_extract_api_signatures_simple",
+      "file_path": "tests/test_compatibility.py",
+      "test_name": "test_extract_api_signatures_simple",
+      "class_name": null,
+      "farley_index": 7.875,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 9,
+          "rationale": "The test clearly defines the business rule: extract only public API signatures. It uses ubiquitous language ('public', 'private') and avoids implementation clutter.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 8,
+          "rationale": "Tests are decoupled from system internals (e.g., `_PrivateClass` is ignored). However, the test itself relies on a helper function `extract_api_signatures`, which may become brittle if that logic changes.",
+          "suggestions": [
+            "Move `extract_api_signatures` to an external library or module; this test should not depend on internal implementation details."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The code is deterministic and self-contained. However, it relies heavily on the behavior of a helper function (`extract_api_signatures`) which introduces potential non-determinism if that logic changes.",
+          "suggestions": [
+            "Implement `extract_api_signatures` as an external utility; ensure this test does not depend on internal implementation details."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: extracting public signatures. If it fails, the cause is instantly obvious (e.g., missing assertion).",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test covers a specific edge case for `public_fn`. However, without seeing other tests in this file or context, we cannot confirm it does not duplicate coverage of trivial things.",
+          "suggestions": [
+            "Review the full suite to ensure no redundant assertions exist; consider if this specific signature extraction is truly necessary given existing tests."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The test isolates precisely: public functions vs private ones. It correctly asserts `params` structure and distinguishes between named/keyword-only arguments.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 7,
+          "rationale": "No artificial sleeps or heavy I/O are present in the snippet itself. However, if this test is run frequently as part of a CI pipeline with other slow tests, it could impact overall speed.",
+          "suggestions": [
+            "Ensure `extract_api_signatures` does not perform expensive operations; consider caching results for repeated runs."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The test follows the Arrange-Act-Assert pattern: code is provided (Arrange), extraction happens (Act), assertions validate output (Assert). It demonstrates a clean separation of concerns.",
+          "suggestions": []
+        },
+        "summary": "Overall Score: 7.5/10 | Strengths: Excellent adherence to TDD principles, clear intent, and granular isolation. Weaknesses: Heavy reliance on an internal helper function (`extract_api_signatures`) which violates the 'maintainable' property if that logic changes; potential redundancy in test coverage without full suite context."
+      }
+    },
+    {
+      "id": "tests/test_compatibility.py::test_compare_signatures_no_changes",
+      "file_path": "tests/test_compatibility.py",
+      "test_name": "test_compare_signatures_no_changes",
+      "class_name": null,
+      "farley_index": 8.375,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly demonstrates the business rule: comparing two identical function signatures should yield zero differences. The language is domain-appropriate (Python functions), avoiding implementation clutter.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "This test has no dependencies on system internals or external state; it only relies on the `extract_api_signatures` and `compare_signatures` utilities. It is decoupled from how these functions are implemented.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic but lacks a clear 'self-contained' isolation mechanism regarding the input data source (e.g., does it rely on file system paths or specific environment variables?).",
+          "suggestions": [
+            "Explicitly define inputs as constants at module level to ensure reproducibility across environments.",
+            "Remove any implicit reliance on external state like `test.py` if possible, unless that is a core part of the test's contract."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The assertion verifies exactly one behavior: 'no changes detected'. If this fails, it immediately indicates an error in signature comparison logic.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "This test covers a specific edge case (identical signatures). While not exhaustive for all scenarios, it serves as a necessary sanity check to prevent regressions where identical inputs might be treated differently by the library.",
+          "suggestions": [
+            "Ensure this is part of an 'Arrange' phase that explicitly sets up two distinct but equivalent function definitions before calling `compare_signatures`."
+          ]
+        },
+        "granular": {
+          "score": 9,
+          "rationale": "The test isolates precisely one behavior: signature comparison. It does not mix unrelated logic or assertions.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "There are no artificial sleeps, heavy setups, or unneeded I/O operations in this snippet itself (assuming `extract_api_signatures` is efficient).",
+          "suggestions": [
+            "Ensure the underlying utility functions do not perform unnecessary file system reads during execution."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The test follows a clean Arrange-Act-Assert structure: it sets up two identical function definitions (Arrange), performs an action of comparison (Act), and asserts the result is zero (Assert).",
+          "suggestions": []
+        },
+        "summary": "This test demonstrates strong adherence to TDD principles with clear intent, maintainability, and atomicity. It effectively isolates a specific edge case without unnecessary dependencies or clutter."
+      }
+    },
+    {
+      "id": "tests/test_compatibility.py::test_compare_signatures_deleted_class",
+      "file_path": "tests/test_compatibility.py",
+      "test_name": "test_compare_signatures_deleted_class",
+      "class_name": null,
+      "farley_index": 7.0,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly demonstrates the specific behavior of comparing signatures for deleted classes using a real-world example. The intent is unambiguous.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 6,
+          "rationale": "While understandable, this test relies on `extract_api_signatures` and `compare_signatures`, which are likely internal implementation details rather than public API contracts. This couples the behavior to specific library internals that may change without updating tests.",
+          "suggestions": [
+            "Move these helper functions into a dedicated utility module or separate package if they aren't part of the core Silver-One test suite, ensuring they remain stable across refactors."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The logic is deterministic and self-contained within this file. However, it relies on `extract_api_signatures` which likely has its own dependencies or side effects that could make the full test run non-deterministically in CI if those helpers are slow.",
+          "suggestions": [
+            "Ensure all helper functions used here have unit tests themselves to guarantee they produce consistent results without external state."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The assertion `assert len(regs) == 1` combined with the specific string check makes it impossible for this test to fail in a confusing way. If it fails, you immediately know which part of the logic is broken.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 5,
+          "rationale": "This test likely duplicates coverage already provided by tests that verify `extract_api_signatures` works correctly with empty strings or standard classes. It may be testing a trivial edge case rather than adding unique value to the suite.",
+          "suggestions": [
+            "Review existing tests for signature extraction and comparison logic before writing this one; consider removing if it's redundant."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The test isolates exactly one behavior: detecting a 'Deleted public class' message. It does not mix unrelated concerns like error handling or logging.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 6,
+          "rationale": "There is no explicit `sleep()` call in the code provided to ensure speed. However, if these helper functions perform heavy I/O (e.g., network calls) during execution, this test will be slow regardless of assertions.",
+          "suggestions": [
+            "Verify that `extract_api_signatures` and `compare_signatures` do not contain artificial delays or unnecessary file system/network operations."
+          ]
+        },
+        "first_tdd": {
+          "score": 8,
+          "rationale": "The code follows a clean Arrange-Act-Assert structure: setup (`base`, `pr`) -> action (comparison) -> assertion. The behavior is explicitly defined before the test runs.",
+          "suggestions": []
+        },
+        "summary": "This test demonstrates strong TDD principles and clear intent but risks maintainability issues due to reliance on internal helpers that may not be stable across refactors, and potential redundancy in coverage."
+      }
+    },
+    {
+      "id": "tests/test_compatibility.py::test_compare_signatures_deleted_function",
+      "file_path": "tests/test_compatibility.py",
+      "test_name": "test_compare_signatures_deleted_function",
+      "class_name": null,
+      "farley_index": 8.125,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly demonstrates the business rule: comparing API signatures of a deleted function against an empty signature should yield one result indicating deletion. The language is domain-specific but clear.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "This test has no dependencies on system implementation details (no DB calls, network requests, or file I/O). It only relies on the `extract_api_signatures` and `compare_signatures` functions which are assumed to be stable.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic in its logic but depends entirely on external shared state: the file system (`test.py`) where the function was deleted. If `extract_api_signatures` reads from a different location or behaves differently across runs, this test will fail unpredictably.",
+          "suggestions": [
+            "Remove reliance on reading files directly; instead, mock the filesystem path used by these helper functions."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The assertion `assert len(regs) == 1` combined with a specific string check ensures exactly one behavior is verified. If it fails, the cause (wrong number of matches or wrong message format) is instantly obvious.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "This test verifies that deleting a function results in an empty signature being compared against another non-empty one and correctly identifies 'Deleted'. It does not duplicate coverage for other tests (e.g., adding functions) or trivial things.",
+          "suggestions": []
+        },
+        "granular": {
+          "score": 9,
+          "rationale": "The test isolates the specific behavior of detecting a deleted function by comparing signatures. The assertion is precise about both quantity and content ('Deleted public function/method `fn`').",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 6,
+          "rationale": "While there are no sleeps or heavy I/O in this snippet itself (assuming the helper functions handle it), relying on file system operations (`test.py`) introduces potential latency and flakiness if that path changes. It is not 'pure' fast without external state assumptions.",
+          "suggestions": [
+            "Ensure `extract_api_signatures` does not perform slow filesystem reads; prefer mocking or in-memory data structures."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The test follows the Arrange-Act-Assert pattern implicitly: it sets up a scenario (base vs pr), acts by calling comparison functions, and asserts specific design properties. It clearly specifies behavior before checking results.",
+          "suggestions": []
+        },
+        "summary": "{\"understandable\": 8,\"maintainable\": 9,\"repeatable\": 7,\"atomic\": 9,\"necessary\": 8,\"granular\": 9,\"fast\": 6,\"first_tdd\": 9}"
+      }
+    },
+    {
+      "id": "tests/test_compatibility.py::test_compare_signatures_removed_parameter",
+      "file_path": "tests/test_compatibility.py",
+      "test_name": "test_compare_signatures_removed_parameter",
+      "class_name": null,
+      "farley_index": 7.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly demonstrates a specific business rule: comparing API signatures to detect removed parameters. The domain language is clear enough for developers familiar with the codebase.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 7,
+          "rationale": "While understandable, this test relies on `extract_api_signatures` and `compare_signatures`, which are likely implementation details. If these functions change their internal logic or signature without updating the tests, maintainability suffers.",
+          "suggestions": [
+            "Move all API-specific extraction logic into a dedicated utility module (e.g., `signatures.py`) that is imported by this test only if necessary for isolation."
+          ]
+        },
+        "repeatable": {
+          "score": 6,
+          "rationale": "The tests rely on external functions (`extract_api_signatures`, `compare_signatures`). If these implementations change or introduce side effects (e.g., file I/O), the test will fail unpredictably.",
+          "suggestions": [
+            "Implement a unit-only version of signature comparison that operates purely in memory, without any dependencies on other modules."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: the presence and content of a specific error message. If it fails, the cause is immediately obvious (the assertion logic).",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "This test addresses a concrete edge case not covered by general signature comparison tests. It has no redundant purpose.",
+          "suggestions": [
+            "Ensure this specific assertion does not duplicate coverage of existing 'parameter removal' or 'signature diffing' tests in the suite."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The test is granular enough to isolate a single semantic change (removal of `b`). However, it could be more specific by asserting only that parameter `b` was removed and nothing else changed.",
+          "suggestions": [
+            "Assert specifically: `'removed or renamed parameter \\n\\t b' == regs[0]`. This prevents false positives if the function returns a formatted string with extra whitespace."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test contains no artificial delays, sleeps, or heavy I/O operations. It executes instantly.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 8,
+          "rationale": "This is a classic Arrange-Act-Assert pattern: `base` and `pr` are arranged (defined), the comparison act occurs, and the assertion verifies the result. It demonstrates clean separation of concerns.",
+          "suggestions": [
+            "Explicitly document that this test covers edge cases where parameters might be renamed rather than removed to ensure full coverage."
+          ]
+        },
+        "summary": "The test is highly repeatable and fast but relies on external implementation details (`extract_api_signatures`, `compare_signatures`). To achieve a perfect score (10), these functions must be unit-tested in isolation. The current design risks brittleness if the underlying logic changes."
+      }
+    },
+    {
+      "id": "tests/test_compatibility.py::test_compare_signatures_added_parameter_no_default",
+      "file_path": "tests/test_compatibility.py",
+      "test_name": "test_compare_signatures_added_parameter_no_default",
+      "class_name": null,
+      "farley_index": 8.125,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly demonstrates the specific business rule: comparing API signatures and detecting missing defaults. The language is domain-appropriate.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "This test has no dependencies on system implementation details (no database calls or external state). It only relies on the `extract_api_signatures` utility function's internal logic.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic and self-contained. However, it depends entirely on a shared library (`compare_signatures`) that may have its own external dependencies or side effects not visible here.",
+          "suggestions": [
+            "Verify `compare_signatures` does not rely on network calls, file system I/O, or non-deterministic timing."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: the presence of a specific error message. If it fails, the cause is instantly obvious (the assertion check).",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "This test covers a distinct edge case for signature comparison logic that might not be covered by other general tests.",
+          "suggestions": [
+            "Ensure no existing test suite has already verified this specific 'no default value' scenario."
+          ]
+        },
+        "granular": {
+          "score": 9,
+          "rationale": "The assertion is precise: it checks the exact string content of a single rule. It isolates the logic for detecting missing defaults.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 6,
+          "rationale": "There are no artificial sleeps or heavy I/O operations visible in this snippet itself. However, if `extract_api_signatures` is slow due to external calls (e.g., network), the test will be slow.",
+          "suggestions": [
+            "Ensure `compare_signatures` and its dependencies do not perform blocking I/O."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The code follows a clean Arrange-Act-Assert structure. It specifies behavior (what signatures look like) before acting on them.",
+          "suggestions": []
+        },
+        "summary": "This test is highly maintainable and atomic but risks being slow if the underlying library performs external calls or has non-deterministic side effects."
+      }
+    },
+    {
+      "id": "tests/test_compatibility.py::test_compare_signatures_added_parameter_with_default",
+      "file_path": "tests/test_compatibility.py",
+      "test_name": "test_compare_signatures_added_parameter_with_default",
+      "class_name": null,
+      "farley_index": 7.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly demonstrates the business rule: comparing API signatures and asserting that a parameter with a default value does not introduce new signature differences. It uses standard library functions (`extract_api_signatures`, `compare_signatures`) which are ubiquitous in this domain.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 7,
+          "rationale": "The test is decoupled from implementation details; it does not rely on specific file paths or internal logic of the library. However, if `extract_api_signatures` changes its behavior regarding default parameters in future versions, this test will break unless updated.",
+          "suggestions": [
+            "Ensure that any change to how defaults are handled by `extract_api_signatures` is explicitly documented and tested separately."
+          ]
+        },
+        "repeatable": {
+          "score": 9,
+          "rationale": "The test is fully self-contained. It uses only the provided library functions with no external dependencies (database, network, filesystem) or timing requirements.",
+          "suggestions": []
+        },
+        "atomic": {
+          "score": 8,
+          "rationale": "It verifies exactly one behavior: that a specific signature comparison returns an empty list for signatures differing by default parameters. The failure condition is immediate and unambiguous if the assertion fails.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test likely duplicates coverage already provided in other tests (e.g., `test_compare_signatures_added_parameter_without_default`). It does not add unique value to the suite unless there is a specific edge case for defaults that others miss.",
+          "suggestions": [
+            "Review existing signature comparison tests. If they cover default parameters, this test may be redundant and should be removed or merged."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The assertion `assert len(regs) == 0` is precise but somewhat low-level; it checks the result of a function call rather than asserting semantic correctness directly. It isolates 'how' (function return value length).",
+          "suggestions": [
+            "Consider adding an explicit check like `assert regs == []` or checking specific elements if possible to make assertions more direct."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes rapidly with no artificial delays, heavy setups, or slow I/O operations. It relies on pure function calls.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 8,
+          "rationale": "It follows the Arrange-Act-Assert pattern: `base` and `pr` are arranged (defined), then compared (`act`), and the result is asserted. The intent to compare signatures for default parameters is clearly stated.",
+          "suggestions": []
+        },
+        "summary": "The test demonstrates strong adherence to TDD principles with clear business rules, fast execution, and proper separation of concerns. However, it risks redundancy if other tests cover similar logic, and its assertion could be slightly more direct."
+      }
+    },
+    {
+      "id": "tests/test_compatibility.py::test_compare_signatures_order_changed",
+      "file_path": "tests/test_compatibility.py",
+      "test_name": "test_compare_signatures_order_changed",
+      "class_name": null,
+      "farley_index": 7.0,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly demonstrates a specific business rule: comparing API signatures to detect order changes. The domain language is clear enough that it avoids implementation clutter.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 6,
+          "rationale": "While the intent is clear, this test relies on `extract_api_signatures` and `compare_signatures`, which are likely internal or fragile implementations. If these functions change their logic to handle edge cases differently (e.g., whitespace differences), this specific assertion will break without updating it.",
+          "suggestions": [
+            "Move the signature comparison logic into a dedicated, unit-tested helper function with explicit input validation and error handling."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is self-contained within this file. However, it relies on `extract_api_signatures` which likely reads from a shared state (like the current source code). If that function changes its implementation or input format, the test will fail unpredictably.",
+          "suggestions": [
+            "Replace external dependencies with mock objects for inputs and outputs to ensure deterministic behavior regardless of system state."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The assertion `assert len(regs) > 0` is atomic. If it fails, the cause (no order change detected vs. a false positive from bad data) is instantly obvious.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 5,
+          "rationale": "This test likely duplicates coverage already provided by tests for `extract_api_signatures` and potentially other signature comparison logic. It may be testing a trivial edge case that is better handled elsewhere.",
+          "suggestions": [
+            "Review the existing suite of signature-related tests to ensure this specific scenario isn't covered or if it's truly necessary, consider refactoring into an integration test instead."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The assertion targets a very specific detail: the presence of 'positional parameter ordering' in the output. This isolates that exact failure mode effectively.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "There are no artificial sleeps or heavy I/O operations visible here; it's a pure function call sequence with minimal overhead.",
+          "suggestions": [
+            ""
+          ]
+        },
+        "first_tdd": {
+          "score": 6,
+          "rationale": "The test follows the Arrange-Act-Assert pattern (extracting inputs -> calling comparison logic -> asserting result). However, it lacks a clear 'Arrange' phase that explicitly defines what constitutes valid input for this specific rule.",
+          "suggestions": [
+            "Explicitly define and mock the expected behavior of `compare_signatures` in an Arrange step to ensure the test is truly designed first."
+          ]
+        },
+        "summary": ""
+      }
+    },
+    {
+      "id": "tests/test_compatibility.py::test_compare_signatures_removed_default",
+      "file_path": "tests/test_compatibility.py",
+      "test_name": "test_compare_signatures_removed_default",
+      "class_name": null,
+      "farley_index": 7.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly demonstrates the business rule: comparing API signatures and detecting parameter removal with defaults. The language is domain-appropriate.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 7,
+          "rationale": "The logic for `compare_signatures` relies on an external implementation detail (`extract_api_signatures`). If this function changes its internal algorithm or imports, the test will break unexpectedly without a clear reason to refactor.",
+          "suggestions": [
+            "Move signature extraction into a dedicated utility module with explicit documentation. Ensure that method is unit-tested itself."
+          ]
+        },
+        "repeatable": {
+          "score": 6,
+          "rationale": "The code relies on `extract_api_signatures` which likely uses file paths or internal state not fully isolated in this snippet. If the implementation of signature extraction changes (e.g., to use a different parser), the test will fail deterministically but unpredictably.",
+          "suggestions": [
+            "Ensure all dependencies are mocked within the test itself if possible, or abstract away `extract_api_signatures` into a pure function."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The assertion is precise: it verifies exactly one behavior (parameter removal) and provides an immediate cause for failure. No flaky logic.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "This test specifically validates the 'default value' aspect of parameter removal, which other generic signature tests might miss or cover less deeply.",
+          "suggestions": [
+            "Ensure no existing test covers this specific edge case to avoid duplication."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The assertion is granular enough for its purpose but could be more descriptive about the *type* of failure expected if it were a unit test.",
+          "suggestions": [
+            "Consider adding an `assertRaises` context manager to explicitly assert that no exceptions are raised during signature comparison."
+          ]
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "The code is pure Python with minimal overhead. No artificial sleeps or heavy I/O operations visible in the snippet.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "This follows a clean Arrange-Act-Assert structure: `extract_api_signatures` (Arrange), comparison logic (Act), and signature check (Assert). It demonstrates testing behavior before implementation details are fully known.",
+          "suggestions": []
+        },
+        "summary": "The test is highly atomic and first-TDD compliant, demonstrating clear intent. However, it relies on an external utility function (`extract_api_signatures`) that introduces maintainability risks if the underlying logic changes."
+      }
+    },
+    {
+      "id": "tests/test_compatibility.py::test_compare_signatures_positional_inserted_before_existing",
+      "file_path": "tests/test_compatibility.py",
+      "test_name": "test_compare_signatures_positional_inserted_before_existing",
+      "class_name": null,
+      "farley_index": 8.375,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the business rule: comparing two function signatures and asserting a specific insertion error message. The language is technical but precise enough for engineers familiar with Python's `inspect` module.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "This test relies entirely on external library functions (`extract_api_signatures`, `compare_signatures`) rather than hardcoding logic. It is decoupled from the specific implementation of how signatures are extracted or compared.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test uses a file path argument ('test.py'), which introduces non-determinism if that file changes between runs (e.g., different imports). It also lacks explicit setup/teardown logic to ensure isolation.",
+          "suggestions": [
+            "Remove the hardcoded 'test.py' dependency. Use `inspect.signature()` directly on strings or mock objects instead of reading files.",
+            "Add a fixture class with clear `setup_method` and `teardown_method` if external state is unavoidable, but ideally avoid file I/O entirely."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: the presence of a specific error message in the result list. If this assertion fails, it immediately indicates that no new positional parameter was inserted before existing ones.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "This test covers a specific edge case (insertion order). While not exhaustive for all signature comparison scenarios, it serves a unique purpose in validating the error message logic. It does not duplicate coverage of general 'signature equality' tests.",
+          "suggestions": []
+        },
+        "granular": {
+          "score": 9,
+          "rationale": "The test isolates precisely one aspect: string-to-function-signature conversion and subsequent comparison with an expected insertion rule. The assertion is specific to the error message content.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "There are no artificial sleeps or heavy I/O operations visible in this snippet itself (assuming `extract_api_signatures` handles file reading efficiently). However, if it reads a real file on every run without caching, performance could degrade.",
+          "suggestions": [
+            "Ensure the underlying library caches results to avoid repeated disk reads. If using mocks for testing speedup is acceptable, consider mocking these functions in CI/CD pipelines."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The test follows a clean Arrange-Act-Assert structure: `base` and `pr` are defined (Arrange), the comparison logic runs (Act), and the assertion validates the outcome (Assert). It demonstrates that behavior is specified before implementation.",
+          "suggestions": []
+        },
+        "summary": "This test passes all eight properties with high scores. The primary area for improvement lies in property #3 (repeatable) due to its reliance on a hardcoded file path, which introduces flakiness if the target script changes."
+      }
+    },
+    {
+      "id": "tests/test_compatibility.py::test_get_base_file_content_validators",
+      "file_path": "tests/test_compatibility.py",
+      "test_name": "test_get_base_file_content_validators",
+      "class_name": null,
+      "farley_index": 8.0,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 9,
+          "rationale": "The test clearly defines the business rule: `get_base_file_content` should raise a ValueError for unsafe git refs and relative paths. The domain language is precise ('unsafe', 'git ref'), avoiding implementation clutter.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 8,
+          "rationale": "The test isolates the specific logic of validation without touching unrelated code or side effects. It does not rely on external state (like a database) and is decoupled from system implementation details.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test relies entirely on the `Path` object for path handling. While deterministic in execution order, it does not explicitly isolate the logic of `_is_safe_relative_path`, making it slightly harder to verify without running all assertions.",
+          "suggestions": [
+            "Explicitly assert that `_is_safe_relative_path('scripts/../../escaped')` returns `False`. This isolates the specific edge case behavior more clearly than relying on a single call within an assertion block."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "Each test verifies exactly one distinct rule (one git ref pattern, one relative path pattern). If any fail, the cause is instantly obvious and isolated to that specific line.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "The test covers two main scenarios. However, it does not explicitly verify edge cases like empty strings or whitespace-only paths which are common in validation tests but absent here.",
+          "suggestions": [
+            "Add a check for `assert _is_safe_relative_path('')` to ensure the function handles empty input gracefully as well."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The test targets specific patterns: valid refs (`main`, `origin/main`) and invalid ones (flags, dangerous paths). It isolates these behaviors precisely without mixing them with unrelated logic.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes immediately after import. There are no artificial sleeps (`time.sleep`), heavy setups (like database connections or file system scans), or unneeded I/O operations.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 8,
+          "rationale": "The test follows the Arrange-Act-Assert pattern: `Arrange` imports and creates a Path object; `Act` calls validation functions with specific inputs; `Assert` checks expected outcomes. It demonstrates design properties by separating concerns.",
+          "suggestions": []
+        },
+        "summary": "{\"understandable\":9,\"maintainable\":8,\"repeatable\":7,\"atomic\":9,\"necessary\":6,\"granular\":8,\"fast\":9,\"first_tdd\":8}"
+      }
+    },
+    {
       "id": "tests/test_extractor_async.py::test_async_test_is_extracted",
       "file_path": "tests/test_extractor_async.py",
       "test_name": "test_async_test_is_extracted",
@@ -1532,6 +2158,116 @@
       }
     },
     {
+      "id": "tests/test_unified_compare.py::test_combine_token_spend_empty",
+      "file_path": "tests/test_unified_compare.py",
+      "test_name": "test_combine_token_spend_empty",
+      "class_name": null,
+      "farley_index": 8.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The function name `combine_token_spend` and the test case clearly describe a business rule: combining two empty token spend inputs results in zero tokens. The language is domain-specific but clear.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "The test relies solely on the `combine_token_spend` function's logic without mocking external dependencies like databases or network calls. It is decoupled from system implementation details.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 10,
+          "rationale": "The test is fully self-contained with no reliance on shared state (like a global database), external network calls, or timing-dependent behavior. It will always produce the same result.",
+          "suggestions": []
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one specific rule: that combining two empty inputs yields '0 total tokens'. The assertion is direct and unambiguous about a single outcome.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 7,
+          "rationale": "While this test covers the edge case for `empty` input combinations, it may not be necessary if there are existing tests covering other specific empty scenarios or general combine logic. It should verify a unique behavior rather than duplicating coverage.",
+          "suggestions": [
+            "Review existing unit tests to ensure no similar cases (e.g., single empty vs both non-empty) have been covered elsewhere."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The test isolates the specific behavior of combining two `empty` dictionaries. It does not mix unrelated logic or assertions.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 10,
+          "rationale": "There are no artificial sleeps, heavy setups, unneeded I/O operations, or network calls in this test. Execution is purely logical and immediate.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The code follows the Arrange-Act-Assert pattern: `res = combine_token_spend({}, {})` (Arrange), followed by a direct assertion of expected behavior. It demonstrates design properties.",
+          "suggestions": []
+        },
+        "summary": "This test is highly repeatable and fast with clear intent. However, it lacks the 'necessary' property if other edge cases are covered elsewhere in the suite."
+      }
+    },
+    {
+      "id": "tests/test_unified_compare.py::test_write_unified_report_basic",
+      "file_path": "tests/test_unified_compare.py",
+      "test_name": "test_write_unified_report_basic",
+      "class_name": null,
+      "farley_index": 7.375,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 9,
+          "rationale": "The test clearly defines the business rule (generating a report with specific fields) and uses domain-appropriate terminology ('Token spend', 'Score'). It avoids implementation clutter by calling an external function directly.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 8,
+          "rationale": "The test is decoupled from the system's internal logic; it does not depend on specific file paths or formats beyond what `write_unified_report` provides. It will remain stable even if the underlying report generator changes.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic and self-contained within a single function call using `tmp_path`. However, it relies on external state (`scripts.unified_compare`) which introduces potential flakiness if that module's internal logic changes.",
+          "suggestions": [
+            "Remove reliance on the specific implementation of `write_unified_report` by mocking or unit-testing its behavior directly instead of calling an untested function."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one distinct rule: that a report file is generated with the correct content. If it fails, the cause (missing fields or incorrect text) is instantly obvious.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test covers specific output formatting and basic assertions but does not verify core business logic like correctness of verdict calculation, regression detection accuracy, or data integrity. It duplicates coverage that should be handled by other tests.",
+          "suggestions": [
+            "Remove this test if it only checks cosmetic output; instead, add a unit test for the `write_unified_report` function's internal logic to ensure business rules are met."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The assertion targets specific content strings within the generated report. It isolates precise behavior (presence of headers and verdicts) without testing unrelated system state.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 7,
+          "rationale": "Execution is fast as it relies on a single function call with minimal setup. However, the `tmp_path` fixture might introduce overhead if not configured for speed in CI/CD pipelines.",
+          "suggestions": [
+            "Ensure `pytest.ini` or environment configuration disables slow fixtures like `tmp_path` during continuous integration to maximize test run time."
+          ]
+        },
+        "first_tdd": {
+          "score": 5,
+          "rationale": "The code structure is not TDD-compliant. It calls an untested function (`write_unified_report`) and asserts on its output without defining the expected behavior or verifying internal logic first.",
+          "suggestions": [
+            "Adopt Arrange-Act-Pattern: First write a unit test for `write_unified_report` to define exact input/output contracts. Only then call it in this integration-style test."
+          ]
+        },
+        "summary": "The test is understandable and atomic but suffers from poor TDD practices (calling untested functions) and redundancy (checking output that other tests likely cover). It should be refactored to follow first-TDD principles by unit-testing the core logic before integration testing."
+      }
+    },
+    {
       "id": "tests/test_llm_adapter.py::test_call_structured_litellm",
       "file_path": "tests/test_llm_adapter.py",
       "test_name": "test_call_structured_litellm",
@@ -2225,36 +2961,180 @@
     "farley_usage_summary": {
       "run_id": "main-baseline",
       "model": "ollama/qwen3.5:2b",
-      "reviewed_test_cases": 27,
+      "reviewed_test_cases": 40,
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 30,
-          "prompt_tokens": 17159,
-          "completion_tokens": 22612,
-          "total_tokens": 39771,
+          "calls": 47,
+          "prompt_tokens": 26443,
+          "completion_tokens": 35150,
+          "total_tokens": 61593,
           "cost_usd": 0.0,
           "missing_usage_calls": 0
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 30,
-            "prompt_tokens": 17159,
-            "completion_tokens": 22612,
-            "total_tokens": 39771,
+            "calls": 47,
+            "prompt_tokens": 26443,
+            "completion_tokens": 35150,
+            "total_tokens": 61593,
             "cost_usd": 0.0
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 30,
-            "prompt_tokens": 17159,
-            "completion_tokens": 22612,
-            "total_tokens": 39771,
+            "calls": 47,
+            "prompt_tokens": 26443,
+            "completion_tokens": 35150,
+            "total_tokens": 61593,
             "cost_usd": 0.0
           }
         },
         "events": [
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 792,
+            "completion_tokens": 631,
+            "total_tokens": 1423,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 447,
+            "completion_tokens": 583,
+            "total_tokens": 1030,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 448,
+            "completion_tokens": 649,
+            "total_tokens": 1097,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 449,
+            "completion_tokens": 637,
+            "total_tokens": 1086,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 458,
+            "completion_tokens": 757,
+            "total_tokens": 1215,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 461,
+            "completion_tokens": 1024,
+            "total_tokens": 1485,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 464,
+            "completion_tokens": 519,
+            "total_tokens": 983,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 447,
+            "completion_tokens": 636,
+            "total_tokens": 1083,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 475,
+            "completion_tokens": 707,
+            "total_tokens": 1182,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 459,
+            "completion_tokens": 579,
+            "total_tokens": 1038,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 471,
+            "completion_tokens": 663,
+            "total_tokens": 1134,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 612,
+            "completion_tokens": 693,
+            "total_tokens": 1305,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
@@ -2455,6 +3335,66 @@
             "prompt_tokens": 465,
             "completion_tokens": 574,
             "total_tokens": 1039,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 405,
+            "completion_tokens": 608,
+            "total_tokens": 1013,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 672,
+            "completion_tokens": 1024,
+            "total_tokens": 1696,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 655,
+            "completion_tokens": 780,
+            "total_tokens": 1435,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 832,
+            "completion_tokens": 1024,
+            "total_tokens": 1856,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 737,
+            "completion_tokens": 1024,
+            "total_tokens": 1761,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -2899,6 +3839,465 @@
       "completion_tokens": 704,
       "prompt_tokens": 495,
       "total_tokens": 1199,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "9191c09143129d9c25415dfb674d852ae01a9fdcb7c8f17129d21ce9c7294656": {
+    "id": "chatcmpl-b796f985-3eb6-44d2-8cd6-84213baee035",
+    "created": 1783024262,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 9, \"rationale\": \"The test clearly defines the business rule: extract only public API signatures. It uses ubiquitous language ('public', 'private') and avoids implementation clutter.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 8, \"rationale\": \"Tests are decoupled from system internals (e.g., `_PrivateClass` is ignored). However, the test itself relies on a helper function `extract_api_signatures`, which may become brittle if that logic changes.\", \"suggestions\": [\"Move `extract_api_signatures` to an external library or module; this test should not depend on internal implementation details.\"]},\n  \"repeatable\": {\"score\": 7, \"rationale\": \"The code is deterministic and self-contained. However, it relies heavily on the behavior of a helper function (`extract_api_signatures`) which introduces potential non-determinism if that logic changes.\", \"suggestions\": [\"Implement `extract_api_signatures` as an external utility; ensure this test does not depend on internal implementation details.\"]},\n  \"atomic\": {\"score\": 9, \"rationale\": \"The test verifies exactly one behavior: extracting public signatures. If it fails, the cause is instantly obvious (e.g., missing assertion).\", \"suggestions\": []},\n  \"necessary\": {\"score\": 6, \"rationale\": \"This test covers a specific edge case for `public_fn`. However, without seeing other tests in this file or context, we cannot confirm it does not duplicate coverage of trivial things.\", \"suggestions\": [\"Review the full suite to ensure no redundant assertions exist; consider if this specific signature extraction is truly necessary given existing tests.\"]},\n  \"granular\": {\"score\": 8, \"rationale\": \"The test isolates precisely: public functions vs private ones. It correctly asserts `params` structure and distinguishes between named/keyword-only arguments.\", \"suggestions\": []},\n  \"fast\": {\"score\": 7, \"rationale\": \"No artificial sleeps or heavy I/O are present in the snippet itself. However, if this test is run frequently as part of a CI pipeline with other slow tests, it could impact overall speed.\", \"suggestions\": [\"Ensure `extract_api_signatures` does not perform expensive operations; consider caching results for repeated runs.\"]},\n  \"first_tdd\": {\"score\": 9, \"rationale\": \"The test follows the Arrange-Act-Assert pattern: code is provided (Arrange), extraction happens (Act), assertions validate output (Assert). It demonstrates a clean separation of concerns.\", \"suggestions\": []},\"summary\":\"Overall Score: 7.5/10 | Strengths: Excellent adherence to TDD principles, clear intent, and granular isolation. Weaknesses: Heavy reliance on an internal helper function (`extract_api_signatures`) which violates the 'maintainable' property if that logic changes; potential redundancy in test coverage without full suite context.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 631,
+      "prompt_tokens": 792,
+      "total_tokens": 1423,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "c3e102c5fa8c38f6303e4d8f4d939d3e00226535a64e3a6808d3742fa9d07092": {
+    "id": "chatcmpl-832f8c63-6747-4898-99a4-3d9bb5fa8590",
+    "created": 1783024341,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly demonstrates the business rule: comparing two identical function signatures should yield zero differences. The language is domain-appropriate (Python functions), avoiding implementation clutter.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 9, \"rationale\": \"This test has no dependencies on system internals or external state; it only relies on the `extract_api_signatures` and `compare_signatures` utilities. It is decoupled from how these functions are implemented.\", \"suggestions\": []},\n  \"repeatable\": {\"score\": 7, \"rationale\": \"The test is deterministic but lacks a clear 'self-contained' isolation mechanism regarding the input data source (e.g., does it rely on file system paths or specific environment variables?).\", \"suggestions\": [\"Explicitly define inputs as constants at module level to ensure reproducibility across environments.\", \"Remove any implicit reliance on external state like `test.py` if possible, unless that is a core part of the test's contract.\"]},\n  \"atomic\": {\"score\": 9, \"rationale\": \"The assertion verifies exactly one behavior: 'no changes detected'. If this fails, it immediately indicates an error in signature comparison logic.\", \"suggestions\": []},\n  \"necessary\": {\"score\": 8, \"rationale\": \"This test covers a specific edge case (identical signatures). While not exhaustive for all scenarios, it serves as a necessary sanity check to prevent regressions where identical inputs might be treated differently by the library.\", \"suggestions\": [\"Ensure this is part of an 'Arrange' phase that explicitly sets up two distinct but equivalent function definitions before calling `compare_signatures`.\"]},\n  \"granular\": {\"score\": 9, \"rationale\": \"The test isolates precisely one behavior: signature comparison. It does not mix unrelated logic or assertions.\", \"suggestions\": []},\n  \"fast\": {\"score\": 8, \"rationale\": \"There are no artificial sleeps, heavy setups, or unneeded I/O operations in this snippet itself (assuming `extract_api_signatures` is efficient).\", \"suggestions\": [\"Ensure the underlying utility functions do not perform unnecessary file system reads during execution.\"]},\n  \"first_tdd\": {\"score\": 9, \"rationale\": \"The test follows a clean Arrange-Act-Assert structure: it sets up two identical function definitions (Arrange), performs an action of comparison (Act), and asserts the result is zero (Assert).\", \"suggestions\": []},\"summary\": \"This test demonstrates strong adherence to TDD principles with clear intent, maintainability, and atomicity. It effectively isolates a specific edge case without unnecessary dependencies or clutter.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 583,
+      "prompt_tokens": 447,
+      "total_tokens": 1030,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "1e147a03451d22a9c283bdcd31e565a90d4fcaec0d71d60333d190278ef72501": {
+    "id": "chatcmpl-4d5950cf-2f60-4303-8df1-bf6775dcd770",
+    "created": 1783024430,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly demonstrates the specific behavior of comparing signatures for deleted classes using a real-world example. The intent is unambiguous.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 6, \"rationale\": \"While understandable, this test relies on `extract_api_signatures` and `compare_signatures`, which are likely internal implementation details rather than public API contracts. This couples the behavior to specific library internals that may change without updating tests.\", \"suggestions\": [\"Move these helper functions into a dedicated utility module or separate package if they aren't part of the core Silver-One test suite, ensuring they remain stable across refactors.\"]},\n  \"repeatable\": {\"score\": 7, \"rationale\": \"The logic is deterministic and self-contained within this file. However, it relies on `extract_api_signatures` which likely has its own dependencies or side effects that could make the full test run non-deterministically in CI if those helpers are slow.\", \"suggestions\": [\"Ensure all helper functions used here have unit tests themselves to guarantee they produce consistent results without external state.\"]},\n  \"atomic\": {\"score\": 9, \"rationale\": \"The assertion `assert len(regs) == 1` combined with the specific string check makes it impossible for this test to fail in a confusing way. If it fails, you immediately know which part of the logic is broken.\", \"suggestions\": []},\n  \"necessary\": {\"score\": 5, \"rationale\": \"This test likely duplicates coverage already provided by tests that verify `extract_api_signatures` works correctly with empty strings or standard classes. It may be testing a trivial edge case rather than adding unique value to the suite.\", \"suggestions\": [\"Review existing tests for signature extraction and comparison logic before writing this one; consider removing if it's redundant.\"]},\n  \"granular\": {\"score\": 7, \"rationale\": \"The test isolates exactly one behavior: detecting a 'Deleted public class' message. It does not mix unrelated concerns like error handling or logging.\", \"suggestions\": []},\n  \"fast\": {\"score\": 6, \"rationale\": \"There is no explicit `sleep()` call in the code provided to ensure speed. However, if these helper functions perform heavy I/O (e.g., network calls) during execution, this test will be slow regardless of assertions.\", \"suggestions\": [\"Verify that `extract_api_signatures` and `compare_signatures` do not contain artificial delays or unnecessary file system/network operations.\"]},\n  \"first_tdd\": {\"score\": 8, \"rationale\": \"The code follows a clean Arrange-Act-Assert structure: setup (`base`, `pr`) -> action (comparison) -> assertion. The behavior is explicitly defined before the test runs.\", \"suggestions\": []},\"summary\": \"This test demonstrates strong TDD principles and clear intent but risks maintainability issues due to reliance on internal helpers that may not be stable across refactors, and potential redundancy in coverage.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 649,
+      "prompt_tokens": 448,
+      "total_tokens": 1097,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "3ae2ab8b07b88acb9fae8c4c4fef1fddd701a6d3599cc5269bcc358be803dfa1": {
+    "id": "chatcmpl-6ce4e192-9c58-4cfb-8d90-0d4295d3b7ce",
+    "created": 1783024517,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly demonstrates the business rule: comparing API signatures of a deleted function against an empty signature should yield one result indicating deletion. The language is domain-specific but clear.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 9, \"rationale\": \"This test has no dependencies on system implementation details (no DB calls, network requests, or file I/O). It only relies on the `extract_api_signatures` and `compare_signatures` functions which are assumed to be stable.\", \"suggestions\": []},\n  \"repeatable\": {\"score\": 7, \"rationale\": \"The test is deterministic in its logic but depends entirely on external shared state: the file system (`test.py`) where the function was deleted. If `extract_api_signatures` reads from a different location or behaves differently across runs, this test will fail unpredictably.\", \"suggestions\": [\"Remove reliance on reading files directly; instead, mock the filesystem path used by these helper functions.\"]},\n  \"atomic\": {\"score\": 9, \"rationale\": \"The assertion `assert len(regs) == 1` combined with a specific string check ensures exactly one behavior is verified. If it fails, the cause (wrong number of matches or wrong message format) is instantly obvious.\", \"suggestions\": []},\n  \"necessary\": {\"score\": 8, \"rationale\": \"This test verifies that deleting a function results in an empty signature being compared against another non-empty one and correctly identifies 'Deleted'. It does not duplicate coverage for other tests (e.g., adding functions) or trivial things.\", \"suggestions\": []},\n  \"granular\": {\"score\": 9, \"rationale\": \"The test isolates the specific behavior of detecting a deleted function by comparing signatures. The assertion is precise about both quantity and content ('Deleted public function/method `fn`').\", \"suggestions\": []},\n  \"fast\": {\"score\": 6, \"rationale\": \"While there are no sleeps or heavy I/O in this snippet itself (assuming the helper functions handle it), relying on file system operations (`test.py`) introduces potential latency and flakiness if that path changes. It is not 'pure' fast without external state assumptions.\", \"suggestions\": [\"Ensure `extract_api_signatures` does not perform slow filesystem reads; prefer mocking or in-memory data structures.\"]},\n  \"first_tdd\": {\"score\": 9, \"rationale\": \"The test follows the Arrange-Act-Assert pattern implicitly: it sets up a scenario (base vs pr), acts by calling comparison functions, and asserts specific design properties. It clearly specifies behavior before checking results.\", \"suggestions\": []},\"summary\":\"{\\\"understandable\\\": 8,\\\"maintainable\\\": 9,\\\"repeatable\\\": 7,\\\"atomic\\\": 9,\\\"necessary\\\": 8,\\\"granular\\\": 9,\\\"fast\\\": 6,\\\"first_tdd\\\": 9}\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 637,
+      "prompt_tokens": 449,
+      "total_tokens": 1086,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "3076e281c89dfd923bac8a7cf61e97a615165f2fccbbeb836a895156c2cdf516": {
+    "id": "chatcmpl-682cbb0f-cbcc-44a3-a157-e341b086b0a9",
+    "created": 1783024620,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test clearly demonstrates a specific business rule: comparing API signatures to detect removed parameters. The domain language is clear enough for developers familiar with the codebase.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 7,\n    \"rationale\": \"While understandable, this test relies on `extract_api_signatures` and `compare_signatures`, which are likely implementation details. If these functions change their internal logic or signature without updating the tests, maintainability suffers.\",\n    \"suggestions\": [\n      \"Move all API-specific extraction logic into a dedicated utility module (e.g., `signatures.py`) that is imported by this test only if necessary for isolation.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 6,\n    \"rationale\": \"The tests rely on external functions (`extract_api_signatures`, `compare_signatures`). If these implementations change or introduce side effects (e.g., file I/O), the test will fail unpredictably.\",\n    \"suggestions\": [\n      \"Implement a unit-only version of signature comparison that operates purely in memory, without any dependencies on other modules.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: the presence and content of a specific error message. If it fails, the cause is immediately obvious (the assertion logic).\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 8,\n    \"rationale\": \"This test addresses a concrete edge case not covered by general signature comparison tests. It has no redundant purpose.\",\n    \"suggestions\": [\n      \"Ensure this specific assertion does not duplicate coverage of existing 'parameter removal' or 'signature diffing' tests in the suite.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 7,\n    \"rationale\": \"The test is granular enough to isolate a single semantic change (removal of `b`). However, it could be more specific by asserting only that parameter `b` was removed and nothing else changed.\",\n    \"suggestions\": [\n      \"Assert specifically: `'removed or renamed parameter \\\\n\\\\t b' == regs[0]`. This prevents false positives if the function returns a formatted string with extra whitespace.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test contains no artificial delays, sleeps, or heavy I/O operations. It executes instantly.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 8,\n    \"rationale\": \"This is a classic Arrange-Act-Assert pattern: `base` and `pr` are arranged (defined), the comparison act occurs, and the assertion verifies the result. It demonstrates clean separation of concerns.\",\n    \"suggestions\": [\n      \"Explicitly document that this test covers edge cases where parameters might be renamed rather than removed to ensure full coverage.\"\n    ]\n  },\n  \"summary\": \"The test is highly repeatable and fast but relies on external implementation details (`extract_api_signatures`, `compare_signatures`). To achieve a perfect score (10), these functions must be unit-tested in isolation. The current design risks brittleness if the underlying logic changes.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 757,
+      "prompt_tokens": 458,
+      "total_tokens": 1215,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "daa211341875d7c1c4fd4fc082074fbbbe0f58122b4ddd0a57cb5ec01e187220": {
+    "id": "chatcmpl-770fc4a7-21ce-4151-b6f6-cf00859cfd11",
+    "created": 1783024747,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and logic are clear enough to infer intent: comparing signatures of two functions. However, the use of `extract_api_signatures` suggests a lower-level implementation detail that obscures the business rule (signature comparison).\",\n    \"suggestions\": [\n      \"Replace internal helper function names with domain concepts like 'compare_function_signatures' or 'verify_signature_equivalence'.\",\n      \"Document what `extract_api_signatures` does in comments if it's not standard library, to ensure maintainability.\",\n      \"Avoid relying on implementation-specific helpers; prefer assertions that directly check the logic (e.g., comparing ASTs).\",\n      \"Ensure the test is self-contained and doesn't depend on external state or slow I/O.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 7,\n    \"rationale\": \"The test does not directly implement logic; it delegates to `extract_api_signatures`. This decoupling is good. However, if the implementation of this helper changes or becomes brittle (e.g., due to refactoring), the test will break unless updated manually.\",\n    \"suggestions\": [\n      \"Ensure that any internal helpers used in tests are unit-tested themselves with similar TDD principles before integration testing occurs.\",\n      \"Consider using a library like `ast` from Python's standard library if available, which provides robust signature comparison without custom wrappers.\",\n      \"Document the expected behavior of this helper function to prevent future maintenance issues during refactoring.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 9,\n    \"rationale\": \"The test is fully self-contained. It does not rely on external databases, network calls, local filesystems, or timing-dependent operations (like `time.sleep`). The logic can be reproduced exactly by running the script.\",\n    \"suggestions\": [\n      \"Remove any implicit dependencies on system time if used elsewhere in your codebase; ensure this test is deterministic regardless of environment variations.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: that the signature comparison logic correctly identifies renamed parameters. If it fails, the cause (e.g., a bug in `compare_signatures`) is instantly obvious.\",\n    \"suggestions\": [\n      \"Ensure no side effects occur during execution; this test has none.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This specific test checks a single edge case (renamed parameters). It does not duplicate coverage of other tests. However, it might be redundant if there are existing unit tests for general signature comparison logic.\",\n    \"suggestions\": [\n      \"Review the suite to ensure this test doesn't cover scenarios already tested by broader integration or regression suites.\"\n      ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The assertion is specific: it checks for a substring in each result string. This isolates the exact condition of 'removed or renamed parameter'. It's precise enough to catch this failure mode.\",\n    \"suggestions\": [\n      \"Consider adding an explicit check that `len(regs) == 2` alongside the substring check, as currently it relies on a side effect (the list being populated).\",\n      \"Ensure no other assertions in the test file are too broad and could mask this specific failure.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The code is pure Python with minimal overhead. There are no artificial sleeps, heavy setups, or unneeded I/O operations (like `open()`). It executes rapidly.\",\n    \"suggestions\": [\n      \"Verify that the underlying library (`extract_api_signatures`) does not introduce significant runtime delays.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"The test follows a basic Arrange-Act-Assert pattern. However, it lacks explicit setup (Arrange) that isolates the behavior from external state before acting on `extract_api_signatures`. It feels more like an integration check than a pure TDD spec.\",\n    \"suggestions\": [\n      \"Explicitly isolate inputs: create fresh instances of base and pr functions without relying on global or shared mutable state (e.g., no file paths passed as arguments).\",\n      \"Refactor to explicitly define the input contract in Arrange phase before calling `extract_api_signatures`.\",\n      \"Ensure the test is designed first by defining behavior, then implementing it with TDD loops.\"\n    ]",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 461,
+      "total_tokens": 1485,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "a9aa0616e95e06a82bfc141d62f7a149ea8a260e2bf83d4ddfaef55d41c93a46": {
+    "id": "chatcmpl-ad60227f-fa24-491c-8eb5-37ee9e759fd9",
+    "created": 1783024814,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly demonstrates the specific business rule: comparing API signatures and detecting missing defaults. The language is domain-appropriate.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 9, \"rationale\": \"This test has no dependencies on system implementation details (no database calls or external state). It only relies on the `extract_api_signatures` utility function's internal logic.\", \"suggestions\": []},\n  \"repeatable\": {\"score\": 7, \"rationale\": \"The test is deterministic and self-contained. However, it depends entirely on a shared library (`compare_signatures`) that may have its own external dependencies or side effects not visible here.\", \"suggestions\": [\"Verify `compare_signatures` does not rely on network calls, file system I/O, or non-deterministic timing.\"]},\n  \"atomic\": {\"score\": 9, \"rationale\": \"The test verifies exactly one behavior: the presence of a specific error message. If it fails, the cause is instantly obvious (the assertion check).\", \"suggestions\": []},\n  \"necessary\": {\"score\": 8, \"rationale\": \"This test covers a distinct edge case for signature comparison logic that might not be covered by other general tests.\", \"suggestions\": [\"Ensure no existing test suite has already verified this specific 'no default value' scenario.\"]},\n  \"granular\": {\"score\": 9, \"rationale\": \"The assertion is precise: it checks the exact string content of a single rule. It isolates the logic for detecting missing defaults.\", \"suggestions\": []},\n  \"fast\": {\"score\": 6, \"rationale\": \"There are no artificial sleeps or heavy I/O operations visible in this snippet itself. However, if `extract_api_signatures` is slow due to external calls (e.g., network), the test will be slow.\", \"suggestions\": [\"Ensure `compare_signatures` and its dependencies do not perform blocking I/O.\"]},\n  \"first_tdd\": {\"score\": 9, \"rationale\": \"The code follows a clean Arrange-Act-Assert structure. It specifies behavior (what signatures look like) before acting on them.\", \"suggestions\": []},\"summary\": \"This test is highly maintainable and atomic but risks being slow if the underlying library performs external calls or has non-deterministic side effects.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 519,
+      "prompt_tokens": 464,
+      "total_tokens": 983,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "e3fbec5c535daab3d1822afc55aef10ad0b9668f6a188b8a9d3cb9cfac12bdd0": {
+    "id": "chatcmpl-14a3b72c-2f07-4502-9d23-2544de136604",
+    "created": 1783024893,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly demonstrates the business rule: comparing API signatures and asserting that a parameter with a default value does not introduce new signature differences. It uses standard library functions (`extract_api_signatures`, `compare_signatures`) which are ubiquitous in this domain.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 7, \"rationale\": \"The test is decoupled from implementation details; it does not rely on specific file paths or internal logic of the library. However, if `extract_api_signatures` changes its behavior regarding default parameters in future versions, this test will break unless updated.\", \"suggestions\": [\"Ensure that any change to how defaults are handled by `extract_api_signatures` is explicitly documented and tested separately.\"]},\n  \"repeatable\": {\"score\": 9, \"rationale\": \"The test is fully self-contained. It uses only the provided library functions with no external dependencies (database, network, filesystem) or timing requirements.\", \"suggestions\": []},\n  \"atomic\": {\"score\": 8, \"rationale\": \"It verifies exactly one behavior: that a specific signature comparison returns an empty list for signatures differing by default parameters. The failure condition is immediate and unambiguous if the assertion fails.\", \"suggestions\": []},\n  \"necessary\": {\"score\": 6, \"rationale\": \"This test likely duplicates coverage already provided in other tests (e.g., `test_compare_signatures_added_parameter_without_default`). It does not add unique value to the suite unless there is a specific edge case for defaults that others miss.\", \"suggestions\": [\"Review existing signature comparison tests. If they cover default parameters, this test may be redundant and should be removed or merged.\"]},\n  \"granular\": {\"score\": 7, \"rationale\": \"The assertion `assert len(regs) == 0` is precise but somewhat low-level; it checks the result of a function call rather than asserting semantic correctness directly. It isolates 'how' (function return value length).\", \"suggestions\": [\"Consider adding an explicit check like `assert regs == []` or checking specific elements if possible to make assertions more direct.\"]},\n  \"fast\": {\"score\": 9, \"rationale\": \"The test executes rapidly with no artificial delays, heavy setups, or slow I/O operations. It relies on pure function calls.\", \"suggestions\": []},\n  \"first_tdd\": {\"score\": 8, \"rationale\": \"It follows the Arrange-Act-Assert pattern: `base` and `pr` are arranged (defined), then compared (`act`), and the result is asserted. The intent to compare signatures for default parameters is clearly stated.\", \"suggestions\": []},\"summary\": \"The test demonstrates strong adherence to TDD principles with clear business rules, fast execution, and proper separation of concerns. However, it risks redundancy if other tests cover similar logic, and its assertion could be slightly more direct.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 636,
+      "prompt_tokens": 447,
+      "total_tokens": 1083,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "bd6c00544b0c7336905478cbe91ff9bc5e37f6768df2a3b0e0edddc61a150217": {
+    "id": "chatcmpl-d16c113a-0002-459a-83d8-0af806684b2b",
+    "created": 1783024982,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test clearly demonstrates a specific business rule: comparing API signatures to detect order changes. The domain language is clear enough that it avoids implementation clutter.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"While the intent is clear, this test relies on `extract_api_signatures` and `compare_signatures`, which are likely internal or fragile implementations. If these functions change their logic to handle edge cases differently (e.g., whitespace differences), this specific assertion will break without updating it.\",\n    \"suggestions\": [\n      \"Move the signature comparison logic into a dedicated, unit-tested helper function with explicit input validation and error handling.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is self-contained within this file. However, it relies on `extract_api_signatures` which likely reads from a shared state (like the current source code). If that function changes its implementation or input format, the test will fail unpredictably.\",\n    \"suggestions\": [\n      \"Replace external dependencies with mock objects for inputs and outputs to ensure deterministic behavior regardless of system state.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The assertion `assert len(regs) > 0` is atomic. If it fails, the cause (no order change detected vs. a false positive from bad data) is instantly obvious.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test likely duplicates coverage already provided by tests for `extract_api_signatures` and potentially other signature comparison logic. It may be testing a trivial edge case that is better handled elsewhere.\",\n    \"suggestions\": [\n      \"Review the existing suite of signature-related tests to ensure this specific scenario isn't covered or if it's truly necessary, consider refactoring into an integration test instead.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 7,\n    \"rationale\": \"The assertion targets a very specific detail: the presence of 'positional parameter ordering' in the output. This isolates that exact failure mode effectively.\",\n    \"suggestions\": []\n  },\n  \"fast\": {\n    \"score\": 8,\n    \"rationale\": \"There are no artificial sleeps or heavy I/O operations visible here; it's a pure function call sequence with minimal overhead.\",\n    \"suggestions\": [\n      \"\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 6,\n    \"rationale\": \"The test follows the Arrange-Act-Assert pattern (extracting inputs -> calling comparison logic -> asserting result). However, it lacks a clear 'Arrange' phase that explicitly defines what constitutes valid input for this specific rule.\",\n    \"suggestions\": [\n      \"Explicitly define and mock the expected behavior of `compare_signatures` in an Arrange step to ensure the test is truly designed first.\"\n    ]\n  },\n  \"summary\": \"\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 707,
+      "prompt_tokens": 475,
+      "total_tokens": 1182,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "376ee99466d0793556a1cbe7acfe2b5ba07806b191031e1436df8d67ef29b9bf": {
+    "id": "chatcmpl-0ef2ddce-c22b-49da-94b0-043889f403ed",
+    "created": 1783025055,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly demonstrates the business rule: comparing API signatures and detecting parameter removal with defaults. The language is domain-appropriate.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 7, \"rationale\": \"The logic for `compare_signatures` relies on an external implementation detail (`extract_api_signatures`). If this function changes its internal algorithm or imports, the test will break unexpectedly without a clear reason to refactor.\", \"suggestions\": [\"Move signature extraction into a dedicated utility module with explicit documentation. Ensure that method is unit-tested itself.\"]},\n  \"repeatable\": {\"score\": 6, \"rationale\": \"The code relies on `extract_api_signatures` which likely uses file paths or internal state not fully isolated in this snippet. If the implementation of signature extraction changes (e.g., to use a different parser), the test will fail deterministically but unpredictably.\", \"suggestions\": [\"Ensure all dependencies are mocked within the test itself if possible, or abstract away `extract_api_signatures` into a pure function.\"]},\n  \"atomic\": {\"score\": 9, \"rationale\": \"The assertion is precise: it verifies exactly one behavior (parameter removal) and provides an immediate cause for failure. No flaky logic.\", \"suggestions\": []},\n  \"necessary\": {\"score\": 8, \"rationale\": \"This test specifically validates the 'default value' aspect of parameter removal, which other generic signature tests might miss or cover less deeply.\", \"suggestions\": [\"Ensure no existing test covers this specific edge case to avoid duplication.\"]},\n  \"granular\": {\"score\": 7, \"rationale\": \"The assertion is granular enough for its purpose but could be more descriptive about the *type* of failure expected if it were a unit test.\", \"suggestions\": [\"Consider adding an `assertRaises` context manager to explicitly assert that no exceptions are raised during signature comparison.\"]},\n  \"fast\": {\"score\": 8, \"rationale\": \"The code is pure Python with minimal overhead. No artificial sleeps or heavy I/O operations visible in the snippet.\", \"suggestions\": []},\n  \"first_tdd\": {\"score\": 9, \"rationale\": \"This follows a clean Arrange-Act-Assert structure: `extract_api_signatures` (Arrange), comparison logic (Act), and signature check (Assert). It demonstrates testing behavior before implementation details are fully known.\", \"suggestions\": []},\"summary\": \"The test is highly atomic and first-TDD compliant, demonstrating clear intent. However, it relies on an external utility function (`extract_api_signatures`) that introduces maintainability risks if the underlying logic changes.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 579,
+      "prompt_tokens": 459,
+      "total_tokens": 1038,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "f2eee08859a1e7790009b5c84b88333d04dcc38377d30759fb2a1334ca0c510b": {
+    "id": "chatcmpl-34d586ec-466e-4176-b9ee-b86346b6d423",
+    "created": 1783025138,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the business rule: comparing two function signatures and asserting a specific insertion error message. The language is technical but precise enough for engineers familiar with Python's `inspect` module.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 9, \"rationale\": \"This test relies entirely on external library functions (`extract_api_signatures`, `compare_signatures`) rather than hardcoding logic. It is decoupled from the specific implementation of how signatures are extracted or compared.\", \"suggestions\": []},\n  \"repeatable\": {\"score\": 7, \"rationale\": \"The test uses a file path argument ('test.py'), which introduces non-determinism if that file changes between runs (e.g., different imports). It also lacks explicit setup/teardown logic to ensure isolation.\", \"suggestions\": [\"Remove the hardcoded 'test.py' dependency. Use `inspect.signature()` directly on strings or mock objects instead of reading files.\", \"Add a fixture class with clear `setup_method` and `teardown_method` if external state is unavoidable, but ideally avoid file I/O entirely.\"]},\n  \"atomic\": {\"score\": 9, \"rationale\": \"The test verifies exactly one behavior: the presence of a specific error message in the result list. If this assertion fails, it immediately indicates that no new positional parameter was inserted before existing ones.\", \"suggestions\": []},\n  \"necessary\": {\"score\": 8, \"rationale\": \"This test covers a specific edge case (insertion order). While not exhaustive for all signature comparison scenarios, it serves a unique purpose in validating the error message logic. It does not duplicate coverage of general 'signature equality' tests.\", \"suggestions\": []},\n  \"granular\": {\"score\": 9, \"rationale\": \"The test isolates precisely one aspect: string-to-function-signature conversion and subsequent comparison with an expected insertion rule. The assertion is specific to the error message content.\", \"suggestions\": []},\n  \"fast\": {\"score\": 8, \"rationale\": \"There are no artificial sleeps or heavy I/O operations visible in this snippet itself (assuming `extract_api_signatures` handles file reading efficiently). However, if it reads a real file on every run without caching, performance could degrade.\", \"suggestions\": [\"Ensure the underlying library caches results to avoid repeated disk reads. If using mocks for testing speedup is acceptable, consider mocking these functions in CI/CD pipelines.\"]},\n  \"first_tdd\": {\"score\": 9, \"rationale\": \"The test follows a clean Arrange-Act-Assert structure: `base` and `pr` are defined (Arrange), the comparison logic runs (Act), and the assertion validates the outcome (Assert). It demonstrates that behavior is specified before implementation.\", \"suggestions\": []},\n  \"summary\": \"This test passes all eight properties with high scores. The primary area for improvement lies in property #3 (repeatable) due to its reliance on a hardcoded file path, which introduces flakiness if the target script changes.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 663,
+      "prompt_tokens": 471,
+      "total_tokens": 1134,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "647d186003d0421df7a51e2a09e5c0b816c1982d6dac430bb2a1285c6e348d7d": {
+    "id": "chatcmpl-e447ffd0-52be-4249-a7d5-5b3ef13c0c28",
+    "created": 1783025228,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 9,\n    \"rationale\": \"The test clearly defines the business rule: `get_base_file_content` should raise a ValueError for unsafe git refs and relative paths. The domain language is precise ('unsafe', 'git ref'), avoiding implementation clutter.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 8,\n    \"rationale\": \"The test isolates the specific logic of validation without touching unrelated code or side effects. It does not rely on external state (like a database) and is decoupled from system implementation details.\",\n    \"suggestions\": []\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test relies entirely on the `Path` object for path handling. While deterministic in execution order, it does not explicitly isolate the logic of `_is_safe_relative_path`, making it slightly harder to verify without running all assertions.\",\n    \"suggestions\": [\n      \"Explicitly assert that `_is_safe_relative_path('scripts/../../escaped')` returns `False`. This isolates the specific edge case behavior more clearly than relying on a single call within an assertion block.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"Each test verifies exactly one distinct rule (one git ref pattern, one relative path pattern). If any fail, the cause is instantly obvious and isolated to that specific line.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"The test covers two main scenarios. However, it does not explicitly verify edge cases like empty strings or whitespace-only paths which are common in validation tests but absent here.\",\n    \"suggestions\": [\n      \"Add a check for `assert _is_safe_relative_path('')` to ensure the function handles empty input gracefully as well.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The test targets specific patterns: valid refs (`main`, `origin/main`) and invalid ones (flags, dangerous paths). It isolates these behaviors precisely without mixing them with unrelated logic.\",\n    \"suggestions\": []\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes immediately after import. There are no artificial sleeps (`time.sleep`), heavy setups (like database connections or file system scans), or unneeded I/O operations.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 8,\n    \"rationale\": \"The test follows the Arrange-Act-Assert pattern: `Arrange` imports and creates a Path object; `Act` calls validation functions with specific inputs; `Assert` checks expected outcomes. It demonstrates design properties by separating concerns.\",\n    \"suggestions\": []\n  },\"summary\":\"{\\\"understandable\\\":9,\\\"maintainable\\\":8,\\\"repeatable\\\":7,\\\"atomic\\\":9,\\\"necessary\\\":6,\\\"granular\\\":8,\\\"fast\\\":9,\\\"first_tdd\\\":8}\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 693,
+      "prompt_tokens": 612,
+      "total_tokens": 1305,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "208e6d7537f72761e273a32873c6337afb401bfb8a27587c9c0e67a4c300dede": {
+    "id": "chatcmpl-b004bd92-78a9-4d96-8653-6d9bb5aaf2ae",
+    "created": 1783025304,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The function name `combine_token_spend` and the test case clearly describe a business rule: combining two empty token spend inputs results in zero tokens. The language is domain-specific but clear.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"The test relies solely on the `combine_token_spend` function's logic without mocking external dependencies like databases or network calls. It is decoupled from system implementation details.\",\n    \"suggestions\": []\n  },\n  \"repeatable\": {\n    \"score\": 10,\n    \"rationale\": \"The test is fully self-contained with no reliance on shared state (like a global database), external network calls, or timing-dependent behavior. It will always produce the same result.\",\n    \"suggestions\": []\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one specific rule: that combining two empty inputs yields '0 total tokens'. The assertion is direct and unambiguous about a single outcome.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 7,\n    \"rationale\": \"While this test covers the edge case for `empty` input combinations, it may not be necessary if there are existing tests covering other specific empty scenarios or general combine logic. It should verify a unique behavior rather than duplicating coverage.\",\n    \"suggestions\": [\n      \"Review existing unit tests to ensure no similar cases (e.g., single empty vs both non-empty) have been covered elsewhere.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The test isolates the specific behavior of combining two `empty` dictionaries. It does not mix unrelated logic or assertions.\",\n    \"suggestions\": []\n  },\n  \"fast\": {\n    \"score\": 10,\n    \"rationale\": \"There are no artificial sleeps, heavy setups, unneeded I/O operations, or network calls in this test. Execution is purely logical and immediate.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 9,\n    \"rationale\": \"The code follows the Arrange-Act-Assert pattern: `res = combine_token_spend({}, {})` (Arrange), followed by a direct assertion of expected behavior. It demonstrates design properties.\",\n    \"suggestions\": []\n  },\n  \"summary\": \"This test is highly repeatable and fast with clear intent. However, it lacks the 'necessary' property if other edge cases are covered elsewhere in the suite.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 608,
+      "prompt_tokens": 405,
+      "total_tokens": 1013,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "59bebfcd14df7a41f6daabbc0bc11552a6940b75947e08559fd705d5a82462e4": {
+    "id": "chatcmpl-62ac1273-1397-459e-974c-d0d95ac4f710",
+    "created": 1783025435,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 4,\n    \"rationale\": \"The test lacks a clear business rule or intent statement; it simply asserts specific string values without explaining *why* the `combine_token_spend` function should produce these results. The domain language is ambiguous (e.g., '1800 total tokens' vs actual sum of 2+1=3 calls).\",\n    \"suggestions\": [\n      \"Add a clear description at the top: 'Verify that token counts are correctly aggregated from two input summaries.'\",\n      \"Remove or rename assertions to describe expected values (e.g., `assert total_tokens == 3`) instead of checking for substring presence in output strings.\",\n      \"Ensure all inputs and outputs follow consistent naming conventions.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 5,\n    \"rationale\": \"The test is brittle to changes in the `combine_token_spend` implementation. If the function logic or input/output formats change (e.g., adding a new field), this specific assertion will fail even if the core behavior remains correct.\",\n    \"suggestions\": [\n      \"Refactor assertions into helper functions that validate intermediate values before final aggregation, making them easier to update when `combine_token_spend` changes.\",\n      \"Ensure all inputs are immutable and clearly documented; avoid hardcoding specific token counts in test data if they represent general cases.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 3,\n    \"rationale\": \"The test relies on the exact string representation of `res`. If `combine_token_spend` returns a dictionary with keys like 'total_tokens' instead of plain strings (e.g., `'1800 total tokens'`), or if it includes extra metadata not shown here, this specific assertion will fail. It also lacks isolation from external state.\",\n    \"suggestions\": [\n      \"Ensure `combine_token_spend` returns a consistent structure regardless of input order; add assertions to verify the return type and key names explicitly (e.g., assert keys are 'total_tokens', not strings).\",\n      \"Remove reliance on string matching for values that could vary in formatting or include extra fields.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 6,\n    \"rationale\": \"The test verifies multiple independent behaviors (token counts, call count, cost) within a single function call. While this is good practice for TDD coverage of the combined logic, it does not isolate *one* specific rule as strictly as an atomic unit would.\",\n    \"suggestions\": [\n      \"Split into separate tests: one verifying token aggregation only, another calling `combine_token_spend` with different inputs to verify cost calculation independently.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 7,\n    \"rationale\": \"This test covers the core logic of combining two usage summaries. However, it does not cover edge cases (e.g., negative costs, zero tokens), input validation for `cr` or `farley`, or error handling if inputs are malformed.\",\n    \"suggestions\": [\n      \"Add tests for invalid/empty inputs to ensure the function handles errors gracefully without crashing.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 5,\n    \"rationale\": \"The test is somewhat granular regarding token counts but less so regarding cost calculation and call counting. It asserts specific values rather than validating that `cost_usd` matches the sum of individual costs (0.012 + 0.006 = 0.018).\",\n    \"suggestions\": [\n      \"Assert intermediate steps: assert total_tokens == calls * prompt_tokens, etc., to ensure logic is sound before final aggregation.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes instantly with no artificial delays, sleeps, or heavy I/O. It only performs dictionary lookups and arithmetic operations.\",\n    \"suggestions\": [\n      \"No changes needed; this is already fast.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 6,\n    \"rationale\": \"The test follows a basic Arrange-Act-Assert pattern but lacks explicit separation of concerns. The 'Arrange' phase (defining `cr` and `farley`) is implicit in the function call rather than explicitly structured as separate setup steps.\",\n    \"suggestions\": [\n      \"Explicitly structure tests with clear sections: 1) Arrange (setup inputs), 2) Act (call combine_token_spend), 3) Assert specific values.\"",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 672,
+      "total_tokens": 1696,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "4bc9d4e1d524cdf64750b713967078339f5c036c2dc9e63c48d55722203a8fbb": {
+    "id": "chatcmpl-37162bf5-4d95-4020-bb81-a0ee32512b88",
+    "created": 1783025537,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 9,\n    \"rationale\": \"The test clearly defines the business rule (generating a report with specific fields) and uses domain-appropriate terminology ('Token spend', 'Score'). It avoids implementation clutter by calling an external function directly.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 8,\n    \"rationale\": \"The test is decoupled from the system's internal logic; it does not depend on specific file paths or formats beyond what `write_unified_report` provides. It will remain stable even if the underlying report generator changes.\",\n    \"suggestions\": []\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic and self-contained within a single function call using `tmp_path`. However, it relies on external state (`scripts.unified_compare`) which introduces potential flakiness if that module's internal logic changes.\",\n    \"suggestions\": [\n      \"Remove reliance on the specific implementation of `write_unified_report` by mocking or unit-testing its behavior directly instead of calling an untested function.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one distinct rule: that a report file is generated with the correct content. If it fails, the cause (missing fields or incorrect text) is instantly obvious.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test covers specific output formatting and basic assertions but does not verify core business logic like correctness of verdict calculation, regression detection accuracy, or data integrity. It duplicates coverage that should be handled by other tests.\",\n    \"suggestions\": [\n      \"Remove this test if it only checks cosmetic output; instead, add a unit test for the `write_unified_report` function's internal logic to ensure business rules are met.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The assertion targets specific content strings within the generated report. It isolates precise behavior (presence of headers and verdicts) without testing unrelated system state.\",\n    \"suggestions\": []\n  },\n  \"fast\": {\n    \"score\": 7,\n    \"rationale\": \"Execution is fast as it relies on a single function call with minimal setup. However, the `tmp_path` fixture might introduce overhead if not configured for speed in CI/CD pipelines.\",\n    \"suggestions\": [\n      \"Ensure `pytest.ini` or environment configuration disables slow fixtures like `tmp_path` during continuous integration to maximize test run time.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 5,\n    \"rationale\": \"The code structure is not TDD-compliant. It calls an untested function (`write_unified_report`) and asserts on its output without defining the expected behavior or verifying internal logic first.\",\n    \"suggestions\": [\n      \"Adopt Arrange-Act-Pattern: First write a unit test for `write_unified_report` to define exact input/output contracts. Only then call it in this integration-style test.\"\n    ]\n  },\n  \"summary\": \"The test is understandable and atomic but suffers from poor TDD practices (calling untested functions) and redundancy (checking output that other tests likely cover). It should be refactored to follow first-TDD principles by unit-testing the core logic before integration testing.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 780,
+      "prompt_tokens": 655,
+      "total_tokens": 1435,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "254df822550ee467f4d06fac336e69e69f603e63131703ca1636c3ec9a5cdf10": {
+    "id": "chatcmpl-bb38825d-17fc-4536-98f8-a619d9442599",
+    "created": 1783025673,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 4,\n    \"rationale\": \"The test name and arguments are technical jargon-heavy (e.g., `farley_regressions`, `compat_data`), obscuring the core intent: verifying that a specific report generation function produces expected output with known data. The business rule is buried in nested dictionaries rather than being stated clearly.\",\n    \"suggestions\": [\n      \"Rename parameters to reflect their purpose (e.g., `test_report_with_issues`).\",\n      \"Explicitly state the input format and expected JSON structure at the top of the test file or docstring.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 3,\n    \"rationale\": \"The test is brittle to system changes. It hardcodes specific data structures (`cr_units`, `farley_regressions`) and relies on external state (the `tmp_path` directory structure). If the underlying script's output format or naming conventions change, this test will fail without modification.\",\n    \"suggestions\": [\n      \"Remove hardcoded values; use fixtures to provide dynamic input data that matches current system behavior.\",\n      \"Ensure tests validate against a contract defined in documentation rather than hardcoding specific examples.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 2,\n    \"rationale\": \"The test relies on external state (`tmp_path`), which is non-deterministic across runs. It also depends on the order of execution in `cr_units`, making it impossible to reproduce results consistently without a fixed seed or ordering mechanism.\",\n    \"suggestions\": [\n      \"Use deterministic fixtures (e.g., Pydantic models with explicit fields) instead of file paths for input data.\",\n      \"Remove reliance on external state; ensure all inputs are self-contained within the test function.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 5,\n    \"rationale\": \"The test verifies multiple distinct behaviors (report generation logic + content assertions). While this is technically 'one' file execution, it mixes two different concerns: unit testing a library function and integration checking output. This violates the principle of verifying exactly one behavior/rule per test.\",\n    \"suggestions\": [\n      \"Split into two tests: `test_write_unified_report_full_logic` (unit) and `test_generate_correct_output_content` (integration).\",\n      \"Ensure each assertion targets a single, isolated aspect of functionality.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"The test covers specific regression scenarios (`farley_regressions`, `compat_data`). However, it does not verify the core business rule (e.g., 'Does this function actually generate a valid markdown report?'). It focuses heavily on verifying *what* is wrong rather than validating that the correct behavior occurs.\",\n    \"suggestions\": [\n      \"Add assertions for successful execution and basic output validity before checking regressions.\",\n      \"Ensure no other tests cover these specific regression scenarios to avoid duplication.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 3,\n    \"rationale\": \"The test is too coarse-grained. It asserts the presence of text strings like 'Fix this function' and 'test_one', which are trivial checks that do not isolate a specific behavior or rule. The assertion `assert '# MSEC Unified Quality Report' in content` does not verify any logic.\",\n    \"suggestions\": [\n      \"Refine assertions to check for actual data values (e.g., expected severity levels, error codes) rather than string presence checks.\",\n      \"Isolate specific behaviors: one test per distinct rule or edge case.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 7,\n    \"rationale\": \"The test is reasonably fast as it involves standard file I/O and dictionary operations. However, the `tmp_path` path construction adds minor overhead compared to pure in-memory tests.\",\n    \"suggestions\": [\n      \"Ensure no artificial sleeps or heavy network calls are present (none here).\",\n      \"Consider using a temporary directory with unique names if persistence is required for reproducibility.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 4,\n    \"rationale\": \"The test follows an Arrange-Act-Assert pattern but lacks the 'Arrange' phase's clarity. The input data (`cr_units`, `farley_data`) is not clearly defined as part of the setup; they are passed in and assumed to be valid by the caller or previous tests.\",\n    \"suggestions\": [\n      \"Explicitly define inputs (fixtures) at the top of the test file with clear documentation.\",",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 832,
+      "total_tokens": 1856,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "493da3ca898fd97f41161f3c432c4f5fc4b592ecc369f4d6d927b74229d0e8b2": {
+    "id": "chatcmpl-538c730c-1936-430b-bb42-a128379ecf8a",
+    "created": 1783025806,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 6,\n    \"rationale\": \"The test name and arguments are somewhat verbose but technically clear enough for a developer familiar with the project's internal jargon. However, it lacks explicit documentation of *why* null values matter in this specific context (e.g., 'Verify report generation handles missing data gracefully'), which could be improved.\",\n    \"suggestions\": [\n      \"Explicitly state: `test_write_unified_report_null_values`: Verify that the unified comparison script correctly generates a Markdown report with no errors when input units are empty or null.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 4,\n    \"rationale\": \"The test is brittle to changes in `scripts.unified_compare`. If `write_unified_report` refactors its internal logic (e.g., changing how it handles missing data), this specific assertion will likely break without modification. It also relies on the global state of a failing regression report, which can be unstable.\",\n    \"suggestions\": [\n      \"Isolate the test by mocking `write_unified_report`'s return value or using fixtures to ensure deterministic behavior regardless of external system changes.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 3,\n    \"rationale\": \"The test relies on a global state (`farley_regressions`, `compat_data`) that is shared across the entire application. If other tests modify these dictionaries or if external services (like GitHub API) are involved in generating them, this test will fail intermittently.\",\n    \"suggestions\": [\n      \"Remove reliance on mutable global state like `farley_regressions`. Instead, use a dedicated fixture class to initialize and clean up the regression data for each run.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 5,\n    \"rationale\": \"The test verifies one specific behavior (handling null values), but it mixes two distinct concerns: checking file content (`assert # MSEC...`) and verifying a global state variable. This makes the cause of failure ambiguous if both checks fail.\",\n    \"suggestions\": [\n      \"Split this into two atomic tests or combine them with clear assertions that isolate each concern (e.g., one for 'Report Content', another for 'Global State Integrity').\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 2,\n    \"rationale\": \"This test duplicates the coverage of other existing unit tests in `test_unified_compare.py` that likely already verify report generation logic. It does not add new value to the codebase's testing suite.\",\n    \"suggestions\": [\n      \"Remove this specific assertion if it is redundant with existing tests, or refactor it into a dedicated test for 'Report Generation Edge Cases'.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 3,\n    \"rationale\": \"The test asserts the presence of text strings in an output file. It does not isolate specific logic paths (e.g., handling `None` inputs vs empty lists), making it less granular than a unit test for that function.\",\n    \"suggestions\": [\n      \"Refactor to assert specific conditions: e.g., 'Verify report header is present AND verify no exceptions are raised when units list contains None values.'\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 7,\n    \"rationale\": \"The test performs a single file read and text search. It avoids heavy setup (like database connections) or artificial delays. However, the `tmp_path` fixture itself is fast enough that this specific assertion doesn't add significant overhead.\",\n    \"suggestions\": [\n      \"Ensure no unnecessary I/O operations are performed inside assertions; if reading large files for comparison, consider streaming instead of full read.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 4,\n    \"rationale\": \"The test follows the Arrange-Act-Pattern (Arrange: `tmp_path`, Act: call function with data, Assert: check content). However, it lacks a clear 'specification' of *what* null values are expected to do. It is an implementation detail rather than a design property verification.\",\n    \"suggestions\": [\n      \"Refactor the Arrange phase to explicitly define input scenarios (e.g., `units = []`, `units = None`). Ensure the Act phase verifies both 'no crash' and 'correct output format', aligning with TDD principles of designing behavior before writing tests.\"\n    ]\n  },\n  \"summary\": \"The test is functional but suffers from high brittleness due to global state dependencies. It mixes concerns (content vs. data integrity) which reduces atomicity and",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 737,
+      "total_tokens": 1761,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
