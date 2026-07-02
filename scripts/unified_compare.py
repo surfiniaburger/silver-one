@@ -73,11 +73,11 @@ def combine_token_spend(cr_cassette: Dict[str, Any], farley_cassette: Dict[str, 
     cr_totals = get_token_totals(cr_cassette, "code_review_usage_summary")
     farley_totals = get_token_totals(farley_cassette, "farley_usage_summary")
 
-    total_tokens = int(cr_totals.get("total_tokens", 0) + farley_totals.get("total_tokens", 0))
-    prompt_tokens = int(cr_totals.get("prompt_tokens", 0) + farley_totals.get("prompt_tokens", 0))
-    comp_tokens = int(cr_totals.get("completion_tokens", 0) + farley_totals.get("completion_tokens", 0))
-    calls = int(cr_totals.get("calls", 0) + farley_totals.get("calls", 0))
-    cost = float(cr_totals.get("cost_usd", 0.0) + farley_totals.get("cost_usd", 0.0))
+    total_tokens = int((cr_totals.get("total_tokens") or 0) + (farley_totals.get("total_tokens") or 0))
+    prompt_tokens = int((cr_totals.get("prompt_tokens") or 0) + (farley_totals.get("prompt_tokens") or 0))
+    comp_tokens = int((cr_totals.get("completion_tokens") or 0) + (farley_totals.get("completion_tokens") or 0))
+    calls = int((cr_totals.get("calls") or 0) + (farley_totals.get("calls") or 0))
+    cost = float((cr_totals.get("cost_usd") or 0.0) + (farley_totals.get("cost_usd") or 0.0))
 
     if total_tokens == 0:
         return "**Token spend**: 0 total tokens (all replayed via cassettes)\n\n"
@@ -112,6 +112,45 @@ def _write_header_and_summary(f, unified_verdict: str, reasons: List[str], spend
     f.write(spend_str)
 
 
+def _get_cqi_metric(cr_data: Dict[str, Any]) -> Tuple[str, str]:
+    """Build CQI metric and status values."""
+    cr_units = cr_data.get("units") or []
+    cr_verdict = cr_data.get("verdict") or "PASS"
+    if not cr_units:
+        return "N/A (no Python code changes)", "PASS"
+
+    scores = [calculate_cqi(u.get("review") or {}) for u in cr_units]
+    avg_cqi = mean(scores) if scores else 10.0
+    return f"{avg_cqi:.2f}/10 (average of {len(cr_units)} unit(s))", cr_verdict
+
+
+def _get_farley_metric(farley_data: Dict[str, Any]) -> Tuple[str, str]:
+    """Build Farley metric and status values."""
+    farley_baseline_exists = farley_data.get("baseline_exists") or False
+    farley_bsum = farley_data.get("bsum") or {}
+    farley_psum = farley_data.get("psum") or {}
+    farley_delta = farley_data.get("delta") if farley_data.get("delta") is not None else 0.0
+    farley_verdict = farley_data.get("verdict") or "PASS"
+
+    farley_bsum_avg = farley_bsum.get("avg_index") if farley_bsum.get("avg_index") is not None else 0.0
+    farley_psum_avg = farley_psum.get("avg_index") if farley_psum.get("avg_index") is not None else 0.0
+
+    if farley_baseline_exists:
+        return (
+            f"Baseline avg: {farley_bsum_avg:.2f} \| PR avg: {farley_psum_avg:.2f} \| Delta: {farley_delta:+.2f}",
+            farley_verdict,
+        )
+    return f"PR avg: {farley_psum_avg:.2f} (no baseline to compare)", farley_verdict
+
+
+def _get_compat_metric(compat_data: Dict[str, Any]) -> Tuple[str, str]:
+    """Build API Compatibility metric and status values."""
+    compat_score = compat_data.get("score") if compat_data.get("score") is not None else 10.0
+    compat_ok = compat_data.get("ok") if compat_data.get("ok") is not None else True
+    verdict = "PASS" if compat_ok else "FAIL"
+    return f"Score: {compat_score:.1f}/10", verdict
+
+
 def _write_metrics_overview(
     f,
     cr_data: Dict[str, Any],
@@ -122,38 +161,14 @@ def _write_metrics_overview(
     f.write("| Quality Domain | Metric / Score | Status |\n")
     f.write("|---|---|---|\n")
 
-    # Code Review Row
-    cr_units = cr_data.get("units", [])
-    cr_verdict = cr_data.get("verdict", "PASS")
-    if cr_units:
-        scores = [calculate_cqi(u.get("review", {})) for u in cr_units]
-        avg_cqi = mean(scores) if scores else 10.0
-        f.write(
-            f"| Code Quality Index (CQI) | {avg_cqi:.2f}/10 (average of {len(cr_units)} unit(s)) | **{cr_verdict}** |\n"
-        )
-    else:
-        f.write("| Code Quality Index (CQI) | N/A (no Python code changes) | **PASS** |\n")
+    cqi_metric, cqi_status = _get_cqi_metric(cr_data)
+    f.write(f"| Code Quality Index (CQI) | {cqi_metric} | **{cqi_status}** |\n")
 
-    # Farley Score Row
-    farley_baseline_exists = farley_data.get("baseline_exists", False)
-    farley_bsum = farley_data.get("bsum", {})
-    farley_psum = farley_data.get("psum", {})
-    farley_delta = farley_data.get("delta", 0.0)
-    farley_verdict = farley_data.get("verdict", "PASS")
-    if farley_baseline_exists:
-        f.write(
-            f"| Farley Test Quality | Baseline avg: {farley_bsum['avg_index']:.2f} \| PR avg: {farley_psum['avg_index']:.2f} \| Delta: {farley_delta:+.2f} "
-            f"| **{farley_verdict}** |\n"
-        )
-    else:
-        f.write(
-            f"| Farley Test Quality | PR avg: {farley_psum['avg_index']:.2f} (no baseline to compare) | **{farley_verdict}** |\n"
-        )
+    farley_metric, farley_status = _get_farley_metric(farley_data)
+    f.write(f"| Farley Test Quality | {farley_metric} | **{farley_status}** |\n")
 
-    # Compatibility Row
-    compat_score = compat_data.get("score", 10.0)
-    compat_ok = compat_data.get("ok", True)
-    f.write(f"| API Compatibility | Score: {compat_score:.1f}/10 | **{'PASS' if compat_ok else 'FAIL'}** |\n\n")
+    compat_metric, compat_status = _get_compat_metric(compat_data)
+    f.write(f"| API Compatibility | {compat_metric} | **{compat_status}** |\n\n")
 
 
 def _write_code_review_details(f, cr_data: Dict[str, Any]) -> None:
@@ -168,7 +183,7 @@ def _write_code_review_details(f, cr_data: Dict[str, Any]) -> None:
     f.write("| File | Unit | CQI | Severity | Summary |\n")
     f.write("|---|---|---:|---|---|\n")
     for unit in cr_units:
-        review = unit.get("review", {})
+        review = unit.get("review") or {}
         f.write(
             f"| {unit.get('file_path')} "
             f"| {format_unit_name(unit)} "
@@ -182,7 +197,7 @@ def _write_code_review_details(f, cr_data: Dict[str, Any]) -> None:
     if problematic:
         f.write("### Detailed Feedback\n\n")
         for unit in problematic:
-            review = unit.get("review", {})
+            review = unit.get("review") or {}
             severity = review.get("severity", "OK")
             f.write(f"#### ⚠️ `{unit.get('file_path')}` -> `{format_unit_name(unit)}` ({severity})\n")
             f.write(f"**CQI**: {calculate_cqi(review):.2f}/10\n\n")
@@ -207,8 +222,8 @@ def _write_farley_details(f, farley_data: Dict[str, Any]) -> None:
                 f"| {delta_val:.2f} "
                 f"| {base_test.get('file_path', '')} "
                 f"| {base_test.get('test_name', '')} "
-                f"| {base_test.get('farley_index', 0.0):.2f} "
-                f"| {pr_test.get('farley_index', 0.0):.2f} |\n"
+                f"| {base_test.get('farley_index') or 0.0:.2f} "
+                f"| {pr_test.get('farley_index') or 0.0:.2f} |\n"
             )
         f.write("\n</details>\n\n")
 
@@ -311,8 +326,8 @@ def main():
         farley_regressions = farley_top_regressions(farley_base_cassette, farley_pr_cassette, top_n=10)
 
     # 3. Process Compatibility Check
-    compat_ok = compat_results.get("pass", True)
-    compat_score = compat_results.get("compatibility_index", 10.0)
+    compat_ok = compat_results.get("pass") if compat_results.get("pass") is not None else True
+    compat_score = compat_results.get("compatibility_index") if compat_results.get("compatibility_index") is not None else 10.0
     compat_regressions = compat_results.get("regressions", [])
 
     # Compile Unified Verdict & Reasons

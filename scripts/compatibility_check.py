@@ -12,7 +12,8 @@ from typing import Dict, List, Any, Tuple, Optional, Callable
 # Enable relative imports from parent directory
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from scripts.diff_extractor import get_changed_lines, validate_path
+from scripts.diff_extractor import get_changed_lines
+from scripts.path_utils import validate_path, validate_output_path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 METRICS_ROOT = (PROJECT_ROOT / "artifacts" / "metrics").resolve()
@@ -119,11 +120,30 @@ def extract_api_signatures(code: str) -> Dict[str, Any]:
     return signatures
 
 
+def _is_safe_git_ref(ref: str) -> bool:
+    # Git references can contain alphanumeric characters, slashes, dashes, underscores, and dots.
+    # Must not start with a dash.
+    return bool(re.match(r"^[a-zA-Z0-9_/.-]+$", ref)) and not ref.startswith("-")
+
+
+def _is_safe_relative_path(path: str) -> bool:
+    # A safe relative path should only contain alphanumeric characters, slashes, dashes, underscores, dots.
+    # Must not start with a dash, must not be absolute, and must not escape the repository (no ".." components).
+    if path.startswith("/") or path.startswith("-") or ".." in path:
+        return False
+    return bool(re.match(r"^[a-zA-Z0-9_/.-]+$", path))
+
+
 def get_base_file_content(base_ref: str, rel_path: str, cwd: Path) -> Optional[str]:
     """Retrieve file content from base_ref branch using git show."""
+    if not _is_safe_git_ref(base_ref):
+        raise ValueError(f"Unsafe git ref: {base_ref}")
+    if not _is_safe_relative_path(rel_path):
+        raise ValueError(f"Unsafe relative path: {rel_path}")
+
     try:
         cmd = ["git", "show", f"{base_ref}:{rel_path}"]
-        return subprocess.check_output(cmd, text=True, cwd=str(cwd))
+        return subprocess.check_output(cmd, text=True, cwd=str(cwd), stderr=subprocess.DEVNULL)
     except subprocess.CalledProcessError:
         return None
 
@@ -156,7 +176,7 @@ def _check_function_parameter_regressions(
     base_param_map = {p["name"]: p for p in base_params}
     pr_param_map = {p["name"]: p for p in pr_params}
 
-    # 1. Check for removed/renamed parameters or kind changes
+    # 1. Check for removed/renamed parameters or kind changes, or default value removals
     for base_p in base_params:
         name = base_p["name"]
         if name not in pr_param_map:
@@ -168,6 +188,10 @@ def _check_function_parameter_regressions(
             regressions.append(
                 f"{file_path}: In `{key}`, parameter `{name}` changed kind from "
                 f"`{base_p['kind']}` to `{pr_p['kind']}`"
+            )
+        elif base_p["has_default"] and not pr_p["has_default"]:
+            regressions.append(
+                f"{file_path}: In `{key}`, parameter `{name}` removed its default value"
             )
 
     # 2. Check for added parameters that don't have defaults
@@ -184,6 +208,11 @@ def _check_function_parameter_regressions(
     expected_pos_in_pr = [p for p in base_pos if p in pr_pos]
     if base_pos_in_pr != expected_pos_in_pr:
         regressions.append(f"{file_path}: In `{key}`, positional parameter ordering was altered")
+    elif base_pos_in_pr:
+        last_active_base = base_pos_in_pr[-1]
+        last_active_idx = pr_pos.index(last_active_base)
+        if any(p not in base_pos for p in pr_pos[:last_active_idx]):
+            regressions.append(f"{file_path}: In `{key}`, a new positional parameter was inserted before existing ones")
 
     return regressions
 
@@ -271,11 +300,11 @@ def run_compatibility_check(base_ref: str, cwd: Path = PROJECT_ROOT) -> Tuple[bo
 def main():
     parser = argparse.ArgumentParser(description="MSEC API Compatibility Gate")
     parser.add_argument("--base", type=str, default="origin/main", help="Git reference to compare against")
-    parser.add_argument("--out", type=str, default="compatibility_results.json", help="Output filename relative to artifacts/metrics")
+    parser.add_argument("--out", type=str, default="artifacts/metrics/compatibility_results.json", help="Output JSON filename relative to project root")
     args = parser.parse_args()
 
     try:
-        out_path = validate_path(args.out, METRICS_ROOT, {".json"})
+        out_path = validate_output_path(args.out, PROJECT_ROOT, {".json"})
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -289,6 +318,7 @@ def main():
     }
 
     try:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
         with out_path.open("w", encoding="utf-8") as f:
             json.dump(results, f, indent=2)
     except Exception as exc:

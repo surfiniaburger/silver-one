@@ -120,3 +120,43 @@ def test_write_unified_report_full(tmp_path):
     assert "test_one" in content
     assert "Removed method foo" in content
 
+
+def test_write_unified_report_null_values(tmp_path):
+    from scripts.unified_compare import write_unified_report
+    out_file = tmp_path / "report.md"
+
+    cr_units = [
+        {
+            "file_path": "src/utils.py",
+            "name": "helper",
+            "review": None
+        }
+    ]
+
+    farley_regressions = [
+        (-1.5, {"file_path": "tests/test_x.py", "test_name": "test_one", "farley_index": None}, {"farley_index": None})
+    ]
+
+    compat_regressions = ["Removed method foo"]
+
+    write_unified_report(
+        out_path=out_file,
+        unified_verdict="FAIL",
+        reasons=["Code review quality warning", "API Compatibility regressions"],
+        spend_str="**Token spend**: 100 total tokens\n\n",
+        cr_data={"units": cr_units, "verdict": "WARN"},
+        farley_data={
+            "bsum": {"avg_index": 8.0},
+            "psum": {"avg_index": 7.5},
+            "delta": -0.5,
+            "verdict": "PASS",
+            "regressions": farley_regressions,
+            "baseline_exists": True,
+        },
+        compat_data={"ok": False, "score": None, "regressions": compat_regressions}
+    )
+    content = out_file.read_text(encoding="utf-8")
+    assert "# MSEC Unified Quality Report" in content
+    assert "Score: 10.0/10" in content
+
+
