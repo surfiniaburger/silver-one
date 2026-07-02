@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import html
 import json
 import os
 import sys
@@ -171,6 +172,11 @@ def _write_metrics_overview(
     f.write(f"| API Compatibility | {compat_metric} | **{compat_status}** |\n\n")
 
 
+def _esc(value: Any) -> str:
+    text = html.escape(str(value or ""))
+    return text.replace("|", "\\|").replace("\r", " ").replace("\n", "<br>")
+
+
 def _write_cr_units_overview(f, cr_units: List[Dict[str, Any]]) -> None:
     f.write("### Code Units Overview\n\n")
     f.write("| File | Unit | CQI | Severity | Summary |\n")
@@ -178,11 +184,11 @@ def _write_cr_units_overview(f, cr_units: List[Dict[str, Any]]) -> None:
     for unit in cr_units:
         review = unit.get("review") or {}
         f.write(
-            f"| {unit.get('file_path')} "
-            f"| {format_unit_name(unit)} "
+            f"| {_esc(unit.get('file_path'))} "
+            f"| {_esc(format_unit_name(unit))} "
             f"| {calculate_cqi(review):.2f}/10 "
-            f"| **{review.get('severity', 'OK')}** "
-            f"| {review.get('summary', '')} |\n"
+            f"| **{_esc(review.get('severity', 'OK'))}** "
+            f"| {_esc(review.get('summary', ''))} |\n"
         )
     f.write("\n")
 
@@ -194,11 +200,11 @@ def _write_cr_findings_table(f, findings: List[Dict[str, Any]]) -> None:
     f.write("| Category | Severity | Finding | Location | Consequence | Recommendation |\n")
     f.write("|---|---|---|---|---|---|\n")
     for finding in findings:
-        title = finding.get("title", "")
-        cat = finding.get("category", "")
-        sev = finding.get("severity", "INFO")
-        conseq = finding.get("engineering_consequence", "")
-        recom = finding.get("recommended_action", "")
+        title = _esc(finding.get("title", ""))
+        cat = _esc(finding.get("category", ""))
+        sev = _esc(finding.get("severity", "INFO"))
+        conseq = _esc(finding.get("engineering_consequence", ""))
+        recom = _esc(finding.get("recommended_action", ""))
         
         evidence = finding.get("evidence") or {}
         details = evidence.get("details") or {}
@@ -210,7 +216,7 @@ def _write_cr_findings_table(f, findings: List[Dict[str, Any]]) -> None:
         elif start_line is not None:
             loc = f"Line {start_line}"
             
-        f.write(f"| {cat} | **{sev}** | {title} | {loc} | {conseq} | {recom} |\n")
+        f.write(f"| {cat} | **{sev}** | {title} | {_esc(loc)} | {conseq} | {recom} |\n")
     f.write("\n")
 
 

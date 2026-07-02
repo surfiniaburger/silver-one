@@ -39,7 +39,10 @@ class EngineeringFinding(BaseModel):
         ...,
         description="Consequences if this issue is ignored."
     )
-    impact: EngineeringImpact = Field(..., description="Impact evaluation across code quality domains.")
+    impact: EngineeringImpact = Field(
+        default_factory=EngineeringImpact,
+        description="Impact evaluation across code quality domains."
+    )
     confidence: float = Field(
         ...,
         ge=0.0,

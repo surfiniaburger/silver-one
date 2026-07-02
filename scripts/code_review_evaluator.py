@@ -72,11 +72,13 @@ Finally, determine a top-level severity:
 - BLOCK: Critical logic errors, major security vulnerabilities, or severe structural issues that must be fixed before merging.
 
 For any issues found (especially for WARN or BLOCK severity), you must also populate the `findings` list with structured engineering findings. Each finding should explicitly specify:
+- A concise title summarizing the finding.
 - The category (e.g. Readability, Maintainability, Correctness, Complexity, Security, Testability, Null Safety, Performance, API Evolution).
 - The severity (INFO, WARN, or BLOCK).
 - Evidence pointing to the location_type ('code'), path (file path), and details (like function_name, start_line, end_line).
 - The engineering rationale (why the issue exists).
 - The engineering consequence (what happens if the issue is ignored).
+- An impact evaluation across code quality domains (correctness, compatibility, security, maintainability, performance) with values NONE, LOW, MEDIUM, or HIGH.
 - Concrete recommended action to resolve it.
 - A numeric confidence score from 0.0 to 1.0.
 
