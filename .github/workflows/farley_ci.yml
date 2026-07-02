@@ -57,72 +57,8 @@ jobs:
             artifacts/cassettes/farley_score-PR-${{ env.PR_NUMBER }}.json
             artifacts/metrics/token_spend.jsonl
 
-      - name: Compare to baseline and generate report
-        run: |
-          python3 scripts/farley_compare.py \
-            --baseline $GITHUB_WORKSPACE/artifacts/cassettes/farley_score-main-latest.json \
-            --pr $GITHUB_WORKSPACE/artifacts/cassettes/farley_score-PR-${{ env.PR_NUMBER }}.json \
-            --out $GITHUB_WORKSPACE/report.md || true
-
-      - name: Ensure report.md exists
-        if: always()
-        run: touch $GITHUB_WORKSPACE/report.md
-
-      - name: Upload report
-        uses: actions/upload-artifact@v4
-        with:
-          name: farley-report-pr-${{ env.PR_NUMBER }}
-          path: report.md
-
-      - name: Post Farley report as PR comment
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            const marker = '<!-- farley-report -->';
-            let body;
-            try {
-              const raw = fs.readFileSync('report.md', 'utf8');
-              // GitHub PR comments are capped at ~65 536 chars; truncate gracefully.
-              const maxLen = 60000;
-              const content = raw.length > maxLen
-                ? raw.slice(0, maxLen) + '\n\n_Report truncated — download the full artifact for details._'
-                : raw;
-              body = `${marker}\n${content}`;
-            } catch (e) {
-              body = `${marker}\n⚠️ Farley report could not be read: ${e.message}`;
-            }
-
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-
-            const existing = comments.find(c => c.body && c.body.includes(marker));
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body,
-              });
-              core.info(`Updated existing Farley comment #${existing.id}`);
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body,
-              });
-              core.info('Created new Farley comment');
-            }
-
   code-review:
     permissions:
-      pull-requests: write
       contents: read
     runs-on: ubuntu-latest
     env:
@@ -167,40 +103,85 @@ jobs:
             artifacts/cassettes/code_review-PR-${{ env.PR_NUMBER }}.json
             artifacts/metrics/token_spend.jsonl
 
-      - name: Compare and gate
+  unified-report:
+    needs: [farley-eval, code-review]
+    permissions:
+      pull-requests: write
+      contents: read
+    runs-on: ubuntu-latest
+    env:
+      PR_NUMBER: ${{ github.event.number }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install build tools and project deps
         run: |
-          python3 scripts/code_review_compare.py \
-            --pr $GITHUB_WORKSPACE/artifacts/cassettes/code_review-PR-${{ env.PR_NUMBER }}.json \
-            --out $GITHUB_WORKSPACE/code_review_report.md
+          python -m pip install -U pip setuptools wheel build hatchling
+          python -m pip install -e .
 
-      - name: Ensure report exists
+      - name: Download Farley cassette
+        uses: actions/download-artifact@v4
+        with:
+          name: farley-cassette-pr-${{ env.PR_NUMBER }}
+          path: artifacts
+
+      - name: Download Code Review cassette
+        uses: actions/download-artifact@v4
+        with:
+          name: code-review-cassette-pr-${{ env.PR_NUMBER }}
+          path: artifacts
+
+      - name: Run API Compatibility Check
+        run: |
+          python3 scripts/compatibility_check.py \
+            --base origin/main \
+            --out artifacts/metrics/compatibility_results.json
+
+      - name: Compile Unified Quality Report
+        continue-on-error: true
+        run: |
+          python3 scripts/unified_compare.py \
+            --code-review-pr artifacts/cassettes/code_review-PR-${{ env.PR_NUMBER }}.json \
+            --farley-baseline artifacts/cassettes/farley_score-main-latest.json \
+            --farley-pr artifacts/cassettes/farley_score-PR-${{ env.PR_NUMBER }}.json \
+            --compatibility-results artifacts/metrics/compatibility_results.json \
+            --out report.md
+
+      - name: Ensure report.md exists
         if: always()
-        run: touch $GITHUB_WORKSPACE/code_review_report.md
+        run: touch report.md
 
-      - name: Upload report
+      - name: Upload unified report
         uses: actions/upload-artifact@v4
         with:
-          name: code-review-report-pr-${{ env.PR_NUMBER }}
-          path: code_review_report.md
+          name: unified-quality-report-pr-${{ env.PR_NUMBER }}
+          path: report.md
 
-      - name: Post code review report as PR comment
-        if: always() && github.event_name == 'pull_request'
+      - name: Post Unified report as PR comment
+        if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            const marker = '<!-- code-review-report -->';
+            const marker = '<!-- unified-quality-report -->';
             let body;
             try {
-              const raw = fs.readFileSync('code_review_report.md', 'utf8');
+              const raw = fs.readFileSync('report.md', 'utf8');
               const maxLen = 60000;
               const content = raw.length > maxLen
                 ? raw.slice(0, maxLen) + '\n\n_Report truncated — download the full artifact for details._'
                 : raw;
               body = `${marker}\n${content}`;
             } catch (e) {
-              body = `${marker}\n⚠️ Code review report could not be read: ${e.message}`;
+              body = `${marker}\n⚠️ Unified quality report could not be read: ${e.message}`;
             }
 
             const { data: comments } = await github.rest.issues.listComments({
@@ -217,6 +198,7 @@ jobs:
                 comment_id: existing.id,
                 body,
               });
+              core.info(`Updated existing Unified comment #${existing.id}`);
             } else {
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
@@ -224,5 +206,17 @@ jobs:
                 issue_number: context.issue.number,
                 body,
               });
+              core.info('Created new Unified comment');
             }
+
+      - name: Gate PR status based on Unified Verdict
+        run: |
+          # Re-run unified_compare.py to enforce the actual gating exit code (0 = PASS, 2 = FAIL)
+          python3 scripts/unified_compare.py \
+            --code-review-pr artifacts/cassettes/code_review-PR-${{ env.PR_NUMBER }}.json \
+            --farley-baseline artifacts/cassettes/farley_score-main-latest.json \
+            --farley-pr artifacts/cassettes/farley_score-PR-${{ env.PR_NUMBER }}.json \
+            --compatibility-results artifacts/metrics/compatibility_results.json \
+            --out report.md
+
 

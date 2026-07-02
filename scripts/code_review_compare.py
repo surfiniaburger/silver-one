@@ -100,7 +100,7 @@ def group_units_by_severity(reviews: List[Dict[str, Any]]) -> Tuple[List[Dict[st
     warn_units = []
     ok_units = []
     for unit in reviews:
-        review = unit.get("review", {})
+        review = unit.get("review") or {}
         severity = review.get("severity", "OK")
         if severity == "BLOCK":
             block_units.append(unit)
@@ -168,7 +168,7 @@ def write_overview(f, reviews: List[Dict[str, Any]]) -> None:
     f.write("| File | Unit | CQI Score | Severity | Summary |\n")
     f.write("|---|---|---:|---|---|\n")
     for unit in reviews:
-        review = unit.get("review", {})
+        review = unit.get("review") or {}
         f.write(
             f"| {unit.get('file_path')} "
             f"| {format_unit_name(unit)} "
@@ -202,7 +202,7 @@ def write_detailed_feedback(f, reviews: List[Dict[str, Any]]) -> None:
         return
     f.write("## Detailed Feedback\n\n")
     for unit in reviews:
-        review = unit.get("review", {})
+        review = unit.get("review") or {}
         severity = review.get("severity", "OK")
         if severity == "OK":
             continue
