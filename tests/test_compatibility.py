@@ -150,8 +150,9 @@ def test_get_base_file_content_validators():
     assert not _is_safe_relative_path("-flag")
     assert not _is_safe_relative_path("scripts/../../escaped")
 
+    path_val = Path(".")
     with pytest.raises(ValueError, match="Unsafe git ref"):
-        get_base_file_content("-unsafe", "scripts/compatibility_check.py", Path("."))
+        get_base_file_content("-unsafe", "scripts/compatibility_check.py", path_val)
 
     with pytest.raises(ValueError, match="Unsafe relative path"):
-        get_base_file_content("main", "/unsafe/path", Path("."))
+        get_base_file_content("main", "/unsafe/path", path_val)

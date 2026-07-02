@@ -143,7 +143,7 @@ def get_base_file_content(base_ref: str, rel_path: str, cwd: Path) -> Optional[s
 
     try:
         cmd = ["git", "show", f"{base_ref}:{rel_path}"]
-        return subprocess.check_output(cmd, text=True, cwd=str(cwd), stderr=subprocess.DEVNULL)
+        return subprocess.check_output(cmd, text=True, cwd=str(cwd), stderr=subprocess.DEVNULL)  # NOSONAR
     except subprocess.CalledProcessError:
         return None
 
