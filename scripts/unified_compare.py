@@ -137,7 +137,7 @@ def _get_farley_metric(farley_data: Dict[str, Any]) -> Tuple[str, str]:
 
     if farley_baseline_exists:
         return (
-            f"Baseline avg: {farley_bsum_avg:.2f} \| PR avg: {farley_psum_avg:.2f} \| Delta: {farley_delta:+.2f}",
+            f"Baseline avg: {farley_bsum_avg:.2f} \\| PR avg: {farley_psum_avg:.2f} \\| Delta: {farley_delta:+.2f}",
             farley_verdict,
         )
     return f"PR avg: {farley_psum_avg:.2f} (no baseline to compare)", farley_verdict
@@ -171,14 +171,7 @@ def _write_metrics_overview(
     f.write(f"| API Compatibility | {compat_metric} | **{compat_status}** |\n\n")
 
 
-def _write_code_review_details(f, cr_data: Dict[str, Any]) -> None:
-    cr_units = cr_data.get("units", [])
-    if not cr_units:
-        return
-    f.write("## 🔍 Code Review Findings\n\n")
-    f.write("<details>\n<summary>Click to view detailed Code Review feedback</summary>\n\n")
-    block_units, warn_units, _ = group_units_by_severity(cr_units)
-
+def _write_cr_units_overview(f, cr_units: List[Dict[str, Any]]) -> None:
     f.write("### Code Units Overview\n\n")
     f.write("| File | Unit | CQI | Severity | Summary |\n")
     f.write("|---|---|---:|---|---|\n")
@@ -193,6 +186,44 @@ def _write_code_review_details(f, cr_data: Dict[str, Any]) -> None:
         )
     f.write("\n")
 
+
+def _write_cr_findings_table(f, findings: List[Dict[str, Any]]) -> None:
+    if not findings:
+        return
+    f.write("\n##### Structured Engineering Findings\n\n")
+    f.write("| Category | Severity | Finding | Location | Consequence | Recommendation |\n")
+    f.write("|---|---|---|---|---|---|\n")
+    for finding in findings:
+        title = finding.get("title", "")
+        cat = finding.get("category", "")
+        sev = finding.get("severity", "INFO")
+        conseq = finding.get("engineering_consequence", "")
+        recom = finding.get("recommended_action", "")
+        
+        evidence = finding.get("evidence") or {}
+        details = evidence.get("details") or {}
+        start_line = details.get("start_line")
+        end_line = details.get("end_line")
+        loc = "General"
+        if start_line is not None and end_line is not None:
+            loc = f"Lines {start_line}-{end_line}"
+        elif start_line is not None:
+            loc = f"Line {start_line}"
+            
+        f.write(f"| {cat} | **{sev}** | {title} | {loc} | {conseq} | {recom} |\n")
+    f.write("\n")
+
+
+def _write_code_review_details(f, cr_data: Dict[str, Any]) -> None:
+    cr_units = cr_data.get("units", [])
+    if not cr_units:
+        return
+    f.write("## 🔍 Code Review Findings\n\n")
+    f.write("<details>\n<summary>Click to view detailed Code Review feedback</summary>\n\n")
+    block_units, warn_units, _ = group_units_by_severity(cr_units)
+
+    _write_cr_units_overview(f, cr_units)
+
     problematic = block_units + warn_units
     if problematic:
         f.write("### Detailed Feedback\n\n")
@@ -205,6 +236,9 @@ def _write_code_review_details(f, cr_data: Dict[str, Any]) -> None:
             f.write("| Dimension | Score | Rationale | Suggestions |\n")
             f.write("|---|---|---|---|\n")
             write_dimension_rows(f, review)
+
+            _write_cr_findings_table(f, review.get("findings"))
+
             f.write("\n---\n\n")
     f.write("</details>\n\n")
 

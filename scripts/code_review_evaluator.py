@@ -23,6 +23,7 @@ except ImportError:
 from scripts import llm_adapter
 from scripts import diff_extractor
 from scripts import telemetry_utils
+from scripts.finding_schema import EngineeringFinding
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CASSETTE_ROOT = (PROJECT_ROOT / "artifacts" / "cassettes").resolve()
@@ -49,6 +50,10 @@ class CodeReviewBreakdown(BaseModel):
     test_coverage: PropertyEvaluation
     summary: str = Field(..., description="A brief summary of the overall code quality.")
     severity: Literal["OK", "WARN", "BLOCK"] = Field(..., description="Top-level verdict per unit.")
+    findings: List[EngineeringFinding] = Field(
+        default_factory=list,
+        description="List of structured engineering findings supporting this evaluation."
+    )
 
 
 SYSTEM_PROMPT = """You are an elite, senior software engineer and security auditor.
@@ -65,6 +70,15 @@ Finally, determine a top-level severity:
 - OK: The code is solid and safe to merge.
 - WARN: There are issues that should be improved, but they do not block merging.
 - BLOCK: Critical logic errors, major security vulnerabilities, or severe structural issues that must be fixed before merging.
+
+For any issues found (especially for WARN or BLOCK severity), you must also populate the `findings` list with structured engineering findings. Each finding should explicitly specify:
+- The category (e.g. Readability, Maintainability, Correctness, Complexity, Security, Testability, Null Safety, Performance, API Evolution).
+- The severity (INFO, WARN, or BLOCK).
+- Evidence pointing to the location_type ('code'), path (file path), and details (like function_name, start_line, end_line).
+- The engineering rationale (why the issue exists).
+- The engineering consequence (what happens if the issue is ignored).
+- Concrete recommended action to resolve it.
+- A numeric confidence score from 0.0 to 1.0.
 
 Provide constructive, specific comments. Cite specific variables, lines, or constructs where appropriate.
 """
