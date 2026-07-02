@@ -130,13 +130,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: farley-cassette-pr-${{ env.PR_NUMBER }}
-          path: artifacts/cassettes
+          path: .
 
       - name: Download Code Review cassette
         uses: actions/download-artifact@v4
         with:
           name: code-review-cassette-pr-${{ env.PR_NUMBER }}
-          path: artifacts/cassettes
+          path: .
 
       - name: Run API Compatibility Check
         run: |
