@@ -2268,6 +2268,62 @@
       }
     },
     {
+      "id": "tests/test_unified_compare.py::test_write_unified_report_with_findings",
+      "file_path": "tests/test_unified_compare.py",
+      "test_name": "test_write_unified_report_with_findings",
+      "class_name": null,
+      "farley_index": 7.625,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 9,
+          "rationale": "The test clearly defines input data (CR units) and expected output assertions. The business rule is explicit: the report must contain specific findings with exact formatting.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 8,
+          "rationale": "The test isolates logic to a single function call and file read/write. It does not rely on external state or side effects that would break during refactoring.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic but relies heavily on `tmp_path` and file I/O. While self-contained in terms of logic flow, the persistence layer introduces non-determinism regarding timing or external system state.",
+          "suggestions": [
+            "Remove reliance on filesystem paths entirely; use a mock fixture for report generation instead."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: the presence of specific text in an output file. If this assertion fails, it is immediately obvious that `write_unified_report` did not produce the expected content.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test covers a specific edge case (findings with warnings). However, it does not cover general report generation or other scenarios where findings might be absent. It duplicates coverage of generic 'report writing' tests.",
+          "suggestions": [
+            "Add a negative control: `test_write_unified_report_without_findings` to ensure the function handles missing data gracefully."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The test isolates specific assertions about content presence and formatting. It does not mix unrelated logic like file creation or path handling.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 5,
+          "rationale": "This test is slow due to `tmp_path` initialization (filesystem operations) and reading/writing a text file. It introduces artificial I/O overhead that slows down regression testing.",
+          "suggestions": [
+            "Replace filesystem persistence with in-memory mocks or fixtures for report generation."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The test follows the Arrange-Act-Assert pattern. It sets up a specific input scenario (CR units), acts by calling `write_unified_report`, and asserts clean separation of concerns.",
+          "suggestions": []
+        },
+        "summary": "This is an excellent TDD example that adheres strictly to the '8 Properties'. The only areas for improvement are removing filesystem dependencies to improve speed (property #7) and adding negative tests to ensure coverage completeness (property #5). Overall score: 9/10."
+      }
+    },
+    {
       "id": "tests/test_llm_adapter.py::test_call_structured_litellm",
       "file_path": "tests/test_llm_adapter.py",
       "test_name": "test_call_structured_litellm",
@@ -2961,32 +3017,32 @@
     "farley_usage_summary": {
       "run_id": "main-baseline",
       "model": "ollama/qwen3.5:2b",
-      "reviewed_test_cases": 40,
+      "reviewed_test_cases": 41,
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 47,
-          "prompt_tokens": 26443,
-          "completion_tokens": 35150,
-          "total_tokens": 61593,
+          "calls": 48,
+          "prompt_tokens": 27370,
+          "completion_tokens": 35836,
+          "total_tokens": 63206,
           "cost_usd": 0.0,
           "missing_usage_calls": 0
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 47,
-            "prompt_tokens": 26443,
-            "completion_tokens": 35150,
-            "total_tokens": 61593,
+            "calls": 48,
+            "prompt_tokens": 27370,
+            "completion_tokens": 35836,
+            "total_tokens": 63206,
             "cost_usd": 0.0
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 47,
-            "prompt_tokens": 26443,
-            "completion_tokens": 35150,
-            "total_tokens": 61593,
+            "calls": 48,
+            "prompt_tokens": 27370,
+            "completion_tokens": 35836,
+            "total_tokens": 63206,
             "cost_usd": 0.0
           }
         },
@@ -2994,7 +3050,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 792,
             "completion_tokens": 631,
@@ -3006,7 +3062,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 447,
             "completion_tokens": 583,
@@ -3018,7 +3074,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 448,
             "completion_tokens": 649,
@@ -3030,7 +3086,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 449,
             "completion_tokens": 637,
@@ -3042,7 +3098,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 458,
             "completion_tokens": 757,
@@ -3054,7 +3110,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 461,
             "completion_tokens": 1024,
@@ -3066,7 +3122,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 464,
             "completion_tokens": 519,
@@ -3078,7 +3134,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 447,
             "completion_tokens": 636,
@@ -3090,7 +3146,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 475,
             "completion_tokens": 707,
@@ -3102,7 +3158,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 459,
             "completion_tokens": 579,
@@ -3114,7 +3170,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 471,
             "completion_tokens": 663,
@@ -3126,7 +3182,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 612,
             "completion_tokens": 693,
@@ -3342,7 +3398,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 405,
             "completion_tokens": 608,
@@ -3354,7 +3410,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 672,
             "completion_tokens": 1024,
@@ -3366,7 +3422,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 655,
             "completion_tokens": 780,
@@ -3378,7 +3434,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 832,
             "completion_tokens": 1024,
@@ -3390,11 +3446,23 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 737,
             "completion_tokens": 1024,
             "total_tokens": 1761,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 927,
+            "completion_tokens": 686,
+            "total_tokens": 1613,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -4298,6 +4366,33 @@
       "completion_tokens": 1024,
       "prompt_tokens": 737,
       "total_tokens": 1761,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "9db05a8770919e395cd4e275e27f80c84b9e01fe531fbd3c0672f95223b9254a": {
+    "id": "chatcmpl-9cfa0d5a-4c03-467a-8a2a-bac504912b66",
+    "created": 1783032174,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 9,\n    \"rationale\": \"The test clearly defines input data (CR units) and expected output assertions. The business rule is explicit: the report must contain specific findings with exact formatting.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 8,\n    \"rationale\": \"The test isolates logic to a single function call and file read/write. It does not rely on external state or side effects that would break during refactoring.\",\n    \"suggestions\": []\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic but relies heavily on `tmp_path` and file I/O. While self-contained in terms of logic flow, the persistence layer introduces non-determinism regarding timing or external system state.\",\n    \"suggestions\": [\n      \"Remove reliance on filesystem paths entirely; use a mock fixture for report generation instead.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: the presence of specific text in an output file. If this assertion fails, it is immediately obvious that `write_unified_report` did not produce the expected content.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test covers a specific edge case (findings with warnings). However, it does not cover general report generation or other scenarios where findings might be absent. It duplicates coverage of generic 'report writing' tests.\",\n    \"suggestions\": [\n      \"Add a negative control: `test_write_unified_report_without_findings` to ensure the function handles missing data gracefully.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The test isolates specific assertions about content presence and formatting. It does not mix unrelated logic like file creation or path handling.\",\n    \"suggestions\": []\n  },\n  \"fast\": {\n    \"score\": 5,\n    \"rationale\": \"This test is slow due to `tmp_path` initialization (filesystem operations) and reading/writing a text file. It introduces artificial I/O overhead that slows down regression testing.\",\n    \"suggestions\": [\n      \"Replace filesystem persistence with in-memory mocks or fixtures for report generation.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 9,\n    \"rationale\": \"The test follows the Arrange-Act-Assert pattern. It sets up a specific input scenario (CR units), acts by calling `write_unified_report`, and asserts clean separation of concerns.\",\n    \"suggestions\": []\n  },\n  \"summary\": \"This is an excellent TDD example that adheres strictly to the '8 Properties'. The only areas for improvement are removing filesystem dependencies to improve speed (property #7) and adding negative tests to ensure coverage completeness (property #5). Overall score: 9/10.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 686,
+      "prompt_tokens": 927,
+      "total_tokens": 1613,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
