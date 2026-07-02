@@ -144,6 +144,11 @@ jobs:
             --base origin/main \
             --out artifacts/metrics/compatibility_results.json
 
+      - name: Debug - List Files
+        run: |
+          echo "=== Workspace Directory Structure ==="
+          find . -maxdepth 4 -not -path '*/.*'
+
       - name: Compile Unified Quality Report
         run: |
           python3 scripts/unified_compare.py \
