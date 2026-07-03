@@ -199,3 +199,156 @@ def test_pydantic_validators():
     assert finding_empty.engineering_consequence == ""
     assert finding_empty.recommended_action == ""
 
+
+def test_unit_review_artifact():
+    from scripts.finding_schema import UnitReviewArtifact, build_validation_context
+    from scripts.code_review_evaluator import CodeReviewBreakdown
+    import json
+
+    raw_json_str = """{
+        "readability": {"score": 8.0, "rationale": "Good readability"},
+        "maintainability": {"score": 7.5, "rationale": "Moderate maintainability"},
+        "correctness": {"score": 9.0, "rationale": "Correct"},
+        "complexity": {"score": 6.0, "rationale": "Ok complexity"},
+        "security": {"score": 10.0, "rationale": "Secure"},
+        "test_coverage": {"score": 8.0, "rationale": "High coverage"},
+        "summary": "Overall good quality",
+        "severity": "OK",
+        "findings": [
+            {
+                "title": "Test issue",
+                "category": "Style",
+                "severity": "INFO",
+                "evidence": {
+                    "location_type": "code",
+                    "path": "/src/foo.py"
+                },
+                "engineering_rationale": " Whitespace ",
+                "engineering_consequence": "None",
+                "confidence": 95,
+                "recommended_action": "Trim"
+            }
+        ]
+    }"""
+    
+    raw_dict = json.loads(raw_json_str)
+    breakdown = CodeReviewBreakdown.model_validate(raw_dict)
+    context = build_validation_context(raw_dict, breakdown)
+
+    artifact = UnitReviewArtifact(
+        file_path="src/foo.py",
+        name="foo",
+        review=breakdown,
+        validation=context,
+        raw_response=raw_json_str
+    )
+
+    # Verify serialization
+    dumped = artifact.model_dump()
+    assert dumped["file_path"] == "src/foo.py"
+    assert dumped["name"] == "foo"
+    assert dumped["raw_response"] == raw_json_str
+    assert dumped["validation"]["repaired"] is True
+    assert dumped["validation"]["normalized"] is True
+
+    # Assert specific field validations
+    fields = {f["field_name"]: f for f in dumped["validation"]["fields"]}
+    assert fields["findings[0].confidence"]["status"] == "REPAIRED"
+    assert fields["findings[0].confidence"]["raw_value"] == 95
+    assert fields["findings[0].confidence"]["repaired_value"] == pytest.approx(0.95)
+    assert fields["findings[0].evidence.path"]["status"] == "NORMALIZED"
+    assert fields["findings[0].evidence.path"]["raw_value"] == "/src/foo.py"
+    assert fields["findings[0].evidence.path"]["repaired_value"] == "src/foo.py"
+
+
+def test_strict_type_coercion_regressions():
+    from scripts.finding_schema import EngineeringFinding, Evidence
+    from scripts.code_review_evaluator import PropertyEvaluation
+    from pydantic import ValidationError
+
+    # --- Score validator tests ---
+    # Accept 5, 5.5, "5.5"
+    p1 = PropertyEvaluation.model_validate({"score": 5, "rationale": "ok"})
+    assert p1.score == 5.0
+    p2 = PropertyEvaluation.model_validate({"score": 5.5, "rationale": "ok"})
+    assert p2.score == 5.5
+    p3 = PropertyEvaluation.model_validate({"score": "5.5", "rationale": "ok"})
+    assert p3.score == 5.5
+
+    # Reject True, False, None, [], {}, "banana"
+    for invalid in [True, False, None, [], {}, "banana"]:
+        with pytest.raises(ValidationError):
+            PropertyEvaluation.model_validate({"score": invalid, "rationale": "ok"})
+
+    # --- Confidence validator tests ---
+    # Helper to build raw finding structure
+    def make_finding_dict(confidence_val, **kwargs):
+        base = {
+            "title": "Test Finding",
+            "category": "Correctness",
+            "severity": "WARN",
+            "evidence": {
+                "location_type": "code",
+                "path": "main.py",
+                "details": {}
+            },
+            "engineering_rationale": "Some rationale",
+            "engineering_consequence": "Some consequence",
+            "confidence": confidence_val,
+            "recommended_action": "Fix it"
+        }
+        base.update(kwargs)
+        return base
+
+    # Accept 0.7, "0.7", 95
+    f1 = EngineeringFinding.model_validate(make_finding_dict(0.7))
+    assert f1.confidence == 0.7
+    f2 = EngineeringFinding.model_validate(make_finding_dict("0.7"))
+    assert f2.confidence == 0.7
+    f3 = EngineeringFinding.model_validate(make_finding_dict(95))
+    assert f3.confidence == 0.95
+
+    # Reject True, False, None, [], {}, "banana"
+    for invalid in [True, False, None, [], {}, "banana"]:
+        with pytest.raises(ValidationError):
+            EngineeringFinding.model_validate(make_finding_dict(invalid))
+
+    # --- Engineering text fields tests ---
+    # Accept "" and "   text   " -> "text"
+    f4 = EngineeringFinding.model_validate(make_finding_dict(0.8, engineering_rationale=""))
+    assert f4.engineering_rationale == ""
+    f5 = EngineeringFinding.model_validate(make_finding_dict(0.8, engineering_rationale="   text   "))
+    assert f5.engineering_rationale == "text"
+
+    # Reject None, {}, [], 123, True for engineering_rationale
+    for invalid in [None, {}, [], 123, True]:
+        with pytest.raises(ValidationError):
+            EngineeringFinding.model_validate(make_finding_dict(0.8, engineering_rationale=invalid))
+
+        # Check other string fields: title, category, engineering_consequence, recommended_action
+        with pytest.raises(ValidationError):
+            EngineeringFinding.model_validate(make_finding_dict(0.8, title=invalid))
+        with pytest.raises(ValidationError):
+            EngineeringFinding.model_validate(make_finding_dict(0.8, category=invalid))
+        with pytest.raises(ValidationError):
+            EngineeringFinding.model_validate(make_finding_dict(0.8, engineering_consequence=invalid))
+        with pytest.raises(ValidationError):
+            EngineeringFinding.model_validate(make_finding_dict(0.8, recommended_action=invalid))
+
+    # Reject non-string, None for Evidence location_type and path
+    with pytest.raises(ValidationError):
+        Evidence.model_validate({"location_type": None, "path": "main.py"})
+    with pytest.raises(ValidationError):
+        Evidence.model_validate({"location_type": 123, "path": "main.py"})
+    with pytest.raises(ValidationError):
+        Evidence.model_validate({"location_type": "code", "path": 123})
+    
+    # Path is Optional, so path=None is fine, but non-string like True, [], {} must fail
+    ev_none_path = Evidence.model_validate({"location_type": "code", "path": None})
+    assert ev_none_path.path is None
+    for invalid_path in [True, [], {}]:
+        with pytest.raises(ValidationError):
+            Evidence.model_validate({"location_type": "code", "path": invalid_path})
+
+
+

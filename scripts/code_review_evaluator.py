@@ -45,6 +45,8 @@ class PropertyEvaluation(BaseModel):
     def validate_score(cls, v):
         if v is None:
             raise ValueError("Score cannot be None.")
+        if isinstance(v, bool):
+            raise ValueError("Score cannot be a boolean value.")
         try:
             val = float(v)
         except (ValueError, TypeError):
@@ -54,6 +56,15 @@ class PropertyEvaluation(BaseModel):
             return val
         else:
             raise ValueError("Score is out of bounds [0.0, 10.0].")
+
+    @field_validator("rationale", mode="before")
+    @classmethod
+    def validate_rationale(cls, v):
+        if v is None:
+            raise ValueError("rationale cannot be None.")
+        if not isinstance(v, str):
+            raise ValueError("rationale must be a string.")
+        return v.strip()
 
 
 class CodeReviewBreakdown(BaseModel):
@@ -69,6 +80,15 @@ class CodeReviewBreakdown(BaseModel):
         default_factory=list,
         description="List of structured engineering findings supporting this evaluation."
     )
+
+    @field_validator("summary", mode="before")
+    @classmethod
+    def validate_summary(cls, v):
+        if v is None:
+            raise ValueError("summary cannot be None.")
+        if not isinstance(v, str):
+            raise ValueError("summary must be a string.")
+        return v.strip()
 
 
 SYSTEM_PROMPT = """You are an elite, senior software engineer and security auditor.
@@ -186,6 +206,7 @@ def persist_usage_artifacts(
 async def evaluate_units(
     replay_mgr: Any, model: str, units: List[Dict[str, Any]]
 ) -> List[Dict[str, Any]]:
+    from scripts.finding_schema import UnitReviewArtifact, build_validation_context
     results = []
     print(f"\033[94mEvaluating {len(units)} code units...\033[0m")
 
@@ -200,7 +221,7 @@ async def evaluate_units(
         ]
 
         try:
-            breakdown = await llm_adapter.call_structured(
+            breakdown, raw_str = await llm_adapter.call_structured_with_raw(
                 replay_manager=replay_mgr,
                 model=model,
                 messages=messages,
@@ -208,8 +229,21 @@ async def evaluate_units(
                 schema_model=CodeReviewBreakdown,
                 stage="code_review",
             )
-            unit_result = {**unit, "review": breakdown.model_dump()}
-            results.append(unit_result)
+            # Parse raw response as JSON to inspect raw values for validation context
+            try:
+                raw_json = json.loads(raw_str)
+            except Exception:
+                raw_json = {}
+                
+            context = build_validation_context(raw_json, breakdown)
+            artifact = UnitReviewArtifact(
+                file_path=file_path,
+                name=name,
+                review=breakdown,
+                validation=context,
+                raw_response=raw_str
+            )
+            results.append(artifact.model_dump())
         except Exception as exc:
             print(f"\033[91mError reviewing {name} in {file_path}: {exc}\033[0m")
 
