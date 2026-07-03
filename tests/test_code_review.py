@@ -366,4 +366,82 @@ def test_strict_type_coercion_regressions():
             Evidence.model_validate({"location_type": "code", "path": invalid_path})
 
 
+def test_provenance_consistency():
+    from scripts.finding_schema import UnitReviewArtifact, build_validation_context
+    from scripts.code_review_evaluator import CodeReviewBreakdown
+    import json
+
+    raw_json_str = """{
+        "readability": {"score": 8.0, "rationale": "  Whitespace trimmed readability  "},
+        "maintainability": {"score": 7.5, "rationale": "Moderate maintainability"},
+        "correctness": {"score": 9.0, "rationale": "Correct"},
+        "complexity": {"score": 6.0, "rationale": "Ok complexity"},
+        "security": {"score": 10.0, "rationale": "Secure"},
+        "test_coverage": {"score": 8.0, "rationale": "High coverage"},
+        "summary": "Overall good quality",
+        "severity": "OK",
+        "findings": [
+            {
+                "title": "Test issue",
+                "category": "Style",
+                "severity": "INFO",
+                "evidence": {
+                    "location_type": "code",
+                    "path": "/src/foo.py"
+                },
+                "engineering_rationale": "  Some rationale with whitespace  ",
+                "engineering_consequence": "None",
+                "confidence": 95,
+                "recommended_action": "Trim"
+            }
+        ]
+    }"""
+    
+    raw_dict = json.loads(raw_json_str)
+    breakdown = CodeReviewBreakdown.model_validate(raw_dict)
+    context = build_validation_context(raw_dict, breakdown)
+
+    artifact = UnitReviewArtifact(
+        file_path="src/foo.py",
+        name="foo",
+        review=breakdown,
+        validation=context,
+        raw_response=raw_json_str
+    )
+
+    dumped = artifact.model_dump()
+    assert dumped["raw_response"] == raw_json_str
+    
+    # Check that confidence was repaired to 0.95
+    assert dumped["review"]["findings"][0]["confidence"] == pytest.approx(0.95)
+    
+    # Check that evidence path was normalized
+    assert dumped["review"]["findings"][0]["evidence"]["path"] == "src/foo.py"
+    
+    # Check that readability rationale was normalized
+    assert dumped["review"]["readability"]["rationale"] == "Whitespace trimmed readability"
+
+    # Verify that the validation fields map contains only the modified/repaired/normalized fields (Option A)
+    fields = {f["field_name"]: f for f in dumped["validation"]["fields"]}
+    
+    # Verify confidence was repaired
+    assert fields["findings[0].confidence"]["status"] == "REPAIRED"
+    assert fields["findings[0].confidence"]["raw_value"] == 95
+    assert fields["findings[0].confidence"]["repaired_value"] == pytest.approx(0.95)
+    
+    # Verify path was normalized
+    assert fields["findings[0].evidence.path"]["status"] == "NORMALIZED"
+    assert fields["findings[0].evidence.path"]["raw_value"] == "/src/foo.py"
+    assert fields["findings[0].evidence.path"]["repaired_value"] == "src/foo.py"
+    
+    # Verify readability rationale was normalized
+    assert fields["readability.rationale"]["status"] == "NORMALIZED"
+    assert fields["readability.rationale"]["raw_value"] == "  Whitespace trimmed readability  "
+    assert fields["readability.rationale"]["repaired_value"] == "Whitespace trimmed readability"
+
+    # Option A constraint check: ensure that valid fields (like correctness.score, readability.score, etc.) are NOT present
+    assert "correctness.score" not in fields
+    assert "findings[0].severity" not in fields
+
+
 

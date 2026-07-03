@@ -13,6 +13,10 @@ except Exception:
 
 import requests
 
+class OfflineReplayError(RuntimeError):
+    """Raised when there is no matching recorded response in the replay cassette."""
+    pass
+
 LITELLM_PREFIX = "litellm/"
 
 PRESETS = {
@@ -404,7 +408,7 @@ def _replay_lookup_raw(
             raw_str = json.dumps(recorded)
             validated = _validate_response(raw_str, schema_model, schema_name)
             return validated, raw_str
-    raise RuntimeError("Offline Replay Error: No matching recorded response found.")
+    raise OfflineReplayError("Offline Replay Error: No matching recorded response found.")
 
 
 async def _call_litellm_or_nebius(
@@ -453,7 +457,7 @@ async def call_structured_with_raw(
 
     try:
         return _replay_lookup_raw(replay_manager, model, messages, params, schema_model, schema_name)
-    except RuntimeError:
+    except OfflineReplayError:
         pass
 
     raw = await _call_litellm_or_nebius(model, messages, provider, params, schema_model)

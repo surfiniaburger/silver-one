@@ -22,6 +22,108 @@ METRICS_ROOT.mkdir(parents=True, exist_ok=True)
 CLASS_PREFIX = "class:"
 
 
+def _is_pydantic_validator(decorator_list: List[ast.expr]) -> bool:
+    for dec in decorator_list:
+        name_id = None
+        if isinstance(dec, ast.Call) and isinstance(dec.func, ast.Name):
+            name_id = dec.func.id
+        elif isinstance(dec, ast.Name):
+            name_id = dec.id
+        if name_id in ("field_validator", "model_validator", "validator"):
+            return True
+    return False
+
+
+def _extract_parameters(args: ast.arguments) -> List[Dict[str, Any]]:
+    params = []
+    
+    # Check for posonlyargs attribute (Python 3.8+)
+    posonlyargs = getattr(args, "posonlyargs", [])
+    posonly_count = len(posonlyargs)
+    args_count = len(args.args)
+    
+    total_pos_args = posonly_count + args_count
+    defaults_count = len(args.defaults)
+    first_default_idx = total_pos_args - defaults_count
+
+    def get_pos_default(idx: int) -> bool:
+        return idx >= first_default_idx
+
+    idx = 0
+    for arg in posonlyargs:
+        params.append({
+            "name": arg.arg,
+            "kind": "positional_only",
+            "has_default": get_pos_default(idx)
+        })
+        idx += 1
+
+    for arg in args.args:
+        params.append({
+            "name": arg.arg,
+            "kind": "positional_or_keyword",
+            "has_default": get_pos_default(idx)
+        })
+        idx += 1
+
+    # keyword-only arguments and defaults
+    kwonlyargs = getattr(args, "kwonlyargs", [])
+    kw_defaults = getattr(args, "kw_defaults", [])
+    for arg, default in zip(kwonlyargs, kw_defaults):
+        params.append({
+            "name": arg.arg,
+            "kind": "keyword_only",
+            "has_default": default is not None
+        })
+
+    if args.vararg:
+        params.append({
+            "name": args.vararg.arg,
+            "kind": "var_positional",
+            "has_default": True
+        })
+
+    if args.kwarg:
+        params.append({
+            "name": args.kwarg.arg,
+            "kind": "var_keyword",
+            "has_default": True
+        })
+    return params
+
+
+class APISignatureVisitor(ast.NodeVisitor):
+    def __init__(self, signatures: Dict[str, Any]):
+        self.class_stack: List[str] = []
+        self.signatures = signatures
+
+    def visit_ClassDef(self, node: ast.ClassDef):
+        if not node.name.startswith("_"):
+            self.class_stack.append(node.name)
+            class_key = CLASS_PREFIX + ".".join(self.class_stack)
+            self.signatures[class_key] = {"type": "class"}
+            self.generic_visit(node)
+            self.class_stack.pop()
+
+    def visit_FunctionDef(self, node: ast.FunctionDef):
+        if _is_pydantic_validator(node.decorator_list):
+            return
+
+        if not node.name.startswith("_"):
+            prefix = ".".join(self.class_stack) + "." if self.class_stack else ""
+            func_name = prefix + node.name
+            
+            params = _extract_parameters(node.args)
+
+            self.signatures[func_name] = {
+                "type": "function",
+                "params": params
+            }
+        self.generic_visit(node)
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+
 def extract_api_signatures(code: str) -> Dict[str, Any]:
     """
     Extract public functions, classes, and methods from Python code AST.
@@ -34,89 +136,7 @@ def extract_api_signatures(code: str) -> Dict[str, Any]:
         return {}
 
     signatures: Dict[str, Any] = {}
-
-    class APISignatureVisitor(ast.NodeVisitor):
-        def __init__(self):
-            self.class_stack: List[str] = []
-
-        def visit_ClassDef(self, node: ast.ClassDef):
-            if not node.name.startswith("_"):
-                self.class_stack.append(node.name)
-                class_key = CLASS_PREFIX + ".".join(self.class_stack)
-                signatures[class_key] = {"type": "class"}
-                self.generic_visit(node)
-                self.class_stack.pop()
-
-        def visit_FunctionDef(self, node: ast.FunctionDef):
-            if not node.name.startswith("_"):
-                prefix = ".".join(self.class_stack) + "." if self.class_stack else ""
-                func_name = prefix + node.name
-                
-                args = node.args
-                params = []
-                
-                # Check for posonlyargs attribute (Python 3.8+)
-                posonlyargs = getattr(args, "posonlyargs", [])
-                posonly_count = len(posonlyargs)
-                args_count = len(args.args)
-                
-                total_pos_args = posonly_count + args_count
-                defaults_count = len(args.defaults)
-                first_default_idx = total_pos_args - defaults_count
-
-                def get_pos_default(idx: int) -> bool:
-                    return idx >= first_default_idx
-
-                idx = 0
-                for arg in posonlyargs:
-                    params.append({
-                        "name": arg.arg,
-                        "kind": "positional_only",
-                        "has_default": get_pos_default(idx)
-                    })
-                    idx += 1
-
-                for arg in args.args:
-                    params.append({
-                        "name": arg.arg,
-                        "kind": "positional_or_keyword",
-                        "has_default": get_pos_default(idx)
-                    })
-                    idx += 1
-
-                # keyword-only arguments and defaults
-                kwonlyargs = getattr(args, "kwonlyargs", [])
-                kw_defaults = getattr(args, "kw_defaults", [])
-                for arg, default in zip(kwonlyargs, kw_defaults):
-                    params.append({
-                        "name": arg.arg,
-                        "kind": "keyword_only",
-                        "has_default": default is not None
-                    })
-
-                if args.vararg:
-                    params.append({
-                        "name": args.vararg.arg,
-                        "kind": "var_positional",
-                        "has_default": True
-                    })
-
-                if args.kwarg:
-                    params.append({
-                        "name": args.kwarg.arg,
-                        "kind": "var_keyword",
-                        "has_default": True
-                    })
-
-                signatures[func_name] = {
-                    "type": "function",
-                    "params": params
-                }
-            self.generic_visit(node)
-
-        visit_AsyncFunctionDef = visit_FunctionDef
-
-    APISignatureVisitor().visit(tree)
+    APISignatureVisitor(signatures).visit(tree)
     return signatures
 
 

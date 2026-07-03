@@ -132,16 +132,6 @@ def _validate_dimensions(raw_json: Dict[str, Any], review: Any, fields: List[Fie
         if not isinstance(raw_dim, dict) or parsed_dim is None:
             continue
         
-        # Score
-        raw_score = raw_dim.get("score")
-        parsed_score = getattr(parsed_dim, "score", None)
-        fields.append(FieldValidation(
-            field_name=f"{dim}.score",
-            status="VALID",
-            raw_value=raw_score,
-            repaired_value=parsed_score
-        ))
-        
         # Rationale
         raw_rat = raw_dim.get("rationale")
         parsed_rat = getattr(parsed_dim, "rationale", "")
@@ -156,13 +146,6 @@ def _validate_dimensions(raw_json: Dict[str, Any], review: Any, fields: List[Fie
             fields.append(FieldValidation(
                 field_name=f"{dim}.rationale",
                 status="NORMALIZED",
-                raw_value=raw_rat,
-                repaired_value=parsed_rat
-            ))
-        else:
-            fields.append(FieldValidation(
-                field_name=f"{dim}.rationale",
-                status="VALID",
                 raw_value=raw_rat,
                 repaired_value=parsed_rat
             ))
@@ -218,13 +201,6 @@ def _validate_finding_confidence(idx: int, raw_find: Dict[str, Any], parsed_find
                     repair_type="scaled_percentage",
                     repair_reason="confidence scale conversion"
                 ))
-            else:
-                fields.append(FieldValidation(
-                    field_name=f"findings[{idx}].confidence",
-                    status="VALID",
-                    raw_value=raw_conf,
-                    repaired_value=parsed_conf
-                ))
         except (ValueError, TypeError):
             fields.append(FieldValidation(
                 field_name=f"findings[{idx}].confidence",
@@ -246,13 +222,6 @@ def _validate_finding_path(idx: int, raw_find: Dict[str, Any], parsed_find: Any,
                 fields.append(FieldValidation(
                     field_name=f"findings[{idx}].evidence.path",
                     status="NORMALIZED",
-                    raw_value=raw_path,
-                    repaired_value=parsed_path
-                ))
-            else:
-                fields.append(FieldValidation(
-                    field_name=f"findings[{idx}].evidence.path",
-                    status="VALID",
                     raw_value=raw_path,
                     repaired_value=parsed_path
                 ))
