@@ -64,17 +64,23 @@ class EngineeringFinding(BaseModel):
     @field_validator("confidence", mode="before")
     @classmethod
     def validate_confidence(cls, v):
+        if v is None:
+            raise ValueError("Confidence cannot be None.")
         try:
             val = float(v)
-            if val > 1.0:
-                val = val / 100.0
-            return max(0.0, min(1.0, val))
         except (ValueError, TypeError):
-            return 1.0
+            raise ValueError("Confidence must be a numeric value.")
+        
+        if 0.0 <= val <= 1.0:
+            return val
+        elif 1.0 < val <= 100.0:
+            return val / 100.0
+        else:
+            raise ValueError("Confidence score is out of bounds.")
 
     @field_validator("engineering_rationale", "engineering_consequence", "recommended_action", mode="before")
     @classmethod
     def validate_non_empty_strings(cls, v):
-        if not v or not str(v).strip():
-            return "No details provided."
+        if v is None:
+            return ""
         return str(v).strip()

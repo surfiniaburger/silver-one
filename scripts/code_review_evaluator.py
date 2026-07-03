@@ -43,13 +43,17 @@ class PropertyEvaluation(BaseModel):
     @field_validator("score", mode="before")
     @classmethod
     def validate_score(cls, v):
+        if v is None:
+            raise ValueError("Score cannot be None.")
         try:
             val = float(v)
-            if val > 10.0:
-                val = val / 10.0
-            return max(0.0, min(10.0, val))
         except (ValueError, TypeError):
-            return 8.0
+            raise ValueError("Score must be a numeric value.")
+        
+        if 0.0 <= val <= 10.0:
+            return val
+        else:
+            raise ValueError("Score is out of bounds [0.0, 10.0].")
 
 
 class CodeReviewBreakdown(BaseModel):
