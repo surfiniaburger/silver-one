@@ -2158,6 +2158,73 @@
       }
     },
     {
+      "id": "tests/test_code_review.py::test_pydantic_validators",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_pydantic_validators",
+      "class_name": null,
+      "farley_index": 6.5,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 6,
+          "rationale": "The test logic is understandable but lacks a clear business rule. It tests specific property evaluation functions rather than the core domain concept of 'Engineering Finding' validation.",
+          "suggestions": [
+            "Define what an `EngineeringFinding` represents in this context (e.g., a validated finding object).",
+            "Write assertions that verify the *domain logic* first, then validate specific property evaluation functions as side effects or derived properties."
+          ]
+        },
+        "maintainable": {
+          "score": 7,
+          "rationale": "The test is decoupled from system implementation details. It uses `model_validate` to construct objects without hardcoding logic.",
+          "suggestions": [
+            "Ensure the `PropertyEvaluation.model_validate` and `EngineeringFinding.model_validate` methods are stable across refactors."
+          ]
+        },
+        "repeatable": {
+          "score": 5,
+          "rationale": "The test relies on external shared state (`scripts.finding_schema`, `scripts.code_review_evaluator`). If these modules change or have side effects (e.g., network calls), the test will fail unpredictably.",
+          "suggestions": [
+            "Remove all imports from external scripts. Implement logic directly in this file using standard Python types and dataclasses."
+          ]
+        },
+        "atomic": {
+          "score": 8,
+          "rationale": "The test verifies exactly one behavior: the conversion of input dictionaries to `PropertyEvaluation`/`EngineeringFinding` objects. If it fails, the cause is instantly obvious (type mismatch or logic error).",
+          "suggestions": [
+            "Keep this single assertion block focused on validation."
+          ]
+        },
+        "necessary": {
+          "score": 4,
+          "rationale": "This test duplicates coverage of other tests. It likely covers properties already tested in `test_code_review_evaluator` or similar modules.",
+          "suggestions": [
+            "Review existing code review and finding validation tests to ensure this specific conversion logic is not redundant."
+          ]
+        },
+        "granular": {
+          "score": 6,
+          "rationale": "The test targets the `model_validate` method specifically. It isolates a small piece of functionality but does not fully isolate the domain concept.",
+          "suggestions": [
+            "Refactor to assert on specific fields (e.g., `confidence`, `path`) directly rather than relying solely on object construction."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes rapidly. It avoids artificial sleeps and heavy I/O operations.",
+          "suggestions": [
+            "Ensure `pytest.approx` is used correctly to avoid unnecessary overhead."
+          ]
+        },
+        "first_tdd": {
+          "score": 7,
+          "rationale": "The test demonstrates a clean separation of concerns: it constructs objects and asserts their properties. However, the 'Arrange' phase (constructing data) is mixed with assertions.",
+          "suggestions": [
+            "Strictly separate Arrange-Act-Assert phases. Construct valid inputs in one block; assert specific values or behaviors in another."
+          ]
+        },
+        "summary": "The test demonstrates basic TDD principles but fails on critical properties: it is not repeatable due to external dependencies and likely unnecessary given existing coverage. It should be refactored into a dedicated unit for `EngineeringFinding` validation logic rather than embedded in property evaluation tests."
+      }
+    },
+    {
       "id": "tests/test_unified_compare.py::test_combine_token_spend_empty",
       "file_path": "tests/test_unified_compare.py",
       "test_name": "test_combine_token_spend_empty",
@@ -3017,32 +3084,32 @@
     "farley_usage_summary": {
       "run_id": "main-baseline",
       "model": "ollama/qwen3.5:2b",
-      "reviewed_test_cases": 41,
+      "reviewed_test_cases": 42,
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 48,
-          "prompt_tokens": 27370,
-          "completion_tokens": 35836,
-          "total_tokens": 63206,
+          "calls": 49,
+          "prompt_tokens": 28230,
+          "completion_tokens": 36638,
+          "total_tokens": 64868,
           "cost_usd": 0.0,
           "missing_usage_calls": 0
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 48,
-            "prompt_tokens": 27370,
-            "completion_tokens": 35836,
-            "total_tokens": 63206,
+            "calls": 49,
+            "prompt_tokens": 28230,
+            "completion_tokens": 36638,
+            "total_tokens": 64868,
             "cost_usd": 0.0
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 48,
-            "prompt_tokens": 27370,
-            "completion_tokens": 35836,
-            "total_tokens": 63206,
+            "calls": 49,
+            "prompt_tokens": 28230,
+            "completion_tokens": 36638,
+            "total_tokens": 64868,
             "cost_usd": 0.0
           }
         },
@@ -3398,6 +3465,18 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 860,
+            "completion_tokens": 802,
+            "total_tokens": 1662,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
             "source": "cache",
             "generation_params": {},
             "prompt_tokens": 405,
@@ -3458,7 +3537,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 927,
             "completion_tokens": 686,
@@ -4393,6 +4472,33 @@
       "completion_tokens": 686,
       "prompt_tokens": 927,
       "total_tokens": 1613,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "981c3c14dc18e92335ba30bc34e76b9dabacda63c0f7437051103ffe61787f62": {
+    "id": "chatcmpl-8bfe798e-3be1-4655-9d7a-bf03246c34cb",
+    "created": 1783044449,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 6,\n    \"rationale\": \"The test logic is understandable but lacks a clear business rule. It tests specific property evaluation functions rather than the core domain concept of 'Engineering Finding' validation.\",\n    \"suggestions\": [\n      \"Define what an `EngineeringFinding` represents in this context (e.g., a validated finding object).\",\n      \"Write assertions that verify the *domain logic* first, then validate specific property evaluation functions as side effects or derived properties.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is decoupled from system implementation details. It uses `model_validate` to construct objects without hardcoding logic.\",\n    \"suggestions\": [\n      \"Ensure the `PropertyEvaluation.model_validate` and `EngineeringFinding.model_validate` methods are stable across refactors.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 5,\n    \"rationale\": \"The test relies on external shared state (`scripts.finding_schema`, `scripts.code_review_evaluator`). If these modules change or have side effects (e.g., network calls), the test will fail unpredictably.\",\n    \"suggestions\": [\n      \"Remove all imports from external scripts. Implement logic directly in this file using standard Python types and dataclasses.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 8,\n    \"rationale\": \"The test verifies exactly one behavior: the conversion of input dictionaries to `PropertyEvaluation`/`EngineeringFinding` objects. If it fails, the cause is instantly obvious (type mismatch or logic error).\",\n    \"suggestions\": [\n      \"Keep this single assertion block focused on validation.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 4,\n    \"rationale\": \"This test duplicates coverage of other tests. It likely covers properties already tested in `test_code_review_evaluator` or similar modules.\",\n    \"suggestions\": [\n      \"Review existing code review and finding validation tests to ensure this specific conversion logic is not redundant.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 6,\n    \"rationale\": \"The test targets the `model_validate` method specifically. It isolates a small piece of functionality but does not fully isolate the domain concept.\",\n    \"suggestions\": [\n      \"Refactor to assert on specific fields (e.g., `confidence`, `path`) directly rather than relying solely on object construction.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes rapidly. It avoids artificial sleeps and heavy I/O operations.\",\n    \"suggestions\": [\n      \"Ensure `pytest.approx` is used correctly to avoid unnecessary overhead.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"The test demonstrates a clean separation of concerns: it constructs objects and asserts their properties. However, the 'Arrange' phase (constructing data) is mixed with assertions.\",\n    \"suggestions\": [\n      \"Strictly separate Arrange-Act-Assert phases. Construct valid inputs in one block; assert specific values or behaviors in another.\"\n    ]\n  },\n  \"summary\": \"The test demonstrates basic TDD principles but fails on critical properties: it is not repeatable due to external dependencies and likely unnecessary given existing coverage. It should be refactored into a dedicated unit for `EngineeringFinding` validation logic rather than embedded in property evaluation tests.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 802,
+      "prompt_tokens": 860,
+      "total_tokens": 1662,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
