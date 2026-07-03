@@ -137,15 +137,19 @@ def test_validate_path_escapes(tmp_path):
 def test_pydantic_validators():
     from scripts.finding_schema import EngineeringFinding, Evidence
     from scripts.code_review_evaluator import PropertyEvaluation
+    from pydantic import ValidationError
 
-    # 1. Test score clamping and scaling (e.g. 15 -> 1.5, 85 -> 8.5)
-    prop = PropertyEvaluation.model_validate({"score": 15, "rationale": "Over limit"})
-    assert prop.score == pytest.approx(1.5)
+    # 1. Test score limits (out of bounds raises ValidationError)
+    with pytest.raises(ValidationError):
+        PropertyEvaluation.model_validate({"score": 15, "rationale": "Over limit"})
     
+    with pytest.raises(ValidationError):
+        PropertyEvaluation.model_validate({"score": "N/A", "rationale": "Invalid"})
+
     prop_ok = PropertyEvaluation.model_validate({"score": 8.5, "rationale": "Ok"})
     assert prop_ok.score == pytest.approx(8.5)
 
-    # 2. Test confidence parsing (98 -> 0.98, out of bounds clamping)
+    # 2. Test confidence parsing (98 -> 0.98)
     finding = EngineeringFinding.model_validate({
         "title": "Test Finding",
         "category": "Correctness",
@@ -163,7 +167,20 @@ def test_pydantic_validators():
     assert finding.confidence == pytest.approx(0.98)
     assert finding.evidence.path == "main.py"  # path leading slash lstrip
 
-    # 3. Test empty strings fallbacks
+    # 3. Test confidence invalid rejections
+    with pytest.raises(ValidationError):
+        EngineeringFinding.model_validate({
+            "title": "Test Finding",
+            "category": "Correctness",
+            "severity": "WARN",
+            "evidence": {"location_type": "code", "path": "main.py", "details": {}},
+            "engineering_rationale": "Some rationale",
+            "engineering_consequence": "Some consequence",
+            "confidence": "banana",
+            "recommended_action": "Fix it"
+        })
+
+    # 4. Test empty strings are preserved (not fabricated)
     finding_empty = EngineeringFinding.model_validate({
         "title": "Test Finding",
         "category": "Correctness",
@@ -178,7 +195,7 @@ def test_pydantic_validators():
         "confidence": 0.8,
         "recommended_action": ""
     })
-    assert finding_empty.engineering_rationale == "No details provided."
-    assert finding_empty.engineering_consequence == "No details provided."
-    assert finding_empty.recommended_action == "No details provided."
+    assert finding_empty.engineering_rationale == ""
+    assert finding_empty.engineering_consequence == ""
+    assert finding_empty.recommended_action == ""
 
