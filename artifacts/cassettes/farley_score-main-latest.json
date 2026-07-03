@@ -2162,66 +2162,61 @@
       "file_path": "tests/test_code_review.py",
       "test_name": "test_pydantic_validators",
       "class_name": null,
-      "farley_index": 6.5,
+      "farley_index": 7.25,
       "farley_breakdown": {
         "understandable": {
-          "score": 6,
-          "rationale": "The test logic is understandable but lacks a clear business rule. It tests specific property evaluation functions rather than the core domain concept of 'Engineering Finding' validation.",
-          "suggestions": [
-            "Define what an `EngineeringFinding` represents in this context (e.g., a validated finding object).",
-            "Write assertions that verify the *domain logic* first, then validate specific property evaluation functions as side effects or derived properties."
-          ]
+          "score": 8,
+          "rationale": "The test clearly demonstrates the business rule for confidence parsing (98 -> 0.98) and validation of empty strings via `assert` statements.",
+          "suggestions": []
         },
         "maintainable": {
           "score": 7,
-          "rationale": "The test is decoupled from system implementation details. It uses `model_validate` to construct objects without hardcoding logic.",
+          "rationale": "Tests are decoupled from implementation details but rely on specific Pydantic model structures which may become brittle if the schema changes without test updates. The use of nested dicts in evidence is less maintainable than flat lists.",
           "suggestions": [
-            "Ensure the `PropertyEvaluation.model_validate` and `EngineeringFinding.model_validate` methods are stable across refactors."
+            "Use `model_dump()` and `model_validate_json()` for more robust serialization/deserialization handling."
           ]
         },
         "repeatable": {
-          "score": 5,
-          "rationale": "The test relies on external shared state (`scripts.finding_schema`, `scripts.code_review_evaluator`). If these modules change or have side effects (e.g., network calls), the test will fail unpredictably.",
+          "score": 6,
+          "rationale": "Tests are deterministic but rely on external shared state (the specific Pydantic model classes) which could change between runs if the library version updates. No reliance on network or filesystem.",
           "suggestions": [
-            "Remove all imports from external scripts. Implement logic directly in this file using standard Python types and dataclasses."
+            "Ensure all imports and models are stable; avoid dynamic class instantiation in tests."
           ]
         },
         "atomic": {
-          "score": 8,
-          "rationale": "The test verifies exactly one behavior: the conversion of input dictionaries to `PropertyEvaluation`/`EngineeringFinding` objects. If it fails, the cause is instantly obvious (type mismatch or logic error).",
-          "suggestions": [
-            "Keep this single assertion block focused on validation."
-          ]
+          "score": 9,
+          "rationale": "Each test verifies exactly one distinct behavior: validation of score bounds, confidence parsing logic, path normalization, and empty string preservation. Failures pinpoint specific rule violations instantly.",
+          "suggestions": []
         },
         "necessary": {
-          "score": 4,
-          "rationale": "This test duplicates coverage of other tests. It likely covers properties already tested in `test_code_review_evaluator` or similar modules.",
+          "score": 8,
+          "rationale": "Tests cover critical edge cases (bounds, invalid types) that are essential for the property evaluation system's correctness but do not duplicate coverage of other tests like schema validation or general model construction.",
           "suggestions": [
-            "Review existing code review and finding validation tests to ensure this specific conversion logic is not redundant."
+            "Ensure these specific business rules have dedicated test suites; avoid mixing unrelated logic."
           ]
         },
         "granular": {
-          "score": 6,
-          "rationale": "The test targets the `model_validate` method specifically. It isolates a small piece of functionality but does not fully isolate the domain concept.",
+          "score": 7,
+          "rationale": "Tests target precise assertions (e.g., `confidence == pytest.approx(0.98)`), but some could be more granular by checking intermediate steps or error messages for deeper insight.",
           "suggestions": [
-            "Refactor to assert on specific fields (e.g., `confidence`, `path`) directly rather than relying solely on object construction."
+            "Add checks to verify the exact Pydantic validation errors raised rather than just model construction success."
           ]
         },
         "fast": {
-          "score": 9,
-          "rationale": "The test executes rapidly. It avoids artificial sleeps and heavy I/O operations.",
+          "score": 7,
+          "rationale": "Tests execute quickly without artificial delays. However, `pytest.approx` and nested dict handling can introduce slight overhead compared to direct comparisons.",
           "suggestions": [
-            "Ensure `pytest.approx` is used correctly to avoid unnecessary overhead."
+            "Replace `assert finding.confidence == pytest.approx(0.98)` with a simple equality check if precision is not critical."
           ]
         },
         "first_tdd": {
-          "score": 7,
-          "rationale": "The test demonstrates a clean separation of concerns: it constructs objects and asserts their properties. However, the 'Arrange' phase (constructing data) is mixed with assertions.",
+          "score": 6,
+          "rationale": "Tests follow an Arrange-Act-Assert pattern but the 'Arrange' phase (creating model instances) mixes business logic and data preparation, which could be separated for better clarity.",
           "suggestions": [
-            "Strictly separate Arrange-Act-Assert phases. Construct valid inputs in one block; assert specific values or behaviors in another."
+            "Explicitly separate schema construction from validation assertions to improve test readability."
           ]
         },
-        "summary": "The test demonstrates basic TDD principles but fails on critical properties: it is not repeatable due to external dependencies and likely unnecessary given existing coverage. It should be refactored into a dedicated unit for `EngineeringFinding` validation logic rather than embedded in property evaluation tests."
+        "summary": "The tests are highly focused on specific business rules with clear pass/fail criteria. However, they rely heavily on Pydantic model structures that may shift between runs and lack separation of concerns in the Arrange phase. Minor optimizations could further enhance maintainability and speed without altering core functionality."
       }
     },
     {
@@ -3089,27 +3084,27 @@
       "usage": {
         "totals": {
           "calls": 49,
-          "prompt_tokens": 28230,
-          "completion_tokens": 36638,
-          "total_tokens": 64868,
+          "prompt_tokens": 28346,
+          "completion_tokens": 36466,
+          "total_tokens": 64812,
           "cost_usd": 0.0,
           "missing_usage_calls": 0
         },
         "by_stage": {
           "farley_evaluation": {
             "calls": 49,
-            "prompt_tokens": 28230,
-            "completion_tokens": 36638,
-            "total_tokens": 64868,
+            "prompt_tokens": 28346,
+            "completion_tokens": 36466,
+            "total_tokens": 64812,
             "cost_usd": 0.0
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
             "calls": 49,
-            "prompt_tokens": 28230,
-            "completion_tokens": 36638,
-            "total_tokens": 64868,
+            "prompt_tokens": 28346,
+            "completion_tokens": 36466,
+            "total_tokens": 64812,
             "cost_usd": 0.0
           }
         },
@@ -3467,9 +3462,9 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 860,
-            "completion_tokens": 802,
-            "total_tokens": 1662,
+            "prompt_tokens": 976,
+            "completion_tokens": 630,
+            "total_tokens": 1606,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -4499,6 +4494,33 @@
       "completion_tokens": 802,
       "prompt_tokens": 860,
       "total_tokens": 1662,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "33ab73e2c99e7827ace21f403f99b243b3ea20b2fef837574d12ceeea6af4dfd": {
+    "id": "chatcmpl-8dc955f0-65d0-4267-b7bd-7c358f456ec5",
+    "created": 1783049723,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n\"understandable\": {\"score\": 8, \"rationale\": \"The test clearly demonstrates the business rule for confidence parsing (98 -> 0.98) and validation of empty strings via `assert` statements.\", \"suggestions\": []},\n\"maintainable\": {\"score\": 7, \"rationale\": \"Tests are decoupled from implementation details but rely on specific Pydantic model structures which may become brittle if the schema changes without test updates. The use of nested dicts in evidence is less maintainable than flat lists.\", \"suggestions\": [\"Use `model_dump()` and `model_validate_json()` for more robust serialization/deserialization handling.\"]},\n\"repeatable\": {\"score\": 6, \"rationale\": \"Tests are deterministic but rely on external shared state (the specific Pydantic model classes) which could change between runs if the library version updates. No reliance on network or filesystem.\", \"suggestions\": [\"Ensure all imports and models are stable; avoid dynamic class instantiation in tests.\"]},\n\"atomic\": {\"score\": 9, \"rationale\": \"Each test verifies exactly one distinct behavior: validation of score bounds, confidence parsing logic, path normalization, and empty string preservation. Failures pinpoint specific rule violations instantly.\", \"suggestions\": []},\n\"necessary\": {\"score\": 8, \"rationale\": \"Tests cover critical edge cases (bounds, invalid types) that are essential for the property evaluation system's correctness but do not duplicate coverage of other tests like schema validation or general model construction.\", \"suggestions\": [\"Ensure these specific business rules have dedicated test suites; avoid mixing unrelated logic.\"]},\n\"granular\": {\"score\": 7, \"rationale\": \"Tests target precise assertions (e.g., `confidence == pytest.approx(0.98)`), but some could be more granular by checking intermediate steps or error messages for deeper insight.\", \"suggestions\": [\"Add checks to verify the exact Pydantic validation errors raised rather than just model construction success.\"]},\n\"fast\": {\"score\": 7, \"rationale\": \"Tests execute quickly without artificial delays. However, `pytest.approx` and nested dict handling can introduce slight overhead compared to direct comparisons.\", \"suggestions\": [\"Replace `assert finding.confidence == pytest.approx(0.98)` with a simple equality check if precision is not critical.\"]},\n\"first_tdd\": {\"score\": 6, \"rationale\": \"Tests follow an Arrange-Act-Assert pattern but the 'Arrange' phase (creating model instances) mixes business logic and data preparation, which could be separated for better clarity.\", \"suggestions\": [\"Explicitly separate schema construction from validation assertions to improve test readability.\"]},\"summary\":\"The tests are highly focused on specific business rules with clear pass/fail criteria. However, they rely heavily on Pydantic model structures that may shift between runs and lack separation of concerns in the Arrange phase. Minor optimizations could further enhance maintainability and speed without altering core functionality.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 630,
+      "prompt_tokens": 976,
+      "total_tokens": 1606,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
