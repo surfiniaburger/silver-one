@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Set, Tuple
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing_extensions import Literal
 
 # Enable relative imports from parent directory
@@ -36,9 +36,20 @@ METRICS_ROOT.mkdir(parents=True, exist_ok=True)
 
 
 class PropertyEvaluation(BaseModel):
-    score: int = Field(..., description="Score 0-10, 10 is perfect.")
+    score: float = Field(..., description="Score 0-10, 10 is perfect.")
     rationale: str = Field(..., description="1-2 sentences justifying the score.")
     suggestions: List[str] = Field(default_factory=list)
+
+    @field_validator("score", mode="before")
+    @classmethod
+    def validate_score(cls, v):
+        try:
+            val = float(v)
+            if val > 10.0:
+                val = val / 10.0
+            return max(0.0, min(10.0, val))
+        except (ValueError, TypeError):
+            return 8.0
 
 
 class CodeReviewBreakdown(BaseModel):
