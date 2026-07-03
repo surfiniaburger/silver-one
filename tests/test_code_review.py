@@ -284,8 +284,8 @@ def test_strict_type_coercion_regressions():
     # Helper to build raw finding structure
     def make_finding_dict(confidence_val, **kwargs):
         return {
-            "title": "Test Finding",
-            "category": "Correctness",
+            "title": kwargs.get("title", "Test Finding"),
+            "category": kwargs.get("category", "Correctness"),
             "severity": "WARN",
             "evidence": {
                 "location_type": "code",
@@ -296,8 +296,6 @@ def test_strict_type_coercion_regressions():
             "engineering_consequence": kwargs.get("engineering_consequence", "Some consequence"),
             "confidence": confidence_val,
             "recommended_action": kwargs.get("recommended_action", "Fix it"),
-            "title": kwargs.get("title", "Test Finding"),
-            "category": kwargs.get("category", "Correctness"),
         }
 
     # Accept 0.7, "0.7", 95
