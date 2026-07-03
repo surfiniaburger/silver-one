@@ -269,11 +269,11 @@ def test_strict_type_coercion_regressions():
     # --- Score validator tests ---
     # Accept 5, 5.5, "5.5"
     p1 = PropertyEvaluation.model_validate({"score": 5, "rationale": "ok"})
-    assert p1.score == 5.0
+    assert p1.score == pytest.approx(5.0)
     p2 = PropertyEvaluation.model_validate({"score": 5.5, "rationale": "ok"})
-    assert p2.score == 5.5
+    assert p2.score == pytest.approx(5.5)
     p3 = PropertyEvaluation.model_validate({"score": "5.5", "rationale": "ok"})
-    assert p3.score == 5.5
+    assert p3.score == pytest.approx(5.5)
 
     # Reject True, False, None, [], {}, "banana"
     for invalid in [True, False, None, [], {}, "banana"]:
@@ -283,7 +283,7 @@ def test_strict_type_coercion_regressions():
     # --- Confidence validator tests ---
     # Helper to build raw finding structure
     def make_finding_dict(confidence_val, **kwargs):
-        base = {
+        return {
             "title": "Test Finding",
             "category": "Correctness",
             "severity": "WARN",
@@ -292,48 +292,65 @@ def test_strict_type_coercion_regressions():
                 "path": "main.py",
                 "details": {}
             },
-            "engineering_rationale": "Some rationale",
-            "engineering_consequence": "Some consequence",
+            "engineering_rationale": kwargs.get("engineering_rationale", "Some rationale"),
+            "engineering_consequence": kwargs.get("engineering_consequence", "Some consequence"),
             "confidence": confidence_val,
-            "recommended_action": "Fix it"
+            "recommended_action": kwargs.get("recommended_action", "Fix it"),
+            "title": kwargs.get("title", "Test Finding"),
+            "category": kwargs.get("category", "Correctness"),
         }
-        base.update(kwargs)
-        return base
 
     # Accept 0.7, "0.7", 95
-    f1 = EngineeringFinding.model_validate(make_finding_dict(0.7))
-    assert f1.confidence == 0.7
-    f2 = EngineeringFinding.model_validate(make_finding_dict("0.7"))
-    assert f2.confidence == 0.7
-    f3 = EngineeringFinding.model_validate(make_finding_dict(95))
-    assert f3.confidence == 0.95
+    payload_f1 = make_finding_dict(0.7)
+    f1 = EngineeringFinding.model_validate(payload_f1)
+    assert f1.confidence == pytest.approx(0.7)
+    
+    payload_f2 = make_finding_dict("0.7")
+    f2 = EngineeringFinding.model_validate(payload_f2)
+    assert f2.confidence == pytest.approx(0.7)
+    
+    payload_f3 = make_finding_dict(95)
+    f3 = EngineeringFinding.model_validate(payload_f3)
+    assert f3.confidence == pytest.approx(0.95)
 
     # Reject True, False, None, [], {}, "banana"
     for invalid in [True, False, None, [], {}, "banana"]:
+        payload_invalid = make_finding_dict(invalid)
         with pytest.raises(ValidationError):
-            EngineeringFinding.model_validate(make_finding_dict(invalid))
+            EngineeringFinding.model_validate(payload_invalid)
 
     # --- Engineering text fields tests ---
     # Accept "" and "   text   " -> "text"
-    f4 = EngineeringFinding.model_validate(make_finding_dict(0.8, engineering_rationale=""))
+    payload_f4 = make_finding_dict(0.8, engineering_rationale="")
+    f4 = EngineeringFinding.model_validate(payload_f4)
     assert f4.engineering_rationale == ""
-    f5 = EngineeringFinding.model_validate(make_finding_dict(0.8, engineering_rationale="   text   "))
+    
+    payload_f5 = make_finding_dict(0.8, engineering_rationale="   text   ")
+    f5 = EngineeringFinding.model_validate(payload_f5)
     assert f5.engineering_rationale == "text"
 
     # Reject None, {}, [], 123, True for engineering_rationale
     for invalid in [None, {}, [], 123, True]:
+        payload_rat = make_finding_dict(0.8, engineering_rationale=invalid)
         with pytest.raises(ValidationError):
-            EngineeringFinding.model_validate(make_finding_dict(0.8, engineering_rationale=invalid))
+            EngineeringFinding.model_validate(payload_rat)
 
         # Check other string fields: title, category, engineering_consequence, recommended_action
+        payload_title = make_finding_dict(0.8, title=invalid)
         with pytest.raises(ValidationError):
-            EngineeringFinding.model_validate(make_finding_dict(0.8, title=invalid))
+            EngineeringFinding.model_validate(payload_title)
+            
+        payload_cat = make_finding_dict(0.8, category=invalid)
         with pytest.raises(ValidationError):
-            EngineeringFinding.model_validate(make_finding_dict(0.8, category=invalid))
+            EngineeringFinding.model_validate(payload_cat)
+            
+        payload_conseq = make_finding_dict(0.8, engineering_consequence=invalid)
         with pytest.raises(ValidationError):
-            EngineeringFinding.model_validate(make_finding_dict(0.8, engineering_consequence=invalid))
+            EngineeringFinding.model_validate(payload_conseq)
+            
+        payload_recom = make_finding_dict(0.8, recommended_action=invalid)
         with pytest.raises(ValidationError):
-            EngineeringFinding.model_validate(make_finding_dict(0.8, recommended_action=invalid))
+            EngineeringFinding.model_validate(payload_recom)
 
     # Reject non-string, None for Evidence location_type and path
     with pytest.raises(ValidationError):
