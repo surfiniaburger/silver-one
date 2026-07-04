@@ -199,3 +199,249 @@ def test_pydantic_validators():
     assert finding_empty.engineering_consequence == ""
     assert finding_empty.recommended_action == ""
 
+
+def test_unit_review_artifact():
+    from scripts.finding_schema import UnitReviewArtifact, build_validation_context
+    from scripts.code_review_evaluator import CodeReviewBreakdown
+    import json
+
+    raw_json_str = """{
+        "readability": {"score": 8.0, "rationale": "Good readability"},
+        "maintainability": {"score": 7.5, "rationale": "Moderate maintainability"},
+        "correctness": {"score": 9.0, "rationale": "Correct"},
+        "complexity": {"score": 6.0, "rationale": "Ok complexity"},
+        "security": {"score": 10.0, "rationale": "Secure"},
+        "test_coverage": {"score": 8.0, "rationale": "High coverage"},
+        "summary": "Overall good quality",
+        "severity": "OK",
+        "findings": [
+            {
+                "title": "Test issue",
+                "category": "Style",
+                "severity": "INFO",
+                "evidence": {
+                    "location_type": "code",
+                    "path": "/src/foo.py"
+                },
+                "engineering_rationale": " Whitespace ",
+                "engineering_consequence": "None",
+                "confidence": 95,
+                "recommended_action": "Trim"
+            }
+        ]
+    }"""
+    
+    raw_dict = json.loads(raw_json_str)
+    breakdown = CodeReviewBreakdown.model_validate(raw_dict)
+    context = build_validation_context(raw_dict, breakdown)
+
+    artifact = UnitReviewArtifact(
+        file_path="src/foo.py",
+        name="foo",
+        review=breakdown,
+        validation=context,
+        raw_response=raw_json_str
+    )
+
+    # Verify serialization
+    dumped = artifact.model_dump()
+    assert dumped["file_path"] == "src/foo.py"
+    assert dumped["name"] == "foo"
+    assert dumped["raw_response"] == raw_json_str
+    assert dumped["validation"]["repaired"] is True
+    assert dumped["validation"]["normalized"] is True
+
+    # Assert specific field validations
+    fields = {f["field_name"]: f for f in dumped["validation"]["fields"]}
+    assert fields["findings[0].confidence"]["status"] == "REPAIRED"
+    assert fields["findings[0].confidence"]["raw_value"] == 95
+    assert fields["findings[0].confidence"]["repaired_value"] == pytest.approx(0.95)
+    assert fields["findings[0].evidence.path"]["status"] == "NORMALIZED"
+    assert fields["findings[0].evidence.path"]["raw_value"] == "/src/foo.py"
+    assert fields["findings[0].evidence.path"]["repaired_value"] == "src/foo.py"
+
+
+def test_strict_type_coercion_regressions():
+    from scripts.finding_schema import EngineeringFinding, Evidence
+    from scripts.code_review_evaluator import PropertyEvaluation
+    from pydantic import ValidationError
+
+    # --- Score validator tests ---
+    # Accept 5, 5.5, "5.5"
+    p1 = PropertyEvaluation.model_validate({"score": 5, "rationale": "ok"})
+    assert p1.score == pytest.approx(5.0)
+    p2 = PropertyEvaluation.model_validate({"score": 5.5, "rationale": "ok"})
+    assert p2.score == pytest.approx(5.5)
+    p3 = PropertyEvaluation.model_validate({"score": "5.5", "rationale": "ok"})
+    assert p3.score == pytest.approx(5.5)
+
+    # Reject True, False, None, [], {}, "banana"
+    for invalid in [True, False, None, [], {}, "banana"]:
+        with pytest.raises(ValidationError):
+            PropertyEvaluation.model_validate({"score": invalid, "rationale": "ok"})
+
+    # --- Confidence validator tests ---
+    # Helper to build raw finding structure
+    def make_finding_dict(confidence_val, **kwargs):
+        return {
+            "title": kwargs.get("title", "Test Finding"),
+            "category": kwargs.get("category", "Correctness"),
+            "severity": "WARN",
+            "evidence": {
+                "location_type": "code",
+                "path": "main.py",
+                "details": {}
+            },
+            "engineering_rationale": kwargs.get("engineering_rationale", "Some rationale"),
+            "engineering_consequence": kwargs.get("engineering_consequence", "Some consequence"),
+            "confidence": confidence_val,
+            "recommended_action": kwargs.get("recommended_action", "Fix it"),
+        }
+
+    # Accept 0.7, "0.7", 95
+    payload_f1 = make_finding_dict(0.7)
+    f1 = EngineeringFinding.model_validate(payload_f1)
+    assert f1.confidence == pytest.approx(0.7)
+    
+    payload_f2 = make_finding_dict("0.7")
+    f2 = EngineeringFinding.model_validate(payload_f2)
+    assert f2.confidence == pytest.approx(0.7)
+    
+    payload_f3 = make_finding_dict(95)
+    f3 = EngineeringFinding.model_validate(payload_f3)
+    assert f3.confidence == pytest.approx(0.95)
+
+    # Reject True, False, None, [], {}, "banana"
+    for invalid in [True, False, None, [], {}, "banana"]:
+        payload_invalid = make_finding_dict(invalid)
+        with pytest.raises(ValidationError):
+            EngineeringFinding.model_validate(payload_invalid)
+
+    # --- Engineering text fields tests ---
+    # Accept "" and "   text   " -> "text"
+    payload_f4 = make_finding_dict(0.8, engineering_rationale="")
+    f4 = EngineeringFinding.model_validate(payload_f4)
+    assert f4.engineering_rationale == ""
+    
+    payload_f5 = make_finding_dict(0.8, engineering_rationale="   text   ")
+    f5 = EngineeringFinding.model_validate(payload_f5)
+    assert f5.engineering_rationale == "text"
+
+    # Reject None, {}, [], 123, True for engineering_rationale
+    for invalid in [None, {}, [], 123, True]:
+        payload_rat = make_finding_dict(0.8, engineering_rationale=invalid)
+        with pytest.raises(ValidationError):
+            EngineeringFinding.model_validate(payload_rat)
+
+        # Check other string fields: title, category, engineering_consequence, recommended_action
+        payload_title = make_finding_dict(0.8, title=invalid)
+        with pytest.raises(ValidationError):
+            EngineeringFinding.model_validate(payload_title)
+            
+        payload_cat = make_finding_dict(0.8, category=invalid)
+        with pytest.raises(ValidationError):
+            EngineeringFinding.model_validate(payload_cat)
+            
+        payload_conseq = make_finding_dict(0.8, engineering_consequence=invalid)
+        with pytest.raises(ValidationError):
+            EngineeringFinding.model_validate(payload_conseq)
+            
+        payload_recom = make_finding_dict(0.8, recommended_action=invalid)
+        with pytest.raises(ValidationError):
+            EngineeringFinding.model_validate(payload_recom)
+
+    # Reject non-string, None for Evidence location_type and path
+    with pytest.raises(ValidationError):
+        Evidence.model_validate({"location_type": None, "path": "main.py"})
+    with pytest.raises(ValidationError):
+        Evidence.model_validate({"location_type": 123, "path": "main.py"})
+    with pytest.raises(ValidationError):
+        Evidence.model_validate({"location_type": "code", "path": 123})
+    
+    # Path is Optional, so path=None is fine, but non-string like True, [], {} must fail
+    ev_none_path = Evidence.model_validate({"location_type": "code", "path": None})
+    assert ev_none_path.path is None
+    for invalid_path in [True, [], {}]:
+        with pytest.raises(ValidationError):
+            Evidence.model_validate({"location_type": "code", "path": invalid_path})
+
+
+def test_provenance_consistency():
+    from scripts.finding_schema import UnitReviewArtifact, build_validation_context
+    from scripts.code_review_evaluator import CodeReviewBreakdown
+    import json
+
+    raw_json_str = """{
+        "readability": {"score": 8.0, "rationale": "  Whitespace trimmed readability  "},
+        "maintainability": {"score": 7.5, "rationale": "Moderate maintainability"},
+        "correctness": {"score": 9.0, "rationale": "Correct"},
+        "complexity": {"score": 6.0, "rationale": "Ok complexity"},
+        "security": {"score": 10.0, "rationale": "Secure"},
+        "test_coverage": {"score": 8.0, "rationale": "High coverage"},
+        "summary": "Overall good quality",
+        "severity": "OK",
+        "findings": [
+            {
+                "title": "Test issue",
+                "category": "Style",
+                "severity": "INFO",
+                "evidence": {
+                    "location_type": "code",
+                    "path": "/src/foo.py"
+                },
+                "engineering_rationale": "  Some rationale with whitespace  ",
+                "engineering_consequence": "None",
+                "confidence": 95,
+                "recommended_action": "Trim"
+            }
+        ]
+    }"""
+    
+    raw_dict = json.loads(raw_json_str)
+    breakdown = CodeReviewBreakdown.model_validate(raw_dict)
+    context = build_validation_context(raw_dict, breakdown)
+
+    artifact = UnitReviewArtifact(
+        file_path="src/foo.py",
+        name="foo",
+        review=breakdown,
+        validation=context,
+        raw_response=raw_json_str
+    )
+
+    dumped = artifact.model_dump()
+    assert dumped["raw_response"] == raw_json_str
+    
+    # Check that confidence was repaired to 0.95
+    assert dumped["review"]["findings"][0]["confidence"] == pytest.approx(0.95)
+    
+    # Check that evidence path was normalized
+    assert dumped["review"]["findings"][0]["evidence"]["path"] == "src/foo.py"
+    
+    # Check that readability rationale was normalized
+    assert dumped["review"]["readability"]["rationale"] == "Whitespace trimmed readability"
+
+    # Verify that the validation fields map contains only the modified/repaired/normalized fields (Option A)
+    fields = {f["field_name"]: f for f in dumped["validation"]["fields"]}
+    
+    # Verify confidence was repaired
+    assert fields["findings[0].confidence"]["status"] == "REPAIRED"
+    assert fields["findings[0].confidence"]["raw_value"] == 95
+    assert fields["findings[0].confidence"]["repaired_value"] == pytest.approx(0.95)
+    
+    # Verify path was normalized
+    assert fields["findings[0].evidence.path"]["status"] == "NORMALIZED"
+    assert fields["findings[0].evidence.path"]["raw_value"] == "/src/foo.py"
+    assert fields["findings[0].evidence.path"]["repaired_value"] == "src/foo.py"
+    
+    # Verify readability rationale was normalized
+    assert fields["readability.rationale"]["status"] == "NORMALIZED"
+    assert fields["readability.rationale"]["raw_value"] == "  Whitespace trimmed readability  "
+    assert fields["readability.rationale"]["repaired_value"] == "Whitespace trimmed readability"
+
+    # Option A constraint check: ensure that valid fields (like correctness.score, readability.score, etc.) are NOT present
+    assert "correctness.score" not in fields
+    assert "findings[0].severity" not in fields
+
+
+

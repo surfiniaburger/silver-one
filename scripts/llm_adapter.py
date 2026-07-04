@@ -13,6 +13,10 @@ except Exception:
 
 import requests
 
+class OfflineReplayError(RuntimeError):
+    """Raised when there is no matching recorded response in the replay cassette."""
+    pass
+
 LITELLM_PREFIX = "litellm/"
 
 PRESETS = {
@@ -383,6 +387,51 @@ async def call_structured(
 
     Returns an instance of `schema_model` (pydantic or fallback) or raises on error.
     """
+    validated, _ = await call_structured_with_raw(
+        replay_manager, model, messages, schema_name, schema_model, stage
+    )
+    return validated
+
+
+def _replay_lookup_raw(
+    replay_manager: Any,
+    model: str,
+    messages: List[Dict],
+    params: Dict[str, Any],
+    schema_model: Type,
+    schema_name: str
+) -> Any:
+    cassette = getattr(replay_manager, "cassette", None)
+    if cassette is not None and hasattr(cassette, "get_response"):
+        recorded = cassette.get_response(model, messages, params or {})
+        if recorded:
+            raw_str = json.dumps(recorded)
+            validated = _validate_response(raw_str, schema_model, schema_name)
+            return validated, raw_str
+    raise OfflineReplayError("Offline Replay Error: No matching recorded response found.")
+
+
+async def _call_litellm_or_nebius(
+    model: str,
+    messages: List[Dict],
+    provider: str,
+    params: Dict[str, Any],
+    schema_model: Type
+) -> str:
+    if provider == "nebius":
+        return await _call_nebius_async(model, messages, params)
+    return await _call_litellm_async(model, messages, params, schema_model=schema_model)
+
+
+async def call_structured_with_raw(
+    replay_manager: Any,
+    model: str,
+    messages: List[Dict],
+    schema_name: str,
+    schema_model: Type,
+    stage: str
+) -> Any:
+    """Selects provider, calls provider, validates response, and returns both parsed model and raw output string."""
     preset = os.environ.get("FARLEY_MODEL_PRESET", "instruct")
 
     params = dict(PRESETS.get(preset, PRESETS["instruct"]))  # copy so mutations are local
@@ -399,24 +448,19 @@ async def call_structured(
                 schema_model,
                 stage,
             )
-            return _validate_response(str(raw), schema_model, schema_name)
+            validated = _validate_response(str(raw), schema_model, schema_name)
+            return validated, str(raw)
         except RuntimeError as exc:
             if "Offline Replay Error" not in str(exc):
                 raise
-            replay_hit = _replay_lookup(replay_manager, model, messages, schema_model, params)
-            if replay_hit is not None:
-                return replay_hit
-            raise
+            return _replay_lookup_raw(replay_manager, model, messages, params, schema_model, schema_name)
 
-    replay_hit = _replay_lookup(replay_manager, model, messages, schema_model, params)
-    if replay_hit is not None:
-        return replay_hit
+    try:
+        return _replay_lookup_raw(replay_manager, model, messages, params, schema_model, schema_name)
+    except OfflineReplayError:
+        pass
 
-    if provider == "nebius":
-        raw = await _call_nebius_async(model, messages, params)
-    else:
-        raw = await _call_litellm_async(model, messages, params, schema_model=schema_model)
-
+    raw = await _call_litellm_or_nebius(model, messages, provider, params, schema_model)
     validated = _validate_response(str(raw), schema_model, schema_name)
     _save_response(replay_manager, stage, model, messages, validated, params)
-    return validated
+    return validated, str(raw)
