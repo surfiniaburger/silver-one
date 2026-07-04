@@ -2422,6 +2422,62 @@
       }
     },
     {
+      "id": "tests/test_code_review.py::test_telemetry_aggregation",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_telemetry_aggregation",
+      "class_name": null,
+      "farley_index": 7.875,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the input data structure (dummy_results) and asserts specific aggregation metrics derived from it. The intent is unambiguous: verify that `build_validation_summary` correctly counts repaired/normalized units.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "The test relies entirely on the internal logic of `build_validation_summary`. It does not depend on external state (DB/filesystem/network) or system implementation details. Refactoring the underlying evaluator will only change this test's assertions if its contract changes.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic and self-contained within a single function call. However, it relies on the internal state of `build_validation_summary` which may be complex or non-deterministic in production scenarios (e.g., caching layers). It lacks isolation from external timing or shared mutable state.",
+          "suggestions": [
+            "Ensure `build_validation_summary` is deterministic by removing any reliance on timestamps, random seeds, or volatile caches within the aggregation logic itself."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: that specific fields in a single `dummy_results` object are aggregated correctly. If this assertion fails, it immediately reveals which field or count is incorrect without needing to inspect the full output.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test covers specific aggregation counts for a single input object. It does not cover edge cases (empty lists), multiple objects with different structures, or error conditions in `build_validation_summary`. These are likely covered by other tests.",
+          "suggestions": [
+            "Add assertions to handle empty inputs and ensure the function handles malformed data gracefully without crashing."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The test isolates specific metrics: `repaired_units`, `normalized_units`, confidence counts, score counts. It is precise about what it checks rather than just 'is the summary correct'.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes in negligible time relative to typical CI durations (likely under a second). It avoids artificial sleeps or heavy I/O operations.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 7,
+          "rationale": "While the code follows Arrange-Act-Assert patterns for this specific test case, it does not explicitly demonstrate design properties of a well-designed TDD. The 'Arrange' phase (creating dummy_results) is somewhat artificial and could be more aligned with real-world data generation logic.",
+          "suggestions": [
+            "Refactor the `dummy_results` creation to reflect realistic input scenarios or use fixtures that better represent production-like variability, ensuring the test validates design patterns rather than just internal state."
+          ]
+        },
+        "summary": "The test is highly maintainable and atomic but lacks necessary edge-case coverage. It demonstrates a functional TDD pattern for aggregation logic but could be strengthened by verifying robustness against malformed inputs or more realistic data generation scenarios to better reflect design properties."
+      }
+    },
+    {
       "id": "tests/test_unified_compare.py::test_combine_token_spend_empty",
       "file_path": "tests/test_unified_compare.py",
       "test_name": "test_combine_token_spend_empty",
@@ -3281,32 +3337,32 @@
     "farley_usage_summary": {
       "run_id": "main-baseline",
       "model": "ollama/qwen3.5:2b",
-      "reviewed_test_cases": 45,
+      "reviewed_test_cases": 46,
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 52,
-          "prompt_tokens": 32107,
-          "completion_tokens": 39092,
-          "total_tokens": 71199,
+          "calls": 53,
+          "prompt_tokens": 32895,
+          "completion_tokens": 39860,
+          "total_tokens": 72755,
           "cost_usd": 0.0,
           "missing_usage_calls": 0
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 52,
-            "prompt_tokens": 32107,
-            "completion_tokens": 39092,
-            "total_tokens": 71199,
+            "calls": 53,
+            "prompt_tokens": 32895,
+            "completion_tokens": 39860,
+            "total_tokens": 72755,
             "cost_usd": 0.0
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 52,
-            "prompt_tokens": 32107,
-            "completion_tokens": 39092,
-            "total_tokens": 71199,
+            "calls": 53,
+            "prompt_tokens": 32895,
+            "completion_tokens": 39860,
+            "total_tokens": 72755,
             "cost_usd": 0.0
           }
         },
@@ -3674,7 +3730,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 1003,
             "completion_tokens": 942,
@@ -3686,7 +3742,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 1548,
             "completion_tokens": 985,
@@ -3698,11 +3754,23 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 1210,
             "completion_tokens": 699,
             "total_tokens": 1909,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 788,
+            "completion_tokens": 768,
+            "total_tokens": 1556,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -4840,6 +4908,33 @@
       "completion_tokens": 699,
       "prompt_tokens": 1210,
       "total_tokens": 1909,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "9631b9dda14778e65f8212f464f24fab22527352dacbe1ca71c942cc30e2525d": {
+    "id": "chatcmpl-27a97436-f503-4d85-a300-f9d1c10c645c",
+    "created": 1783161113,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test clearly defines the input data structure (dummy_results) and asserts specific aggregation metrics derived from it. The intent is unambiguous: verify that `build_validation_summary` correctly counts repaired/normalized units.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"The test relies entirely on the internal logic of `build_validation_summary`. It does not depend on external state (DB/filesystem/network) or system implementation details. Refactoring the underlying evaluator will only change this test's assertions if its contract changes.\",\n    \"suggestions\": []\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic and self-contained within a single function call. However, it relies on the internal state of `build_validation_summary` which may be complex or non-deterministic in production scenarios (e.g., caching layers). It lacks isolation from external timing or shared mutable state.\",\n    \"suggestions\": [\n      \"Ensure `build_validation_summary` is deterministic by removing any reliance on timestamps, random seeds, or volatile caches within the aggregation logic itself.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: that specific fields in a single `dummy_results` object are aggregated correctly. If this assertion fails, it immediately reveals which field or count is incorrect without needing to inspect the full output.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test covers specific aggregation counts for a single input object. It does not cover edge cases (empty lists), multiple objects with different structures, or error conditions in `build_validation_summary`. These are likely covered by other tests.\",\n    \"suggestions\": [\n      \"Add assertions to handle empty inputs and ensure the function handles malformed data gracefully without crashing.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The test isolates specific metrics: `repaired_units`, `normalized_units`, confidence counts, score counts. It is precise about what it checks rather than just 'is the summary correct'.\",\n    \"suggestions\": []\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes in negligible time relative to typical CI durations (likely under a second). It avoids artificial sleeps or heavy I/O operations.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"While the code follows Arrange-Act-Assert patterns for this specific test case, it does not explicitly demonstrate design properties of a well-designed TDD. The 'Arrange' phase (creating dummy_results) is somewhat artificial and could be more aligned with real-world data generation logic.\",\n    \"suggestions\": [\n      \"Refactor the `dummy_results` creation to reflect realistic input scenarios or use fixtures that better represent production-like variability, ensuring the test validates design patterns rather than just internal state.\"\n    ]\n  },\n  \"summary\": \"The test is highly maintainable and atomic but lacks necessary edge-case coverage. It demonstrates a functional TDD pattern for aggregation logic but could be strengthened by verifying robustness against malformed inputs or more realistic data generation scenarios to better reflect design properties.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 768,
+      "prompt_tokens": 788,
+      "total_tokens": 1556,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
