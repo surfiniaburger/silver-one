@@ -95,13 +95,33 @@ def get_reviews(cassette_data: Dict[str, Any]) -> List[Dict[str, Any]]:
     return [unit for unit in reviews if isinstance(unit, dict)]
 
 
+def _has_structured_block_finding(review: Dict[str, Any]) -> bool:
+    findings = review.get("findings")
+    if not isinstance(findings, list):
+        return False
+    return any(
+        isinstance(finding, dict) and finding.get("severity") == "BLOCK"
+        for finding in findings
+    )
+
+
+def effective_review_severity(review: Dict[str, Any]) -> str:
+    """Return the gateable severity, requiring evidence for BLOCK labels."""
+    severity = review.get("severity", "OK")
+    if severity == "BLOCK" and not _has_structured_block_finding(review):
+        return "WARN"
+    if severity in {"OK", "WARN", "BLOCK"}:
+        return severity
+    return "OK"
+
+
 def group_units_by_severity(reviews: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
     block_units = []
     warn_units = []
     ok_units = []
     for unit in reviews:
         review = unit.get("review") or {}
-        severity = review.get("severity", "OK")
+        severity = effective_review_severity(review)
         if severity == "BLOCK":
             block_units.append(unit)
         elif severity == "WARN":
@@ -169,11 +189,12 @@ def write_overview(f, reviews: List[Dict[str, Any]]) -> None:
     f.write("|---|---|---:|---|---|\n")
     for unit in reviews:
         review = unit.get("review") or {}
+        severity = effective_review_severity(review)
         f.write(
             f"| {unit.get('file_path')} "
             f"| {format_unit_name(unit)} "
             f"| {calculate_cqi(review):.2f}/10 "
-            f"| **{review.get('severity', 'OK')}** "
+            f"| **{severity}** "
             f"| {review.get('summary', '')} |\n"
         )
     f.write("\n")
@@ -203,7 +224,7 @@ def write_detailed_feedback(f, reviews: List[Dict[str, Any]]) -> None:
     f.write("## Detailed Feedback\n\n")
     for unit in reviews:
         review = unit.get("review") or {}
-        severity = review.get("severity", "OK")
+        severity = effective_review_severity(review)
         if severity == "OK":
             continue
 

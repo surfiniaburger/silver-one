@@ -3,7 +3,7 @@ import json
 import asyncio
 import time
 import math
-from typing import Any, Dict, List, Type
+from typing import Any, Dict, List, Type, Tuple
 
 try:
     # Optional dependency: litellm async client
@@ -16,6 +16,17 @@ import requests
 class OfflineReplayError(RuntimeError):
     """Raised when there is no matching recorded response in the replay cassette."""
     pass
+
+
+class StructuredOutputError(RuntimeError):
+    """Raised when an LLM response cannot be parsed or validated after retries."""
+
+    def __init__(self, schema_name: str, message: str, raw_response: str, diagnostics: Dict[str, Any]):
+        super().__init__(message)
+        self.schema_name = schema_name
+        self.raw_response = raw_response
+        self.diagnostics = diagnostics
+
 
 LITELLM_PREFIX = "litellm/"
 
@@ -317,24 +328,156 @@ def _extract_json_text(text: str) -> str:
     return text
 
 
-def _validate_response(text: str, schema_model: Type, schema_name: str) -> Any:
+def _diagnostics_template() -> Dict[str, Any]:
+    return {
+        "invalid_json_detected": False,
+        "repair_attempts": 0,
+        "repair_succeeded": False,
+        "validation_retries": 0,
+        "final_failure": False,
+        "failure_reason": None,
+    }
+
+
+def _merge_structured_diagnostics(cumulative: Dict[str, Any], current: Dict[str, Any]) -> Dict[str, Any]:
+    merged = dict(cumulative)
+    merged["invalid_json_detected"] = bool(
+        cumulative.get("invalid_json_detected") or current.get("invalid_json_detected")
+    )
+    merged["repair_attempts"] = int(cumulative.get("repair_attempts", 0) or 0) + int(
+        current.get("repair_attempts", 0) or 0
+    )
+    merged["repair_succeeded"] = bool(
+        cumulative.get("repair_succeeded") or current.get("repair_succeeded")
+    )
+    merged["validation_retries"] = int(current.get("validation_retries", 0) or 0)
+    merged["final_failure"] = bool(current.get("final_failure", False))
+    merged["failure_reason"] = current.get("failure_reason") or cumulative.get("failure_reason")
+    return merged
+
+
+def _validate_payload(payload: Any, schema_model: Type) -> Any:
+    if hasattr(schema_model, "model_validate"):
+        return schema_model.model_validate(payload)
+    if hasattr(schema_model, "model_validate_json"):
+        return schema_model.model_validate_json(json.dumps(payload))
+    return schema_model(**payload)
+
+
+def _parse_json_payload(json_text: str) -> Any:
+    return json.loads(json_text)
+
+
+def _has_unclosed_string(json_text: str) -> bool:
+    escaped = False
+    in_string = False
+    for char in json_text:
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char == '"':
+            in_string = not in_string
+    return in_string
+
+
+def _next_string_scan_state(char: str, escaped: bool, in_string: bool) -> Tuple[bool, bool, bool]:
+    if escaped:
+        return False, in_string, True
+    if char == "\\":
+        return True, in_string, True
+    if char == '"':
+        return False, not in_string, True
+    return False, in_string, in_string
+
+
+def _close_open_containers(json_text: str) -> str:
+    stack: List[str] = []
+    escaped = False
+    in_string = False
+    for char in json_text:
+        escaped, in_string, handled = _next_string_scan_state(char, escaped, in_string)
+        if handled:
+            continue
+        if char in "{[":
+            stack.append("}" if char == "{" else "]")
+        elif char in "}]" and stack and char == stack[-1]:
+            stack.pop()
+    return json_text + "".join(reversed(stack))
+
+
+def _trailing_backslash_count(text: str) -> int:
+    return len(text) - len(text.rstrip("\\"))
+
+
+def _strip_trailing_commas_outside_strings(json_text: str) -> str:
+    chars: List[str] = []
+    escaped = False
+    in_string = False
+    length = len(json_text)
+
+    for idx, char in enumerate(json_text):
+        escaped, in_string, handled = _next_string_scan_state(char, escaped, in_string)
+        if not in_string and not handled and char == ",":
+            next_idx = idx + 1
+            while next_idx < length and json_text[next_idx].isspace():
+                next_idx += 1
+            if next_idx < length and json_text[next_idx] in "}]":
+                continue
+        chars.append(char)
+
+    return "".join(chars)
+
+
+def _repair_json_text(json_text: str) -> str:
+    repaired = json_text.strip()
+    repaired = _strip_trailing_commas_outside_strings(repaired)
+    if _has_unclosed_string(repaired):
+        repaired = repaired.rstrip()
+        if _trailing_backslash_count(repaired) % 2 == 1:
+            repaired += '\\"'
+        else:
+            repaired += '"'
+    return _close_open_containers(repaired)
+
+
+def _validate_response_with_diagnostics(text: str, schema_model: Type, schema_name: str) -> Tuple[Any, Dict[str, Any]]:
+    diagnostics = _diagnostics_template()
     json_text = _extract_json_text(text)
     try:
-        if hasattr(schema_model, "model_validate_json"):
-            return schema_model.model_validate_json(json_text)
-        payload = json.loads(json_text)
-        return schema_model(**payload)
-    except Exception:
+        payload = _parse_json_payload(json_text)
+    except json.JSONDecodeError as json_exc:
+        diagnostics["invalid_json_detected"] = True
+        diagnostics["repair_attempts"] += 1
+        repaired_json_text = _repair_json_text(json_text)
         try:
-            start = text.find("{")
-            if start != -1:
-                payload = json.loads(text[start:])
-                if hasattr(schema_model, "model_validate"):
-                    return schema_model.model_validate(payload)
-                return schema_model(**payload)
-            raise ValueError("No '{' found in response")
-        except Exception as e:
-            raise RuntimeError(f"Failed to validate LLM response as {schema_name}: {e}\nResponse:\n{text}")
+            payload = _parse_json_payload(repaired_json_text)
+            diagnostics["repair_succeeded"] = True
+        except Exception as repair_exc:
+            diagnostics["final_failure"] = True
+            diagnostics["failure_reason"] = f"invalid_json: {repair_exc}"
+            message = f"Failed to parse LLM response as JSON before {schema_name} validation: {json_exc}"
+            raise StructuredOutputError(schema_name, message, text, diagnostics) from repair_exc
+    except Exception as exc:
+        diagnostics["final_failure"] = True
+        diagnostics["failure_reason"] = f"invalid_json: {exc}"
+        message = f"Failed to parse LLM response as JSON before {schema_name} validation: {exc}"
+        raise StructuredOutputError(schema_name, message, text, diagnostics) from exc
+
+    try:
+        return _validate_payload(payload, schema_model), diagnostics
+    except Exception as exc:
+        diagnostics["final_failure"] = True
+        diagnostics["failure_reason"] = f"schema_validation: {exc}"
+        message = f"Failed to validate LLM response as {schema_name}: {exc}"
+        raise StructuredOutputError(schema_name, message, text, diagnostics) from exc
+
+
+def _validate_response(text: str, schema_model: Type, schema_name: str) -> Any:
+    validated, _ = _validate_response_with_diagnostics(text, schema_model, schema_name)
+    return validated
 
 
 def _save_response(replay_manager: Any, stage: str, model: str, messages: List[Dict], validated: Any, params: Dict[str, Any] = None):
@@ -432,12 +575,67 @@ async def call_structured_with_raw(
     stage: str
 ) -> Any:
     """Selects provider, calls provider, validates response, and returns both parsed model and raw output string."""
-    preset = os.environ.get("FARLEY_MODEL_PRESET", "instruct")
+    validated, raw, _ = await call_structured_with_raw_and_diagnostics(
+        replay_manager, model, messages, schema_name, schema_model, stage
+    )
+    return validated, raw
 
-    params = dict(PRESETS.get(preset, PRESETS["instruct"]))  # copy so mutations are local
-    provider = _select_provider(model)
 
-    if replay_manager is not None and hasattr(replay_manager, "acompletion"):
+def _structured_retry_count() -> int:
+    raw_value = os.environ.get("LLM_STRUCTURED_MAX_RETRIES", "2")
+    try:
+        return max(0, int(raw_value))
+    except ValueError:
+        return 2
+
+
+def _validate_raw_attempt(
+    raw: Any,
+    schema_model: Type,
+    schema_name: str,
+    attempt: int,
+    cumulative_diagnostics: Dict[str, Any],
+) -> Tuple[Any, str, Dict[str, Any]]:
+    raw_str = str(raw)
+    validated, diagnostics = _validate_response_with_diagnostics(raw_str, schema_model, schema_name)
+    diagnostics["validation_retries"] = attempt
+    diagnostics = _merge_structured_diagnostics(cumulative_diagnostics, diagnostics)
+    return validated, raw_str, diagnostics
+
+
+def _record_structured_attempt_failure(
+    exc: StructuredOutputError,
+    attempt: int,
+    cumulative_diagnostics: Dict[str, Any],
+) -> Dict[str, Any]:
+    exc.diagnostics["validation_retries"] = attempt
+    return _merge_structured_diagnostics(cumulative_diagnostics, exc.diagnostics)
+
+
+def _replay_lookup_with_diagnostics(
+    replay_manager: Any,
+    model: str,
+    messages: List[Dict],
+    params: Dict[str, Any],
+    schema_model: Type,
+    schema_name: str,
+) -> Tuple[Any, str, Dict[str, Any]]:
+    validated, raw_str = _replay_lookup_raw(replay_manager, model, messages, params, schema_model, schema_name)
+    return validated, raw_str, _diagnostics_template()
+
+
+async def _call_replay_manager_with_retries(
+    replay_manager: Any,
+    model: str,
+    messages: List[Dict],
+    params: Dict[str, Any],
+    schema_name: str,
+    schema_model: Type,
+    stage: str,
+    max_retries: int,
+) -> Tuple[Any, str, Dict[str, Any]]:
+    cumulative_diagnostics = _diagnostics_template()
+    for attempt in range(max_retries + 1):
         try:
             raw = await _call_replay_manager_async(
                 replay_manager,
@@ -448,19 +646,117 @@ async def call_structured_with_raw(
                 schema_model,
                 stage,
             )
-            validated = _validate_response(str(raw), schema_model, schema_name)
-            return validated, str(raw)
+            return _validate_raw_attempt(raw, schema_model, schema_name, attempt, cumulative_diagnostics)
+        except StructuredOutputError as exc:
+            cumulative_diagnostics = _record_structured_attempt_failure(
+                exc,
+                attempt,
+                cumulative_diagnostics,
+            )
+            if attempt < max_retries:
+                continue
+            exc.diagnostics = cumulative_diagnostics
+            raise exc
         except RuntimeError as exc:
             if "Offline Replay Error" not in str(exc):
                 raise
-            return _replay_lookup_raw(replay_manager, model, messages, params, schema_model, schema_name)
+            return _replay_lookup_with_diagnostics(
+                replay_manager,
+                model,
+                messages,
+                params,
+                schema_model,
+                schema_name,
+            )
+
+    raise AssertionError("structured replay retry loop exited unexpectedly")
+
+
+async def _call_provider_with_retries(
+    replay_manager: Any,
+    model: str,
+    messages: List[Dict],
+    provider: str,
+    params: Dict[str, Any],
+    schema_name: str,
+    schema_model: Type,
+    stage: str,
+    max_retries: int,
+) -> Tuple[Any, str, Dict[str, Any]]:
+    cumulative_diagnostics = _diagnostics_template()
+    for attempt in range(max_retries + 1):
+        raw = await _call_litellm_or_nebius(model, messages, provider, params, schema_model)
+        try:
+            validated, raw_str, diagnostics = _validate_raw_attempt(
+                raw,
+                schema_model,
+                schema_name,
+                attempt,
+                cumulative_diagnostics,
+            )
+            _save_response(replay_manager, stage, model, messages, validated, params)
+            return validated, raw_str, diagnostics
+        except StructuredOutputError as exc:
+            cumulative_diagnostics = _record_structured_attempt_failure(
+                exc,
+                attempt,
+                cumulative_diagnostics,
+            )
+            if attempt < max_retries:
+                continue
+            exc.diagnostics = cumulative_diagnostics
+            raise exc
+
+    raise AssertionError("structured provider retry loop exited unexpectedly")
+
+
+async def call_structured_with_raw_and_diagnostics(
+    replay_manager: Any,
+    model: str,
+    messages: List[Dict],
+    schema_name: str,
+    schema_model: Type,
+    stage: str
+) -> Tuple[Any, str, Dict[str, Any]]:
+    """Selects provider, validates structured output, and returns validation diagnostics."""
+    preset = os.environ.get("FARLEY_MODEL_PRESET", "instruct")
+
+    params = dict(PRESETS.get(preset, PRESETS["instruct"]))  # copy so mutations are local
+    provider = _select_provider(model)
+    max_retries = _structured_retry_count()
+
+    if replay_manager is not None and hasattr(replay_manager, "acompletion"):
+        return await _call_replay_manager_with_retries(
+            replay_manager,
+            model,
+            messages,
+            params,
+            schema_name,
+            schema_model,
+            stage,
+            max_retries,
+        )
 
     try:
-        return _replay_lookup_raw(replay_manager, model, messages, params, schema_model, schema_name)
+        return _replay_lookup_with_diagnostics(
+            replay_manager,
+            model,
+            messages,
+            params,
+            schema_model,
+            schema_name,
+        )
     except OfflineReplayError:
         pass
 
-    raw = await _call_litellm_or_nebius(model, messages, provider, params, schema_model)
-    validated = _validate_response(str(raw), schema_model, schema_name)
-    _save_response(replay_manager, stage, model, messages, validated, params)
-    return validated, str(raw)
+    return await _call_provider_with_retries(
+        replay_manager,
+        model,
+        messages,
+        provider,
+        params,
+        schema_name,
+        schema_model,
+        stage,
+        max_retries,
+    )

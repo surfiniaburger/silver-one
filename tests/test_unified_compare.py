@@ -217,4 +217,41 @@ def test_write_unified_report_with_findings(tmp_path):
     assert "Wrap statement in a try-except block." in content
 
 
+def test_write_unified_report_displays_effective_severity(tmp_path):
+    from scripts.unified_compare import write_unified_report
+    out_file = tmp_path / "report.md"
+
+    cr_units = [
+        {
+            "file_path": "tests/test_code_review.py",
+            "name": "test_unsubstantiated_block",
+            "review": {
+                "severity": "BLOCK",
+                "summary": "OK",
+                "findings": [],
+            },
+        }
+    ]
+
+    write_unified_report(
+        out_path=out_file,
+        unified_verdict="PASS",
+        reasons=[],
+        spend_str="**Token spend**: 100 total tokens\n\n",
+        cr_data={"units": cr_units, "verdict": "PASS"},
+        farley_data={
+            "bsum": {"avg_index": 8.0},
+            "psum": {"avg_index": 8.0},
+            "delta": 0.0,
+            "verdict": "PASS",
+            "regressions": [],
+            "baseline_exists": True,
+        },
+        compat_data={"ok": True, "score": 10.0, "regressions": []},
+    )
+
+    content = out_file.read_text(encoding="utf-8")
+    assert "| tests/test_code_review.py | test_unsubstantiated_block | 10.00/10 | **WARN** | OK |" in content
+    assert "**BLOCK**" not in content
+
 

@@ -121,6 +121,32 @@ def test_calculate_cqi():
     assert cqi == pytest.approx(7.72222, rel=1e-4)
 
 
+def test_code_review_block_requires_structured_block_finding():
+    unsupported_block = {
+        "review": {
+            "severity": "BLOCK",
+            "summary": "OK",
+            "findings": [],
+        }
+    }
+    supported_block = {
+        "review": {
+            "severity": "BLOCK",
+            "summary": "Critical issue",
+            "findings": [{"severity": "BLOCK"}],
+        }
+    }
+
+    block_units, warn_units, ok_units = code_review_compare.group_units_by_severity([
+        unsupported_block,
+        supported_block,
+    ])
+
+    assert block_units == [supported_block]
+    assert warn_units == [unsupported_block]
+    assert ok_units == []
+
+
 def test_validate_path_escapes(tmp_path):
     root = tmp_path / "workspace"
     root.mkdir()
@@ -478,11 +504,151 @@ def test_telemetry_aggregation():
     assert summary["total_units"] == 2
     assert summary["valid_units"] == 1
     assert summary["repaired_units"] == 1
-    assert summary["normalized_units"] == 1
+    assert summary["normalized_units"] == 0
     assert summary["details"]["repaired_confidence_count"] == 1
     assert summary["details"]["repaired_score_count"] == 0
     assert summary["details"]["normalized_path_count"] == 1
     assert summary["details"]["normalized_text_count"] == 1
 
 
+def test_validation_summary_terminal_states_are_exclusive():
+    from scripts.code_review_evaluator import build_validation_summary
 
+    def unit(repaired=False, normalized=False, fields=None):
+        return {
+            "file_path": "x.py",
+            "name": "x",
+            "validation": {
+                "repaired": repaired,
+                "normalized": normalized,
+                "fields": fields or [],
+            },
+        }
+
+    invalid_field = {
+        "field_name": "llm_response",
+        "status": "INVALID",
+        "raw_value": "bad",
+        "repaired_value": None,
+    }
+    repaired_field = {
+        "field_name": "findings[0].confidence",
+        "status": "REPAIRED",
+        "raw_value": 95,
+        "repaired_value": 0.95,
+    }
+    normalized_field = {
+        "field_name": "findings[0].evidence.path",
+        "status": "NORMALIZED",
+        "raw_value": "/x.py",
+        "repaired_value": "x.py",
+    }
+
+    summary = build_validation_summary([
+        unit(),
+        unit(fields=[invalid_field]),
+        unit(repaired=True, fields=[repaired_field]),
+        unit(normalized=True, fields=[normalized_field]),
+        unit(repaired=True, fields=[invalid_field, repaired_field]),
+        unit(normalized=True, fields=[invalid_field, normalized_field]),
+    ])
+
+    assert summary["total_units"] == 6
+    assert summary["valid_units"] == 1
+    assert summary["repaired_units"] == 1
+    assert summary["normalized_units"] == 1
+    assert summary["invalid_units"] == 3
+    assert (
+        summary["valid_units"]
+        + summary["repaired_units"]
+        + summary["normalized_units"]
+        + summary["invalid_units"]
+    ) == summary["total_units"]
+    assert summary["details"]["invalid_field_count"] == 3
+    assert summary["details"]["repaired_confidence_count"] == 2
+    assert summary["details"]["normalized_path_count"] == 2
+
+
+def test_structured_output_telemetry_aggregation():
+    from scripts.code_review_evaluator import build_validation_summary
+
+    summary = build_validation_summary([
+        {
+            "file_path": "a.py",
+            "name": "a",
+            "validation": None,
+            "structured_output": {
+                "invalid_json_detected": True,
+                "repair_attempts": 1,
+                "repair_succeeded": True,
+                "validation_retries": 0,
+                "final_failure": False,
+            },
+        },
+        {
+            "file_path": "b.py",
+            "name": "b",
+            "validation": {"repaired": False, "normalized": False, "fields": []},
+            "structured_output": {
+                "invalid_json_detected": True,
+                "repair_attempts": 2,
+                "repair_succeeded": False,
+                "validation_retries": 2,
+                "final_failure": True,
+            },
+        },
+    ])
+
+    structured = summary["details"]["structured_output"]
+    assert summary["total_units"] == 2
+    assert summary["valid_units"] == 1
+    assert summary["invalid_units"] == 1
+    assert structured["invalid_json_detected"] == 2
+    assert structured["repair_attempts"] == 3
+    assert structured["repair_successes"] == 1
+    assert structured["validation_retries"] == 2
+    assert structured["final_failures"] == 1
+
+
+@pytest.mark.asyncio
+async def test_evaluate_units_marks_structured_output_failure_recoverable(monkeypatch):
+    diagnostics = {
+        "invalid_json_detected": True,
+        "repair_attempts": 1,
+        "repair_succeeded": False,
+        "validation_retries": 2,
+        "final_failure": True,
+        "failure_reason": "invalid_json: Unterminated string",
+    }
+
+    async def fake_call_structured_with_raw_and_diagnostics(**kwargs):
+        raise code_review_evaluator.llm_adapter.StructuredOutputError(
+            "CodeReviewBreakdown",
+            "Failed to parse LLM response as JSON before CodeReviewBreakdown validation",
+            '{"summary": "truncated',
+            diagnostics,
+        )
+
+    monkeypatch.setattr(
+        code_review_evaluator.llm_adapter,
+        "call_structured_with_raw_and_diagnostics",
+        fake_call_structured_with_raw_and_diagnostics,
+    )
+
+    units = [{
+        "name": "broken",
+        "file_path": "scripts/broken.py",
+        "class_name": None,
+        "start_line": 1,
+        "end_line": 1,
+        "lines_changed": 1,
+        "code": "def broken(): pass",
+    }]
+
+    results = await code_review_evaluator.evaluate_units(None, "litellm/foo", units)
+
+    assert len(results) == 1
+    assert results[0]["review"] is None
+    assert results[0]["recoverable_failure"]["type"] == "structured_output"
+    assert results[0]["validation"]["fields"][0]["status"] == "INVALID"
+    assert results[0]["structured_output"]["final_failure"] is True

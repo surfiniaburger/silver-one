@@ -76,16 +76,21 @@ def persist_usage_artifacts(
         print(f"\033[93mWarning: failed to write cassette usage metadata: {exc}\033[0m")
 
     if validation_summary is not None:
+        details = validation_summary.get("details", {})
+        structured = details.get("structured_output", {})
         print(
             "\033[94mValidation Summary: "
             f"{validation_summary.get('valid_units', 0)} valid, "
             f"{validation_summary.get('repaired_units', 0)} repaired, "
             f"{validation_summary.get('normalized_units', 0)} normalized, "
             f"{validation_summary.get('invalid_units', 0)} invalid "
-            f"({validation_summary['details'].get('repaired_confidence_count', 0)} conf repairs, "
-            f"{validation_summary['details'].get('repaired_score_count', 0)} score repairs, "
-            f"{validation_summary['details'].get('normalized_path_count', 0)} path normalizations, "
-            f"{validation_summary['details'].get('normalized_text_count', 0)} text normalizations)"
+            f"({details.get('repaired_confidence_count', 0)} conf repairs, "
+            f"{details.get('repaired_score_count', 0)} score repairs, "
+            f"{details.get('normalized_path_count', 0)} path normalizations, "
+            f"{details.get('normalized_text_count', 0)} text normalizations, "
+            f"{structured.get('repair_attempts', 0)} structured repair attempts, "
+            f"{structured.get('validation_retries', 0)} structured retries, "
+            f"{structured.get('final_failures', 0)} structured final failures)"
             "\033[0m"
         )
 
