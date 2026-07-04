@@ -59,6 +59,15 @@ class DummyReplayManager:
         return DummyResponse()
 
 
+class SummaryModel:
+    def __init__(self, summary):
+        self.summary = summary
+
+    @classmethod
+    def model_validate(cls, payload):
+        return cls(payload["summary"])
+
+
 @pytest.mark.asyncio
 async def test_call_structured_litellm(monkeypatch, tmp_path):
     # Patch internal litellm caller to return JSON string
@@ -166,3 +175,48 @@ def test_qwen_disabled_thinking_ollama_payload(monkeypatch):
     llm_adapter._local_ollama_sync_call("ollama/qwen3.5:2b", [{"role": "user", "content": "hi"}])
     assert "posted_json" in call_info
     assert call_info["posted_json"].get("think") is False
+
+
+def test_validate_response_repairs_truncated_json_string():
+    raw = '{"summary": "ok'
+
+    validated, diagnostics = llm_adapter._validate_response_with_diagnostics(
+        raw,
+        SummaryModel,
+        "SummaryModel",
+    )
+
+    assert validated.summary == "ok"
+    assert diagnostics["invalid_json_detected"] is True
+    assert diagnostics["repair_attempts"] == 1
+    assert diagnostics["repair_succeeded"] is True
+
+
+@pytest.mark.asyncio
+async def test_call_structured_retries_after_unrepairable_json(monkeypatch):
+    responses = iter([
+        '{"summary": "bad", "items": [}',
+        '{"summary": "ok"}',
+    ])
+
+    async def fake_litellm(model, messages, params, schema_model=None):
+        await asyncio.sleep(0)
+        return next(responses)
+
+    monkeypatch.setattr(llm_adapter, "_call_litellm_async", fake_litellm)
+    monkeypatch.setenv("LLM_STRUCTURED_MAX_RETRIES", "1")
+
+    validated, raw, diagnostics = await llm_adapter.call_structured_with_raw_and_diagnostics(
+        None,
+        "litellm/foo",
+        [{"role": "user", "content": "do it"}],
+        "SummaryModel",
+        SummaryModel,
+        "stage",
+    )
+
+    assert validated.summary == "ok"
+    assert json.loads(raw)["summary"] == "ok"
+    assert diagnostics["invalid_json_detected"] is True
+    assert diagnostics["repair_attempts"] == 1
+    assert diagnostics["validation_retries"] == 1

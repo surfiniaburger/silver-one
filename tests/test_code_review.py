@@ -485,4 +485,86 @@ def test_telemetry_aggregation():
     assert summary["details"]["normalized_text_count"] == 1
 
 
+def test_structured_output_telemetry_aggregation():
+    from scripts.code_review_evaluator import build_validation_summary
 
+    summary = build_validation_summary([
+        {
+            "file_path": "a.py",
+            "name": "a",
+            "validation": None,
+            "structured_output": {
+                "invalid_json_detected": True,
+                "repair_attempts": 1,
+                "repair_succeeded": True,
+                "validation_retries": 0,
+                "final_failure": False,
+            },
+        },
+        {
+            "file_path": "b.py",
+            "name": "b",
+            "validation": {"repaired": False, "normalized": False, "fields": []},
+            "structured_output": {
+                "invalid_json_detected": True,
+                "repair_attempts": 2,
+                "repair_succeeded": False,
+                "validation_retries": 2,
+                "final_failure": True,
+            },
+        },
+    ])
+
+    structured = summary["details"]["structured_output"]
+    assert summary["total_units"] == 2
+    assert summary["valid_units"] == 1
+    assert summary["invalid_units"] == 1
+    assert structured["invalid_json_detected"] == 2
+    assert structured["repair_attempts"] == 3
+    assert structured["repair_successes"] == 1
+    assert structured["validation_retries"] == 2
+    assert structured["final_failures"] == 1
+
+
+@pytest.mark.asyncio
+async def test_evaluate_units_marks_structured_output_failure_recoverable(monkeypatch):
+    diagnostics = {
+        "invalid_json_detected": True,
+        "repair_attempts": 1,
+        "repair_succeeded": False,
+        "validation_retries": 2,
+        "final_failure": True,
+        "failure_reason": "invalid_json: Unterminated string",
+    }
+
+    async def fake_call_structured_with_raw_and_diagnostics(**kwargs):
+        raise code_review_evaluator.llm_adapter.StructuredOutputError(
+            "CodeReviewBreakdown",
+            "Failed to parse LLM response as JSON before CodeReviewBreakdown validation",
+            '{"summary": "truncated',
+            diagnostics,
+        )
+
+    monkeypatch.setattr(
+        code_review_evaluator.llm_adapter,
+        "call_structured_with_raw_and_diagnostics",
+        fake_call_structured_with_raw_and_diagnostics,
+    )
+
+    units = [{
+        "name": "broken",
+        "file_path": "scripts/broken.py",
+        "class_name": None,
+        "start_line": 1,
+        "end_line": 1,
+        "lines_changed": 1,
+        "code": "def broken(): pass",
+    }]
+
+    results = await code_review_evaluator.evaluate_units(None, "litellm/foo", units)
+
+    assert len(results) == 1
+    assert results[0]["review"] is None
+    assert results[0]["recoverable_failure"]["type"] == "structured_output"
+    assert results[0]["validation"]["fields"][0]["status"] == "INVALID"
+    assert results[0]["structured_output"]["final_failure"] is True

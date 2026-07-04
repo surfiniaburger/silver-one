@@ -199,6 +199,35 @@ def _process_field_telemetry(field: Dict[str, Any], summary: Dict[str, Any]) -> 
         summary["invalid_units"] += 1
 
 
+def _empty_structured_output_summary() -> Dict[str, int]:
+    return {
+        "invalid_json_detected": 0,
+        "repair_attempts": 0,
+        "repair_successes": 0,
+        "validation_retries": 0,
+        "final_failures": 0,
+    }
+
+
+def _process_structured_output_telemetry(unit: Dict[str, Any], summary: Dict[str, Any]) -> bool:
+    diagnostics = unit.get("structured_output")
+    if not isinstance(diagnostics, dict):
+        return False
+
+    structured = summary["details"]["structured_output"]
+    if diagnostics.get("invalid_json_detected"):
+        structured["invalid_json_detected"] += 1
+    structured["repair_attempts"] += int(diagnostics.get("repair_attempts", 0) or 0)
+    if diagnostics.get("repair_succeeded"):
+        structured["repair_successes"] += 1
+    structured["validation_retries"] += int(diagnostics.get("validation_retries", 0) or 0)
+    if diagnostics.get("final_failure"):
+        structured["final_failures"] += 1
+        summary["invalid_units"] += 1
+        return True
+    return False
+
+
 def build_validation_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
     summary = {
         "total_units": len(results),
@@ -211,9 +240,13 @@ def build_validation_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
             "repaired_score_count": 0,
             "normalized_path_count": 0,
             "normalized_text_count": 0,
+            "structured_output": _empty_structured_output_summary(),
         }
     }
     for unit in results:
+        if _process_structured_output_telemetry(unit, summary):
+            continue
+
         validation = unit.get("validation")
         if not validation:
             summary["valid_units"] += 1
@@ -277,7 +310,7 @@ async def evaluate_units(
         ]
 
         try:
-            breakdown, raw_str = await llm_adapter.call_structured_with_raw(
+            breakdown, raw_str, structured_diagnostics = await llm_adapter.call_structured_with_raw_and_diagnostics(
                 replay_manager=replay_mgr,
                 model=model,
                 messages=messages,
@@ -299,7 +332,39 @@ async def evaluate_units(
                 validation=context,
                 raw_response=raw_str
             )
-            results.append(artifact.model_dump())
+            artifact_payload = artifact.model_dump()
+            artifact_payload["structured_output"] = structured_diagnostics
+            results.append(artifact_payload)
+        except llm_adapter.StructuredOutputError as exc:
+            print(f"\033[91mRecoverable structured output failure for {name} in {file_path}: {exc}\033[0m")
+            failure_diagnostics = dict(exc.diagnostics)
+            failure_diagnostics["final_failure"] = True
+            results.append({
+                "file_path": file_path,
+                "name": name,
+                "review": None,
+                "validation": {
+                    "repaired": False,
+                    "normalized": False,
+                    "fields": [
+                        {
+                            "field_name": "llm_response",
+                            "status": "INVALID",
+                            "raw_value": exc.raw_response,
+                            "repaired_value": None,
+                            "repair_type": "structured_output",
+                            "repair_reason": failure_diagnostics.get("failure_reason"),
+                        }
+                    ],
+                },
+                "raw_response": exc.raw_response,
+                "structured_output": failure_diagnostics,
+                "recoverable_failure": {
+                    "type": "structured_output",
+                    "schema_name": exc.schema_name,
+                    "message": str(exc),
+                },
+            })
         except Exception as exc:
             print(f"\033[91mError reviewing {name} in {file_path}: {exc}\033[0m")
 
