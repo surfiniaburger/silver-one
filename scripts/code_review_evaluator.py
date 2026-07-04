@@ -196,7 +196,7 @@ def _process_field_telemetry(field: Dict[str, Any], summary: Dict[str, Any]) -> 
         else:
             summary["details"]["normalized_text_count"] += 1
     elif status == "INVALID":
-        summary["invalid_units"] += 1
+        summary["details"]["invalid_field_count"] += 1
 
 
 def _empty_structured_output_summary() -> Dict[str, int]:
@@ -228,7 +228,24 @@ def _process_structured_output_telemetry(unit: Dict[str, Any], summary: Dict[str
     return False
 
 
+def _has_invalid_validation_field(fields: List[Dict[str, Any]]) -> bool:
+    return any(field.get("status") == "INVALID" for field in fields)
+
+
+def _record_validation_terminal_state(validation: Dict[str, Any], fields: List[Dict[str, Any]], summary: Dict[str, Any]) -> None:
+    """Record one mutually exclusive terminal state for a reviewed unit."""
+    if _has_invalid_validation_field(fields):
+        summary["invalid_units"] += 1
+    elif validation.get("repaired", False):
+        summary["repaired_units"] += 1
+    elif validation.get("normalized", False):
+        summary["normalized_units"] += 1
+    else:
+        summary["valid_units"] += 1
+
+
 def build_validation_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Aggregate validation telemetry with one terminal state per reviewed unit."""
     summary = {
         "total_units": len(results),
         "valid_units": 0,
@@ -240,6 +257,7 @@ def build_validation_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
             "repaired_score_count": 0,
             "normalized_path_count": 0,
             "normalized_text_count": 0,
+            "invalid_field_count": 0,
             "structured_output": _empty_structured_output_summary(),
         }
     }
@@ -251,18 +269,9 @@ def build_validation_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
         if not validation:
             summary["valid_units"] += 1
             continue
-        
-        repaired = validation.get("repaired", False)
-        normalized = validation.get("normalized", False)
-        
-        if repaired:
-            summary["repaired_units"] += 1
-        if normalized:
-            summary["normalized_units"] += 1
-        if not repaired and not normalized:
-            summary["valid_units"] += 1
-            
+
         fields = validation.get("fields", [])
+        _record_validation_terminal_state(validation, fields, summary)
         for field in fields:
             _process_field_telemetry(field, summary)
                 

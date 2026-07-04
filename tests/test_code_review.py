@@ -478,11 +478,69 @@ def test_telemetry_aggregation():
     assert summary["total_units"] == 2
     assert summary["valid_units"] == 1
     assert summary["repaired_units"] == 1
-    assert summary["normalized_units"] == 1
+    assert summary["normalized_units"] == 0
     assert summary["details"]["repaired_confidence_count"] == 1
     assert summary["details"]["repaired_score_count"] == 0
     assert summary["details"]["normalized_path_count"] == 1
     assert summary["details"]["normalized_text_count"] == 1
+
+
+def test_validation_summary_terminal_states_are_exclusive():
+    from scripts.code_review_evaluator import build_validation_summary
+
+    def unit(repaired=False, normalized=False, fields=None):
+        return {
+            "file_path": "x.py",
+            "name": "x",
+            "validation": {
+                "repaired": repaired,
+                "normalized": normalized,
+                "fields": fields or [],
+            },
+        }
+
+    invalid_field = {
+        "field_name": "llm_response",
+        "status": "INVALID",
+        "raw_value": "bad",
+        "repaired_value": None,
+    }
+    repaired_field = {
+        "field_name": "findings[0].confidence",
+        "status": "REPAIRED",
+        "raw_value": 95,
+        "repaired_value": 0.95,
+    }
+    normalized_field = {
+        "field_name": "findings[0].evidence.path",
+        "status": "NORMALIZED",
+        "raw_value": "/x.py",
+        "repaired_value": "x.py",
+    }
+
+    summary = build_validation_summary([
+        unit(),
+        unit(fields=[invalid_field]),
+        unit(repaired=True, fields=[repaired_field]),
+        unit(normalized=True, fields=[normalized_field]),
+        unit(repaired=True, fields=[invalid_field, repaired_field]),
+        unit(normalized=True, fields=[invalid_field, normalized_field]),
+    ])
+
+    assert summary["total_units"] == 6
+    assert summary["valid_units"] == 1
+    assert summary["repaired_units"] == 1
+    assert summary["normalized_units"] == 1
+    assert summary["invalid_units"] == 3
+    assert (
+        summary["valid_units"]
+        + summary["repaired_units"]
+        + summary["normalized_units"]
+        + summary["invalid_units"]
+    ) == summary["total_units"]
+    assert summary["details"]["invalid_field_count"] == 3
+    assert summary["details"]["repaired_confidence_count"] == 2
+    assert summary["details"]["normalized_path_count"] == 2
 
 
 def test_structured_output_telemetry_aggregation():

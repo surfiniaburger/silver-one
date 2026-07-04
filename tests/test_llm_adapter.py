@@ -192,6 +192,37 @@ def test_validate_response_repairs_truncated_json_string():
     assert diagnostics["repair_succeeded"] is True
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ('{"summary": "ok', {"summary": "ok"}),
+        ('{"summary": "path ' + "\\", {"summary": "path \\"}),
+        ('{"summary": "path ' + "\\\\", {"summary": "path \\"}),
+        ('{"summary": "say \\"hello\\"', {"summary": 'say "hello"'}),
+        ('{"message": "error,}", "items": [1,]}', {"message": "error,}", "items": [1]}),
+        ('{"outer": {"inner": {"value": 1}', {"outer": {"inner": {"value": 1}}}),
+        ('{"items": [[1, 2], [3', {"items": [[1, 2], [3]]}),
+        ('{"outer": {"value": 1', {"outer": {"value": 1}}),
+        ('{"items": [1, 2', {"items": [1, 2]}),
+    ],
+)
+def test_repair_json_text_preserves_strings_and_closes_structure(raw, expected):
+    repaired = llm_adapter._repair_json_text(raw)
+
+    assert json.loads(repaired) == expected
+
+
+def test_repair_json_text_does_not_strip_commas_inside_string_literals():
+    raw = '{"message": "keep comma before close,}", "nested": {"values": [1, 2,]}}'
+
+    repaired = llm_adapter._repair_json_text(raw)
+
+    assert json.loads(repaired) == {
+        "message": "keep comma before close,}",
+        "nested": {"values": [1, 2]},
+    }
+
+
 @pytest.mark.asyncio
 async def test_call_structured_retries_after_unrepairable_json(monkeypatch):
     responses = iter([

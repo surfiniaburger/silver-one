@@ -3,7 +3,6 @@ import json
 import asyncio
 import time
 import math
-import re
 from typing import Any, Dict, List, Type, Tuple
 
 try:
@@ -409,14 +408,38 @@ def _close_open_containers(json_text: str) -> str:
     return json_text + "".join(reversed(stack))
 
 
+def _trailing_backslash_count(text: str) -> int:
+    return len(text) - len(text.rstrip("\\"))
+
+
+def _strip_trailing_commas_outside_strings(json_text: str) -> str:
+    chars: List[str] = []
+    escaped = False
+    in_string = False
+    length = len(json_text)
+
+    for idx, char in enumerate(json_text):
+        escaped, in_string, handled = _next_string_scan_state(char, escaped, in_string)
+        if not in_string and not handled and char == ",":
+            next_idx = idx + 1
+            while next_idx < length and json_text[next_idx].isspace():
+                next_idx += 1
+            if next_idx < length and json_text[next_idx] in "}]":
+                continue
+        chars.append(char)
+
+    return "".join(chars)
+
+
 def _repair_json_text(json_text: str) -> str:
     repaired = json_text.strip()
-    repaired = re.sub(r",\s*([}\]])", r"\1", repaired)
+    repaired = _strip_trailing_commas_outside_strings(repaired)
     if _has_unclosed_string(repaired):
         repaired = repaired.rstrip()
-        if repaired.endswith("\\"):
-            repaired = repaired[:-1]
-        repaired += '"'
+        if _trailing_backslash_count(repaired) % 2 == 1:
+            repaired += '\\"'
+        else:
+            repaired += '"'
     return _close_open_containers(repaired)
 
 
