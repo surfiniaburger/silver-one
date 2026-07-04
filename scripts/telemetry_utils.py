@@ -18,6 +18,7 @@ def persist_usage_artifacts(
     metrics_root: Path,
     reviewed_key: str,
     usage_key: str,
+    **kwargs: Any,
 ) -> Optional[Dict[str, Any]]:
     '''
     Extracts usage summary from the replay manager, persists the telemetry payload
@@ -31,6 +32,8 @@ def persist_usage_artifacts(
     if not isinstance(usage_summary, dict):
         usage_summary = {}
 
+    validation_summary = kwargs.get("validation_summary")
+
     try:
         cassette_str = str(cassette_path.relative_to(project_root))
     except ValueError:
@@ -43,6 +46,8 @@ def persist_usage_artifacts(
         "cassette": cassette_str,
         "usage": usage_summary,
     }
+    if validation_summary is not None:
+        payload["validation_summary"] = validation_summary
 
     metrics_path = metrics_root / "token_spend.jsonl"
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
@@ -69,6 +74,20 @@ def persist_usage_artifacts(
             json.dump(cassette_data, f, indent=2)
     except Exception as exc:
         print(f"\033[93mWarning: failed to write cassette usage metadata: {exc}\033[0m")
+
+    if validation_summary is not None:
+        print(
+            "\033[94mValidation Summary: "
+            f"{validation_summary.get('valid_units', 0)} valid, "
+            f"{validation_summary.get('repaired_units', 0)} repaired, "
+            f"{validation_summary.get('normalized_units', 0)} normalized, "
+            f"{validation_summary.get('invalid_units', 0)} invalid "
+            f"({validation_summary['details'].get('repaired_confidence_count', 0)} conf repairs, "
+            f"{validation_summary['details'].get('repaired_score_count', 0)} score repairs, "
+            f"{validation_summary['details'].get('normalized_path_count', 0)} path normalizations, "
+            f"{validation_summary['details'].get('normalized_text_count', 0)} text normalizations)"
+            "\033[0m"
+        )
 
     totals = usage_summary.get("totals")
     if not isinstance(totals, dict):

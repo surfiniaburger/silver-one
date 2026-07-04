@@ -444,4 +444,45 @@ def test_provenance_consistency():
     assert "findings[0].severity" not in fields
 
 
+def test_telemetry_aggregation():
+    from scripts.code_review_evaluator import build_validation_summary
+    
+    dummy_results = [
+        {
+            "file_path": "a.py",
+            "name": "a",
+            "validation": {
+                "repaired": True,
+                "normalized": True,
+                "fields": [
+                    {"field_name": "findings[0].confidence", "status": "REPAIRED", "raw_value": 95, "repaired_value": 0.95},
+                    {"field_name": "findings[0].evidence.path", "status": "NORMALIZED", "raw_value": "/a.py", "repaired_value": "a.py"},
+                    {"field_name": "readability.rationale", "status": "NORMALIZED", "raw_value": "  foo  ", "repaired_value": "foo"}
+                ]
+            }
+        },
+        {
+            "file_path": "b.py",
+            "name": "b",
+            "validation": {
+                "repaired": False,
+                "normalized": False,
+                "fields": [
+                    {"field_name": "correctness.score", "status": "VALID", "raw_value": 8.0, "repaired_value": 8.0}
+                ]
+            }
+        }
+    ]
+    
+    summary = build_validation_summary(dummy_results)
+    assert summary["total_units"] == 2
+    assert summary["valid_units"] == 1
+    assert summary["repaired_units"] == 1
+    assert summary["normalized_units"] == 1
+    assert summary["details"]["repaired_confidence_count"] == 1
+    assert summary["details"]["repaired_score_count"] == 0
+    assert summary["details"]["normalized_path_count"] == 1
+    assert summary["details"]["normalized_text_count"] == 1
+
+
 

@@ -182,6 +182,60 @@ def _init_replay_manager(
     )
 
 
+def _process_field_telemetry(field: Dict[str, Any], summary: Dict[str, Any]) -> None:
+    status = field.get("status")
+    field_name = field.get("field_name", "")
+    if status == "REPAIRED":
+        if "confidence" in field_name:
+            summary["details"]["repaired_confidence_count"] += 1
+        elif "score" in field_name:
+            summary["details"]["repaired_score_count"] += 1
+    elif status == "NORMALIZED":
+        if "path" in field_name:
+            summary["details"]["normalized_path_count"] += 1
+        else:
+            summary["details"]["normalized_text_count"] += 1
+    elif status == "INVALID":
+        summary["invalid_units"] += 1
+
+
+def build_validation_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    summary = {
+        "total_units": len(results),
+        "valid_units": 0,
+        "repaired_units": 0,
+        "normalized_units": 0,
+        "invalid_units": 0,
+        "details": {
+            "repaired_confidence_count": 0,
+            "repaired_score_count": 0,
+            "normalized_path_count": 0,
+            "normalized_text_count": 0,
+        }
+    }
+    for unit in results:
+        validation = unit.get("validation")
+        if not validation:
+            summary["valid_units"] += 1
+            continue
+        
+        repaired = validation.get("repaired", False)
+        normalized = validation.get("normalized", False)
+        
+        if repaired:
+            summary["repaired_units"] += 1
+        if normalized:
+            summary["normalized_units"] += 1
+        if not repaired and not normalized:
+            summary["valid_units"] += 1
+            
+        fields = validation.get("fields", [])
+        for field in fields:
+            _process_field_telemetry(field, summary)
+                
+    return summary
+
+
 def persist_usage_artifacts(
     replay_mgr: Any,
     *,
@@ -189,6 +243,7 @@ def persist_usage_artifacts(
     model: str,
     cassette_path: Path,
     reviewed_count: int,
+    validation_summary: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     return telemetry_utils.persist_usage_artifacts(
         replay_mgr,
@@ -200,6 +255,7 @@ def persist_usage_artifacts(
         metrics_root=METRICS_ROOT,
         reviewed_key="reviewed_units",
         usage_key="code_review_usage_summary",
+        **{"validation_summary": validation_summary}
     )
 
 
@@ -331,12 +387,14 @@ async def main_async():
 
     results = await evaluate_units(replay_mgr, args.model, target_units)
 
+    val_summary = build_validation_summary(results)
     persist_usage_artifacts(
         replay_mgr,
         run_id=safe_run_id,
         model=args.model,
         cassette_path=cassette_path,
         reviewed_count=len(results),
+        validation_summary=val_summary,
     )
 
     save_review_cassette(cassette_path, results)
