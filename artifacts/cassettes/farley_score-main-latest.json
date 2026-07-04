@@ -2220,6 +2220,208 @@
       }
     },
     {
+      "id": "tests/test_code_review.py::test_unit_review_artifact",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_unit_review_artifact",
+      "class_name": null,
+      "farley_index": 4.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 6,
+          "rationale": "The test name is vague and lacks a clear business rule. It does not specify what 'artifact' or 'review' means in this context, making it difficult to understand the intent without reading the entire codebase.",
+          "suggestions": [
+            "Rename `test_unit_review_artifact` to something descriptive like `test_build_validation_context_with_findings`.",
+            "Explicitly define what an artifact is and how a review affects its state in this test's context."
+          ]
+        },
+        "maintainable": {
+          "score": 5,
+          "rationale": "The code relies on external shared state (`raw_json_str`, `CodeReviewBreakdown.model_validate`) which creates brittle behavior if the schema or evaluator changes. It also mixes data loading with logic verification.",
+          "suggestions": [
+            "Extract JSON parsing and validation into a dedicated utility function to decouple test logic from implementation details.",
+            "Ensure all external dependencies (schemas, evaluators) are mocked in tests rather than relying on their internal state."
+          ]
+        },
+        "repeatable": {
+          "score": 4,
+          "rationale": "The test relies heavily on `raw_json_str` and the specific output of a model validation. If the schema or evaluator changes slightly (e.g., field names), this test will fail without modification.",
+          "suggestions": [
+            "Remove reliance on external shared state like raw JSON strings in tests; use fixtures for data instead.",
+            "Ensure deterministic behavior by mocking all non-deterministic sources of randomness."
+          ]
+        },
+        "atomic": {
+          "score": 7,
+          "rationale": "The test verifies multiple assertions about the serialized output and specific field values. While it isolates one 'artifact' creation scenario, verifying complex nested structures can sometimes obscure immediate failure points.",
+          "suggestions": [
+            "Ensure each assertion targets a single, distinct behavior to make failures immediately obvious if they occur."
+          ]
+        },
+        "necessary": {
+          "score": 3,
+          "rationale": "The test appears redundant. It validates serialization and specific field values that are likely already covered by unit tests for the `CodeReviewBreakdown` model or existing integration tests.",
+          "suggestions": [
+            "Remove this test if it duplicates coverage of other tests; focus on testing edge cases, error handling, or contract violations instead."
+          ]
+        },
+        "granular": {
+          "score": 5,
+          "rationale": "The test is somewhat granular in checking specific field values but lacks isolation. It mixes data loading with validation logic and relies on external state which reduces the granularity of what it actually tests.",
+          "suggestions": [
+            "Isolate assertions to verify only one behavior (e.g., 'Artifact serialization preserves input exactly' vs 'Validation context is built correctly').",
+            "Remove reliance on `raw_json_str` and use fixtures for data."
+          ]
+        },
+        "fast": {
+          "score": 6,
+          "rationale": "The test loads a JSON string into memory before processing. While not inherently slow compared to network calls, it introduces unnecessary I/O overhead if the input is already available in tests.",
+          "suggestions": [
+            "Avoid loading large strings or external data directly; use fixtures for reproducible inputs and avoid artificial delays."
+          ]
+        },
+        "first_tdd": {
+          "score": 2,
+          "rationale": "The test does not demonstrate the Arrange-Act-Assert pattern. It loads a pre-existing artifact from an external string rather than constructing it via `build_validation_context` and asserting its properties directly.",
+          "suggestions": [
+            "Adopt TDD principles: Write tests that specify behavior first (Arrange), then act to verify specific contract violations or edge cases, ensuring the test itself defines the expected outcome."
+          ]
+        },
+        "summary": "The test is partially functional but suffers from poor design choices including reliance on external state and lack of TDD principles. It should be rewritten using fixtures for data and strictly following Arrange-Act-Assert to ensure maintainability and determinism."
+      }
+    },
+    {
+      "id": "tests/test_code_review.py::test_strict_type_coercion_regressions",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_strict_type_coercion_regressions",
+      "class_name": null,
+      "farley_index": 4.0,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 4,
+          "rationale": "The test logic is understandable but lacks domain-specific language. It uses generic Python types (int/float) and standard library classes instead of the specific 'EngineeringFinding' or 'Evidence' schemas defined in `scripts.finding_schema`. This creates a disconnect between the abstract validation rules and concrete business requirements.",
+          "suggestions": [
+            "Explicitly reference the schema definitions (`from scripts.finding_schema import ...`) to ensure type safety matches domain logic."
+          ]
+        },
+        "maintainable": {
+          "score": 3,
+          "rationale": "The test is brittle and tightly coupled. It validates specific Python types (int/float) rather than the schema's expected structure or data contracts. If `PropertyEvaluation` changes its internal type hints without updating this test, it will fail.",
+          "suggestions": [
+            "Refactor to validate against a mock object representing the schema fields (`EngineeringFinding.model_validate({...})`) instead of specific Python literals."
+          ]
+        },
+        "repeatable": {
+          "score": 2,
+          "rationale": "The test relies heavily on external state: `pytest.approx` for floats and string parsing logic. It also depends on the order of imports or internal class instantiation which can vary between runs.",
+          "suggestions": [
+            "Remove all float comparisons (`approx`) in favor of strict equality checks if possible, or use a dedicated helper function to normalize confidence scores before comparison."
+          ]
+        },
+        "atomic": {
+          "score": 5,
+          "rationale": "The test verifies exactly one behavior: the validation logic for `PropertyEvaluation` and `EngineeringFinding`. It isolates this specific rule from other tests by using a dedicated function (`make_finding_dict`) to construct inputs.",
+          "suggestions": [
+            "Ensure no side effects occur during input construction. The current helper is clean, but verify it doesn't inadvertently trigger external API calls or network requests."
+          ]
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "The test covers specific edge cases for confidence values and string normalization (whitespace). However, it does not cover the full range of `EngineeringFinding` fields like `severity`, `category`, or `recommended_action`. It duplicates coverage from other tests that likely handle these fields.",
+          "suggestions": [
+            "Add assertions to verify specific field types for all schema properties (`title`, `category`, etc.) rather than just the ones explicitly tested in this function."
+          ]
+        },
+        "granular": {
+          "score": 4,
+          "rationale": "The test is granular enough regarding input validation (rejecting specific types) but lacks granularity on output assertions. It only checks that `confidence` matches the expected value; it doesn't verify other fields like `severity`, `evidence.location_type`, or `path`.",
+          "suggestions": [
+            "Add explicit assertions for all non-optional schema fields (e.g., `f1.severity == 'WARN'`, `ev_none_path.path is None`) to ensure the test covers every aspect of the model."
+          ]
+        },
+        "fast": {
+          "score": 5,
+          "rationale": "The execution speed depends on Pydantic's validation performance and string parsing. The use of `pytest.approx` adds a slight overhead compared to direct equality checks for floats.",
+          "suggestions": [
+            "Replace float comparisons with strict equality (`assert f1.confidence == 0.7`) where possible, as it removes the need for approximation logic."
+          ]
+        },
+        "first_tdd": {
+          "score": 3,
+          "rationale": "The test demonstrates a basic Arrange-Act-Assert pattern but lacks design properties of TDD. It does not explicitly define expected behavior before writing tests (Arrange), nor is it designed to fail on incorrect assumptions without prior knowledge.",
+          "suggestions": [
+            "Adopt the 'specify behavior first' approach: Write an `assert` statement defining what a valid finding should look like, then write code that validates this structure. This ensures the test reflects the intended design from day one."
+          ]
+        },
+        "summary": "The test is functional but lacks domain specificity and TDD principles. It mixes low-level Python types with high-level schema validation without proper abstraction or explicit behavior specification before testing."
+      }
+    },
+    {
+      "id": "tests/test_code_review.py::test_provenance_consistency",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_provenance_consistency",
+      "class_name": null,
+      "farley_index": 7.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test logic is clear and the intent (verifying JSON normalization) is understandable. However, it mixes high-level assertions with low-level implementation details like `pytest.approx` directly in an assertion statement without context.",
+          "suggestions": [
+            "Remove direct use of `pytest.approx()` inside assert statements; prefer using a helper function or property for this specific value check to keep the test body clean and focused on logic."
+          ]
+        },
+        "maintainable": {
+          "score": 7,
+          "rationale": "The code is somewhat decoupled from implementation details regarding JSON parsing. However, it relies heavily on `build_validation_context` which may introduce hidden dependencies or side effects if not strictly isolated.",
+          "suggestions": [
+            "Explicitly document the dependency chain of `build_validation_context`. Ensure this function does not mutate shared state outside its scope to prevent test fragility during refactoring."
+          ]
+        },
+        "repeatable": {
+          "score": 9,
+          "rationale": "The test is self-contained and deterministic. It uses a fixed JSON string input and no external network or filesystem calls.",
+          "suggestions": [
+            "Ensure the `raw_json_str` constant is version-controlled in CI/CD pipelines to guarantee reproducibility across environments."
+          ]
+        },
+        "atomic": {
+          "score": 8,
+          "rationale": "The test verifies exactly one behavior: that specific fields are normalized. If it fails, the cause (e.g., a bug in normalization logic) is instantly obvious.",
+          "suggestions": [
+            "Consider adding an `assert False` at the end of the function if any other assertions fail to ensure atomicity."
+          ]
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "The test verifies specific field transformations. However, it may duplicate coverage for general JSON normalization logic already covered by unit tests in `scripts/code_review_evaluator`. It should focus on integration-specific edge cases.",
+          "suggestions": [
+            "Review existing code review evaluator tests to ensure this test covers unique scenarios not yet tested."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The assertion is granular enough for its specific goal (normalization of `confidence`, `path`, and rationale).",
+          "suggestions": [
+            "Refine the assertions to be more descriptive about *why* these fields are being checked rather than just their values."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes rapidly. It avoids artificial sleeps or heavy I/O operations.",
+          "suggestions": [
+            "Ensure `json.loads` and model validation do not introduce unnecessary serialization overhead that could slow down CI builds significantly."
+          ]
+        },
+        "first_tdd": {
+          "score": 8,
+          "rationale": "While the structure follows Arrange-Act-Assert principles (calling functions to set up context), it lacks explicit separation of concerns. The 'Arrange' phase is implicit in function calls rather than clearly defined setup steps.",
+          "suggestions": [
+            "Explicitly separate `setup` logic from `test_logic`. Use a dedicated helper or class method for the initial state preparation to make the TDD structure more visible."
+          ]
+        },
+        "summary": "The test demonstrates good design principles but lacks explicit separation of concerns and relies on implicit dependencies. It is fast, atomic, and repeatable, though it could benefit from clearer documentation of its internal logic flow."
+      }
+    },
+    {
       "id": "tests/test_unified_compare.py::test_combine_token_spend_empty",
       "file_path": "tests/test_unified_compare.py",
       "test_name": "test_combine_token_spend_empty",
@@ -3079,32 +3281,32 @@
     "farley_usage_summary": {
       "run_id": "main-baseline",
       "model": "ollama/qwen3.5:2b",
-      "reviewed_test_cases": 42,
+      "reviewed_test_cases": 45,
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 49,
-          "prompt_tokens": 28346,
-          "completion_tokens": 36466,
-          "total_tokens": 64812,
+          "calls": 52,
+          "prompt_tokens": 32107,
+          "completion_tokens": 39092,
+          "total_tokens": 71199,
           "cost_usd": 0.0,
           "missing_usage_calls": 0
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 49,
-            "prompt_tokens": 28346,
-            "completion_tokens": 36466,
-            "total_tokens": 64812,
+            "calls": 52,
+            "prompt_tokens": 32107,
+            "completion_tokens": 39092,
+            "total_tokens": 71199,
             "cost_usd": 0.0
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 49,
-            "prompt_tokens": 28346,
-            "completion_tokens": 36466,
-            "total_tokens": 64812,
+            "calls": 52,
+            "prompt_tokens": 32107,
+            "completion_tokens": 39092,
+            "total_tokens": 71199,
             "cost_usd": 0.0
           }
         },
@@ -3460,11 +3662,47 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 976,
             "completion_tokens": 630,
             "total_tokens": 1606,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 1003,
+            "completion_tokens": 942,
+            "total_tokens": 1945,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 1548,
+            "completion_tokens": 985,
+            "total_tokens": 2533,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 1210,
+            "completion_tokens": 699,
+            "total_tokens": 1909,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -4521,6 +4759,87 @@
       "completion_tokens": 630,
       "prompt_tokens": 976,
       "total_tokens": 1606,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "7e132c4316d695e8199392a15955e78f567f84f75a0b8b34b563c2ba9e9aecd1": {
+    "id": "chatcmpl-1cd5aea7-bf17-4faf-8e9a-2674099a15b8",
+    "created": 1783127969,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 6,\n    \"rationale\": \"The test name is vague and lacks a clear business rule. It does not specify what 'artifact' or 'review' means in this context, making it difficult to understand the intent without reading the entire codebase.\",\n    \"suggestions\": [\n      \"Rename `test_unit_review_artifact` to something descriptive like `test_build_validation_context_with_findings`.\",\n      \"Explicitly define what an artifact is and how a review affects its state in this test's context.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 5,\n    \"rationale\": \"The code relies on external shared state (`raw_json_str`, `CodeReviewBreakdown.model_validate`) which creates brittle behavior if the schema or evaluator changes. It also mixes data loading with logic verification.\",\n    \"suggestions\": [\n      \"Extract JSON parsing and validation into a dedicated utility function to decouple test logic from implementation details.\",\n      \"Ensure all external dependencies (schemas, evaluators) are mocked in tests rather than relying on their internal state.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 4,\n    \"rationale\": \"The test relies heavily on `raw_json_str` and the specific output of a model validation. If the schema or evaluator changes slightly (e.g., field names), this test will fail without modification.\",\n    \"suggestions\": [\n      \"Remove reliance on external shared state like raw JSON strings in tests; use fixtures for data instead.\",\n      \"Ensure deterministic behavior by mocking all non-deterministic sources of randomness.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 7,\n    \"rationale\": \"The test verifies multiple assertions about the serialized output and specific field values. While it isolates one 'artifact' creation scenario, verifying complex nested structures can sometimes obscure immediate failure points.\",\n    \"suggestions\": [\n      \"Ensure each assertion targets a single, distinct behavior to make failures immediately obvious if they occur.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 3,\n    \"rationale\": \"The test appears redundant. It validates serialization and specific field values that are likely already covered by unit tests for the `CodeReviewBreakdown` model or existing integration tests.\",\n    \"suggestions\": [\n      \"Remove this test if it duplicates coverage of other tests; focus on testing edge cases, error handling, or contract violations instead.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 5,\n    \"rationale\": \"The test is somewhat granular in checking specific field values but lacks isolation. It mixes data loading with validation logic and relies on external state which reduces the granularity of what it actually tests.\",\n    \"suggestions\": [\n      \"Isolate assertions to verify only one behavior (e.g., 'Artifact serialization preserves input exactly' vs 'Validation context is built correctly').\",\n      \"Remove reliance on `raw_json_str` and use fixtures for data.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 6,\n    \"rationale\": \"The test loads a JSON string into memory before processing. While not inherently slow compared to network calls, it introduces unnecessary I/O overhead if the input is already available in tests.\",\n    \"suggestions\": [\n      \"Avoid loading large strings or external data directly; use fixtures for reproducible inputs and avoid artificial delays.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 2,\n    \"rationale\": \"The test does not demonstrate the Arrange-Act-Assert pattern. It loads a pre-existing artifact from an external string rather than constructing it via `build_validation_context` and asserting its properties directly.\",\n    \"suggestions\": [\n      \"Adopt TDD principles: Write tests that specify behavior first (Arrange), then act to verify specific contract violations or edge cases, ensuring the test itself defines the expected outcome.\"\n    ]\n  },\n  \"summary\": \"The test is partially functional but suffers from poor design choices including reliance on external state and lack of TDD principles. It should be rewritten using fixtures for data and strictly following Arrange-Act-Assert to ensure maintainability and determinism.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 942,
+      "prompt_tokens": 1003,
+      "total_tokens": 1945,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "4c3fd16fc71e63beb2e8a2e7f338e51374042030691b4445a4dc8a9d7420f98c": {
+    "id": "chatcmpl-036037fe-5341-425e-a6fd-b9d9a81b87b3",
+    "created": 1783128072,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 4,\n    \"rationale\": \"The test logic is understandable but lacks domain-specific language. It uses generic Python types (int/float) and standard library classes instead of the specific 'EngineeringFinding' or 'Evidence' schemas defined in `scripts.finding_schema`. This creates a disconnect between the abstract validation rules and concrete business requirements.\",\n    \"suggestions\": [\n      \"Explicitly reference the schema definitions (`from scripts.finding_schema import ...`) to ensure type safety matches domain logic.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 3,\n    \"rationale\": \"The test is brittle and tightly coupled. It validates specific Python types (int/float) rather than the schema's expected structure or data contracts. If `PropertyEvaluation` changes its internal type hints without updating this test, it will fail.\",\n    \"suggestions\": [\n      \"Refactor to validate against a mock object representing the schema fields (`EngineeringFinding.model_validate({...})`) instead of specific Python literals.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 2,\n    \"rationale\": \"The test relies heavily on external state: `pytest.approx` for floats and string parsing logic. It also depends on the order of imports or internal class instantiation which can vary between runs.\",\n    \"suggestions\": [\n      \"Remove all float comparisons (`approx`) in favor of strict equality checks if possible, or use a dedicated helper function to normalize confidence scores before comparison.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 5,\n    \"rationale\": \"The test verifies exactly one behavior: the validation logic for `PropertyEvaluation` and `EngineeringFinding`. It isolates this specific rule from other tests by using a dedicated function (`make_finding_dict`) to construct inputs.\",\n    \"suggestions\": [\n      \"Ensure no side effects occur during input construction. The current helper is clean, but verify it doesn't inadvertently trigger external API calls or network requests.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"The test covers specific edge cases for confidence values and string normalization (whitespace). However, it does not cover the full range of `EngineeringFinding` fields like `severity`, `category`, or `recommended_action`. It duplicates coverage from other tests that likely handle these fields.\",\n    \"suggestions\": [\n      \"Add assertions to verify specific field types for all schema properties (`title`, `category`, etc.) rather than just the ones explicitly tested in this function.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 4,\n    \"rationale\": \"The test is granular enough regarding input validation (rejecting specific types) but lacks granularity on output assertions. It only checks that `confidence` matches the expected value; it doesn't verify other fields like `severity`, `evidence.location_type`, or `path`.\",\n    \"suggestions\": [\n      \"Add explicit assertions for all non-optional schema fields (e.g., `f1.severity == 'WARN'`, `ev_none_path.path is None`) to ensure the test covers every aspect of the model.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 5,\n    \"rationale\": \"The execution speed depends on Pydantic's validation performance and string parsing. The use of `pytest.approx` adds a slight overhead compared to direct equality checks for floats.\",\n    \"suggestions\": [\n      \"Replace float comparisons with strict equality (`assert f1.confidence == 0.7`) where possible, as it removes the need for approximation logic.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 3,\n    \"rationale\": \"The test demonstrates a basic Arrange-Act-Assert pattern but lacks design properties of TDD. It does not explicitly define expected behavior before writing tests (Arrange), nor is it designed to fail on incorrect assumptions without prior knowledge.\",\n    \"suggestions\": [\n      \"Adopt the 'specify behavior first' approach: Write an `assert` statement defining what a valid finding should look like, then write code that validates this structure. This ensures the test reflects the intended design from day one.\"\n    ]\n  },\n  \"summary\": \"The test is functional but lacks domain specificity and TDD principles. It mixes low-level Python types with high-level schema validation without proper abstraction or explicit behavior specification before testing.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 985,
+      "prompt_tokens": 1548,
+      "total_tokens": 2533,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "e97faaa280de41f217f6ebe659e1a9899bb1d2b99bf6cabde62c217ae0270863": {
+    "id": "chatcmpl-42a4dbd0-3f6b-49ac-9ee9-aa68b3ba8084",
+    "created": 1783128148,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test logic is clear and the intent (verifying JSON normalization) is understandable. However, it mixes high-level assertions with low-level implementation details like `pytest.approx` directly in an assertion statement without context.\", \"suggestions\": [\"Remove direct use of `pytest.approx()` inside assert statements; prefer using a helper function or property for this specific value check to keep the test body clean and focused on logic.\"]},\n  \"maintainable\": {\"score\": 7, \"rationale\": \"The code is somewhat decoupled from implementation details regarding JSON parsing. However, it relies heavily on `build_validation_context` which may introduce hidden dependencies or side effects if not strictly isolated.\", \"suggestions\": [\"Explicitly document the dependency chain of `build_validation_context`. Ensure this function does not mutate shared state outside its scope to prevent test fragility during refactoring.\"]},\n  \"repeatable\": {\"score\": 9, \"rationale\": \"The test is self-contained and deterministic. It uses a fixed JSON string input and no external network or filesystem calls.\", \"suggestions\": [\"Ensure the `raw_json_str` constant is version-controlled in CI/CD pipelines to guarantee reproducibility across environments.\"]},\n  \"atomic\": {\"score\": 8, \"rationale\": \"The test verifies exactly one behavior: that specific fields are normalized. If it fails, the cause (e.g., a bug in normalization logic) is instantly obvious.\", \"suggestions\": [\"Consider adding an `assert False` at the end of the function if any other assertions fail to ensure atomicity.\"]},\n  \"necessary\": {\"score\": 6, \"rationale\": \"The test verifies specific field transformations. However, it may duplicate coverage for general JSON normalization logic already covered by unit tests in `scripts/code_review_evaluator`. It should focus on integration-specific edge cases.\", \"suggestions\": [\"Review existing code review evaluator tests to ensure this test covers unique scenarios not yet tested.\"]},\n  \"granular\": {\"score\": 7, \"rationale\": \"The assertion is granular enough for its specific goal (normalization of `confidence`, `path`, and rationale).\", \"suggestions\": [\"Refine the assertions to be more descriptive about *why* these fields are being checked rather than just their values.\"]},\n  \"fast\": {\"score\": 9, \"rationale\": \"The test executes rapidly. It avoids artificial sleeps or heavy I/O operations.\", \"suggestions\": [\"Ensure `json.loads` and model validation do not introduce unnecessary serialization overhead that could slow down CI builds significantly.\"]},\n  \"first_tdd\": {\"score\": 8, \"rationale\": \"While the structure follows Arrange-Act-Assert principles (calling functions to set up context), it lacks explicit separation of concerns. The 'Arrange' phase is implicit in function calls rather than clearly defined setup steps.\", \"suggestions\": [\"Explicitly separate `setup` logic from `test_logic`. Use a dedicated helper or class method for the initial state preparation to make the TDD structure more visible.\"]},\"summary\":\"The test demonstrates good design principles but lacks explicit separation of concerns and relies on implicit dependencies. It is fast, atomic, and repeatable, though it could benefit from clearer documentation of its internal logic flow.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 699,
+      "prompt_tokens": 1210,
+      "total_tokens": 1909,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
