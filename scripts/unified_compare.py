@@ -21,6 +21,7 @@ from scripts.farley_compare import (
 )
 from scripts.code_review_compare import (
     calculate_cqi,
+    effective_review_severity,
     group_units_by_severity,
     determine_verdict as cr_determine_verdict,
     format_unit_name,
@@ -183,11 +184,12 @@ def _write_cr_units_overview(f, cr_units: List[Dict[str, Any]]) -> None:
     f.write("|---|---|---:|---|---|\n")
     for unit in cr_units:
         review = unit.get("review") or {}
+        severity = effective_review_severity(review)
         f.write(
             f"| {_esc(unit.get('file_path'))} "
             f"| {_esc(format_unit_name(unit))} "
             f"| {calculate_cqi(review):.2f}/10 "
-            f"| **{_esc(review.get('severity', 'OK'))}** "
+            f"| **{_esc(severity)}** "
             f"| {_esc(review.get('summary', ''))} |\n"
         )
     f.write("\n")
@@ -235,7 +237,7 @@ def _write_code_review_details(f, cr_data: Dict[str, Any]) -> None:
         f.write("### Detailed Feedback\n\n")
         for unit in problematic:
             review = unit.get("review") or {}
-            severity = review.get("severity", "OK")
+            severity = effective_review_severity(review)
             f.write(f"#### ⚠️ `{unit.get('file_path')}` -> `{format_unit_name(unit)}` ({severity})\n")
             f.write(f"**CQI**: {calculate_cqi(review):.2f}/10\n\n")
             f.write(f"{review.get('summary', '')}\n\n")

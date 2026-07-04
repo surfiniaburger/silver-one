@@ -121,6 +121,32 @@ def test_calculate_cqi():
     assert cqi == pytest.approx(7.72222, rel=1e-4)
 
 
+def test_code_review_block_requires_structured_block_finding():
+    unsupported_block = {
+        "review": {
+            "severity": "BLOCK",
+            "summary": "OK",
+            "findings": [],
+        }
+    }
+    supported_block = {
+        "review": {
+            "severity": "BLOCK",
+            "summary": "Critical issue",
+            "findings": [{"severity": "BLOCK"}],
+        }
+    }
+
+    block_units, warn_units, ok_units = code_review_compare.group_units_by_severity([
+        unsupported_block,
+        supported_block,
+    ])
+
+    assert block_units == [supported_block]
+    assert warn_units == [unsupported_block]
+    assert ok_units == []
+
+
 def test_validate_path_escapes(tmp_path):
     root = tmp_path / "workspace"
     root.mkdir()
