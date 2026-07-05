@@ -136,6 +136,23 @@ class CQIResult(BaseModel):
     ]] = None
 
 
+class CompatibilityCheckResult(BaseModel):
+    state: Literal["PASS", "FAIL", "NOT_EXECUTED", "CHECK_FAILED"]
+    compatible: bool
+    score: float
+    regressions: List[str] = Field(default_factory=list)
+    reason: Optional[str] = None
+    details: List[str] = Field(default_factory=list)
+
+
+class BaselineCheckResult(BaseModel):
+    state: Literal["AVAILABLE", "FIRST_RUN", "BASELINE_MISSING", "BASELINE_CORRUPTED"]
+    available: bool
+    required: bool = False
+    reason: Optional[str] = None
+    details: List[str] = Field(default_factory=list)
+
+
 def _validate_dimensions(raw_json: Dict[str, Any], review: Any, fields: List[FieldValidation]) -> None:
     dimensions = ["readability", "maintainability", "correctness", "complexity", "security", "test_coverage"]
     for dim in dimensions:

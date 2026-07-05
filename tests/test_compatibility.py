@@ -1,5 +1,9 @@
 import pytest
-from scripts.compatibility_check import extract_api_signatures, compare_signatures
+from scripts.compatibility_check import (
+    extract_api_signatures,
+    compare_signatures,
+    run_compatibility_check_result,
+)
 
 
 def test_extract_api_signatures_simple():
@@ -156,3 +160,88 @@ def test_get_base_file_content_validators():
 
     with pytest.raises(ValueError, match="Unsafe relative path"):
         get_base_file_content("main", "/unsafe/path", path_val)
+
+
+def test_run_compatibility_check_not_executed(monkeypatch):
+    monkeypatch.setattr("scripts.compatibility_check.get_changed_lines", lambda base_ref, cwd: {
+        "tests/test_example.py": [1],
+        "README.md": [1],
+    })
+
+    result = run_compatibility_check_result("origin/main")
+
+    assert result.state == "NOT_EXECUTED"
+    assert result.compatible is True
+    assert result.score == pytest.approx(10.0)
+
+
+def test_run_compatibility_check_failed_diff(monkeypatch):
+    def raise_diff_error(base_ref, cwd):
+        raise ValueError("unknown revision")
+
+    monkeypatch.setattr("scripts.compatibility_check.get_changed_lines", raise_diff_error)
+
+    result = run_compatibility_check_result("origin/missing")
+
+    assert result.state == "CHECK_FAILED"
+    assert result.compatible is False
+    assert result.score == pytest.approx(0.0)
+    assert result.details == ["unknown revision"]
+
+
+def test_run_compatibility_check_pass(monkeypatch, tmp_path):
+    source = tmp_path / "module.py"
+    source.write_text("def public_api(a, b=1):\n    return a + b\n", encoding="utf-8")
+
+    monkeypatch.setattr("scripts.compatibility_check.get_changed_lines", lambda base_ref, cwd: {
+        "module.py": [1],
+    })
+    monkeypatch.setattr(
+        "scripts.compatibility_check.get_base_file_content",
+        lambda base_ref, rel_path, cwd: "def public_api(a, b=1):\n    return a + b\n",
+    )
+
+    result = run_compatibility_check_result("origin/main", tmp_path)
+
+    assert result.state == "PASS"
+    assert result.compatible is True
+    assert result.regressions == []
+
+
+def test_run_compatibility_check_fail(monkeypatch, tmp_path):
+    source = tmp_path / "module.py"
+    source.write_text("def public_api(a):\n    return a\n", encoding="utf-8")
+
+    monkeypatch.setattr("scripts.compatibility_check.get_changed_lines", lambda base_ref, cwd: {
+        "module.py": [1],
+    })
+    monkeypatch.setattr(
+        "scripts.compatibility_check.get_base_file_content",
+        lambda base_ref, rel_path, cwd: "def public_api(a, b):\n    return a + b\n",
+    )
+
+    result = run_compatibility_check_result("origin/main", tmp_path)
+
+    assert result.state == "FAIL"
+    assert result.compatible is False
+    assert result.score == pytest.approx(8.0)
+    assert any("removed or renamed parameter `b`" in reg for reg in result.regressions)
+
+
+def test_run_compatibility_check_invalid_pr_syntax(monkeypatch, tmp_path):
+    source = tmp_path / "module.py"
+    source.write_text("def public_api(:\n    pass\n", encoding="utf-8")
+
+    monkeypatch.setattr("scripts.compatibility_check.get_changed_lines", lambda base_ref, cwd: {
+        "module.py": [1],
+    })
+    monkeypatch.setattr(
+        "scripts.compatibility_check.get_base_file_content",
+        lambda base_ref, rel_path, cwd: "def public_api(a):\n    return a\n",
+    )
+
+    result = run_compatibility_check_result("origin/main", tmp_path)
+
+    assert result.state == "CHECK_FAILED"
+    assert result.compatible is False
+    assert "Python syntax error" in result.details[0]

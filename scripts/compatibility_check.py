@@ -7,12 +7,13 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, List, Any, Tuple, Optional, Callable
+from typing import Dict, List, Any, Tuple, Optional
 
 # Enable relative imports from parent directory
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from scripts.diff_extractor import get_changed_lines
+from scripts.finding_schema import CompatibilityCheckResult
 from scripts.path_utils import validate_path, validate_output_path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -134,6 +135,17 @@ def extract_api_signatures(code: str) -> Dict[str, Any]:
         tree = ast.parse(code)
     except SyntaxError:
         return {}
+
+    signatures: Dict[str, Any] = {}
+    APISignatureVisitor(signatures).visit(tree)
+    return signatures
+
+
+def _extract_api_signatures_strict(code: str, rel_path: str) -> Dict[str, Any]:
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as exc:
+        raise ValueError(f"{rel_path}: Python syntax error: {exc.msg} at line {exc.lineno}") from exc
 
     signatures: Dict[str, Any] = {}
     APISignatureVisitor(signatures).visit(tree)
@@ -266,7 +278,7 @@ def _filter_source_files(changed_files: Dict[str, Any]) -> List[str]:
 
 def _check_deleted_file_regressions(rel_path: str, base_content: str) -> List[str]:
     regressions = []
-    base_sigs = extract_api_signatures(base_content)
+    base_sigs = _extract_api_signatures_strict(base_content, rel_path)
     for key in base_sigs.keys():
         if key.startswith(CLASS_PREFIX):
             regressions.append(f"{rel_path}: Deleted public class `{key.split(CLASS_PREFIX)[1]}`")
@@ -288,33 +300,66 @@ def _check_file_compatibility(base_ref: str, rel_path: str, cwd: Path) -> List[s
         with safe_path.open("r", encoding="utf-8") as f:
             pr_content = f.read()
     except Exception as e:
-        print(f"Warning: could not read {rel_path}: {e}", file=sys.stderr)
-        return []
+        raise ValueError(f"{rel_path}: could not read PR file: {e}") from e
 
-    base_sigs = extract_api_signatures(base_content)
-    pr_sigs = extract_api_signatures(pr_content)
+    base_sigs = _extract_api_signatures_strict(base_content, rel_path)
+    pr_sigs = _extract_api_signatures_strict(pr_content, rel_path)
     return compare_signatures(base_sigs, pr_sigs, rel_path)
 
 
-def run_compatibility_check(base_ref: str, cwd: Path = PROJECT_ROOT) -> Tuple[bool, List[str], float]:
-    """Run AST compatibility check over changed files."""
+def run_compatibility_check_result(base_ref: str, cwd: Path = PROJECT_ROOT) -> CompatibilityCheckResult:
+    """Run AST compatibility check over changed files and return explicit state."""
     try:
         changed_files = get_changed_lines(base_ref, cwd)
     except ValueError as exc:
         print(f"Error extracting git diff: {exc}", file=sys.stderr)
-        return False, [str(exc)], 0.0
+        return CompatibilityCheckResult(
+            state="CHECK_FAILED",
+            compatible=False,
+            score=0.0,
+            reason="Unable to determine changed files for API compatibility check.",
+            details=[str(exc)],
+        )
 
     all_regressions = []
     files_to_check = _filter_source_files(changed_files)
+    if not files_to_check:
+        return CompatibilityCheckResult(
+            state="NOT_EXECUTED",
+            compatible=True,
+            score=10.0,
+            reason="No changed non-test Python source files were found.",
+        )
 
     for rel_path in files_to_check:
-        file_regs = _check_file_compatibility(base_ref, rel_path, cwd)
+        try:
+            file_regs = _check_file_compatibility(base_ref, rel_path, cwd)
+        except ValueError as exc:
+            return CompatibilityCheckResult(
+                state="CHECK_FAILED",
+                compatible=False,
+                score=0.0,
+                reason="API compatibility check could not complete reliably.",
+                details=[str(exc)],
+            )
         all_regressions.extend(file_regs)
 
     is_compatible = len(all_regressions) == 0
     compatibility_index = max(0.0, 10.0 - 2.0 * len(all_regressions)) if not is_compatible else 10.0
 
-    return is_compatible, all_regressions, compatibility_index
+    return CompatibilityCheckResult(
+        state="PASS" if is_compatible else "FAIL",
+        compatible=is_compatible,
+        score=compatibility_index,
+        regressions=all_regressions,
+        reason=None if is_compatible else "Backward-compatibility regression(s) detected.",
+    )
+
+
+def run_compatibility_check(base_ref: str, cwd: Path = PROJECT_ROOT) -> Tuple[bool, List[str], float]:
+    """Legacy tuple wrapper for callers that have not migrated to the state model."""
+    result = run_compatibility_check_result(base_ref, cwd)
+    return result.compatible, result.regressions or result.details, result.score
 
 
 def main():
@@ -329,12 +374,15 @@ def main():
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    is_ok, regressions, score = run_compatibility_check(args.base, PROJECT_ROOT)
+    result = run_compatibility_check_result(args.base, PROJECT_ROOT)
 
     results = {
-        "pass": is_ok,
-        "regressions": regressions,
-        "compatibility_index": score,
+        "pass": result.compatible,
+        "regressions": result.regressions,
+        "compatibility_index": result.score,
+        "state": result.state,
+        "reason": result.reason,
+        "details": result.details,
     }
 
     try:
@@ -344,10 +392,16 @@ def main():
     except Exception as exc:
         print(f"Error saving compatibility results: {exc}", file=sys.stderr)
 
-    if regressions:
-        print(f"\033[91mCompatibility Check: FAILED ({len(regressions)} regression(s) found)\033[0m")
-        for reg in regressions:
+    if result.state == "FAIL":
+        print(f"\033[91mCompatibility Check: FAILED ({len(result.regressions)} regression(s) found)\033[0m")
+        for reg in result.regressions:
             print(f"  - {reg}")
+    elif result.state == "CHECK_FAILED":
+        print(f"\033[91mCompatibility Check: CHECK_FAILED ({result.reason})\033[0m")
+        for detail in result.details:
+            print(f"  - {detail}")
+    elif result.state == "NOT_EXECUTED":
+        print(f"\033[93mCompatibility Check: NOT_EXECUTED ({result.reason})\033[0m")
     else:
         print("\033[92mCompatibility Check: PASSED\033[0m")
 
