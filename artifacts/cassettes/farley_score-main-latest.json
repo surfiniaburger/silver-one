@@ -2104,6 +2104,202 @@
       }
     },
     {
+      "id": "tests/test_code_review.py::test_calculate_cqi_result_rejects_invalid_score",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_calculate_cqi_result_rejects_invalid_score",
+      "class_name": null,
+      "farley_index": 7.875,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 7,
+          "rationale": "The test name and logic are clear enough for a developer familiar with the domain (CQI scoring), but 'code_review_compare' suggests an internal implementation detail rather than business rule clarity.",
+          "suggestions": [
+            "Rename `result` to something more descriptive like `test_calculate_cqi_result_invalid_score`.",
+            "Ensure all other tests in this file use the same naming convention and domain language."
+          ]
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "The test is decoupled from implementation details; it only asserts business rules (validity of score) without touching internal logic.",
+          "suggestions": [
+            "Ensure the `calculate_cqi_result` function itself follows TDD principles and doesn't rely on side effects that this test would break if refactored."
+          ]
+        },
+        "repeatable": {
+          "score": 8,
+          "rationale": "The test is self-contained with no external dependencies. However, it relies heavily on the `code_review_compare` module's internal state or logic which might be brittle if that function changes.",
+          "suggestions": [
+            "Verify that `calculate_cqi_result` does not rely on mutable global state shared across tests."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: rejecting an invalid score. The failure cause is obvious (assertions fail).",
+          "suggestions": [
+            "Ensure the assertion `result.error_code == \"INVALID_SCORE\"` matches a specific internal error code defined in that function, not just any string."
+          ]
+        },
+        "necessary": {
+          "score": 7,
+          "rationale": "This test covers one aspect of score validation. It may be redundant if other tests already cover edge cases like empty strings or non-numeric inputs.",
+          "suggestions": [
+            "Review the existing test suite to ensure no other tests verify similar invalid input scenarios."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The test isolates a specific rule (invalid score rejection) rather than general functionality.",
+          "suggestions": [
+            "Ensure the assertion `result.reason` is checked against an expected error message string to avoid ambiguity."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes immediately without artificial delays or heavy I/O. It relies on pure function execution.",
+          "suggestions": [
+            "Remove any `time.sleep()` calls if the current implementation uses them for testing purposes."
+          ]
+        },
+        "first_tdd": {
+          "score": 6,
+          "rationale": "The test follows Arrange-Act-Pattern (Arrange: create review object; Act: call function; Assert: check result), but it lacks the 'specification' phase where behavior is defined before implementation.",
+          "suggestions": [
+            "Refactor this to a TDD style by first writing an `assert False` test, then implementing logic that passes it."
+          ]
+        },
+        "summary": "The test demonstrates good structure and isolation but lacks the explicit specification phase required for true First-TDD. It is highly brittle if internal implementation details change without updating this specific assertion or function signature."
+      }
+    },
+    {
+      "id": "tests/test_code_review.py::test_code_review_verdict_fails_on_invalid_cqi",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_code_review_verdict_fails_on_invalid_cqi",
+      "class_name": null,
+      "farley_index": 7.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 6,
+          "rationale": "The test name is descriptive but slightly verbose. The logic flow (collect -> determine) is clear enough for a code review context, though the variable names `invalid_unit` and `cqi_reasons` could be more explicit about their purpose.",
+          "suggestions": [
+            "Consider renaming `test_code_review_verdict_fails_on_invalid_cqi` to something like `test_determines_failure_when_CQI_is_missing`.",
+            "Explicitly mention the input structure in comments or docstrings if this is part of a larger suite."
+          ]
+        },
+        "maintainable": {
+          "score": 7,
+          "rationale": "The test isolates specific logic (`determine_verdict`) without hardcoding system details. It does not rely on external state or shared mutable objects that would break if `code_review_compare` were refactored.",
+          "suggestions": [
+            "Ensure the internal implementation of `collect_cqi_failure_reasons` and `determine_verdict` are unit-tested separately to prevent hidden coupling."
+          ]
+        },
+        "repeatable": {
+          "score": 8,
+          "rationale": "The test is fully self-contained. It uses a single input object (`invalid_unit`) and deterministic logic without relying on database connections, network calls, or system timing.",
+          "suggestions": [
+            "Verify that `code_review_compare` does not have side effects (e.g., logging) in its public methods to ensure true repeatability."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: the verdict is 'FAIL' and exit code is 2 when CQI reasons are present. The assertion `assert reasons == cqi_reasons` ensures no spurious failures occur.",
+          "suggestions": [
+            "Add a specific check for the exact string content of `reasons[0]` to ensure it matches 'INVALID CQI' exactly, rather than just containing it."
+          ]
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "This test specifically validates a failure condition (invalid CQI) that might not be covered by other tests. It ensures the system correctly rejects invalid inputs.",
+          "suggestions": [
+            "Review if this specific case is already tested in integration or end-to-end scenarios; ensure it doesn't duplicate coverage of trivial edge cases."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The test isolates the interaction between `collect_cqi_failure_reasons` and `determine_verdict`. It does not mix unrelated logic (e.g., file parsing or network calls) into a single assertion.",
+          "suggestions": [
+            "Consider breaking this down further: one test for collecting reasons, another for determining verdict based on those reasons."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes immediately without artificial delays or heavy I/O. It relies only on the provided input and deterministic logic.",
+          "suggestions": [
+            "Ensure `code_review_compare` has no slow startup sequences that could affect CI/CD pipeline performance."
+          ]
+        },
+        "first_tdd": {
+          "score": 8,
+          "rationale": "The test follows the Arrange-Act-Assert pattern: input is defined (Arrange), logic runs to produce output (Act), and assertions validate correctness (Assert). It demonstrates a clean separation of concerns.",
+          "suggestions": [
+            "Explicitly document the expected behavior in comments or inline docstrings for `collect_cqi_failure_reasons` if this test was written first."
+          ]
+        },
+        "summary": "The test is well-structured and follows TDD principles effectively. However, it could be improved by adding explicit string matching checks to ensure atomicity of the failure condition and potentially splitting logic into more granular tests for better maintainability."
+      }
+    },
+    {
+      "id": "tests/test_code_review.py::test_cqi_failure_collection_skips_malformed_units",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_cqi_failure_collection_skips_malformed_units",
+      "class_name": null,
+      "farley_index": 7.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test name and code clearly describe the business rule: malformed units should be skipped during collection. The domain language is clear enough for a QA engineer to understand without needing deep context.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 7,
+          "rationale": "The test relies on `code_review_compare.collect_cqi_failure_reasons`, which implies an external implementation detail. If the library is refactored to use a different collection strategy or return format, this specific assertion will break.",
+          "suggestions": [
+            "Replace direct assertions about internal logic with high-level expectations (e.g., 'reasons list should contain exactly one item').",
+            "Ensure `collect_cqi_failure_reasons` is unit-tested to guarantee its output contract remains stable."
+          ]
+        },
+        "repeatable": {
+          "score": 6,
+          "rationale": "The test relies on the order of arguments in a list and assumes specific types (`None`, dict). While deterministic within that context, it is brittle if `collect_cqi_failure_reasons` changes its signature or internal logic.",
+          "suggestions": [
+            "Remove reliance on argument ordering by using keyword arguments: `reasons = code_review_compare.collect_cqi_failure_reasons(name='broken_review', file_path='x.py')`.",
+            "Avoid relying solely on the presence of a specific type (`None`); use explicit assertions like `assert reasons is None or isinstance(reasons[0], str)`."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: skipping malformed units. The assertion logic is self-contained and the failure cause (missing unit) is immediately obvious.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "This specific test validates a critical edge case that other tests likely do not cover. It adds unique value by ensuring robustness against malformed input data.",
+          "suggestions": [
+            "Ensure no existing test covers the scenario where `collect_cqi_failure_reasons` is called with an empty list or invalid types."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The assertion targets a specific string pattern within a generated reason. It isolates one aspect of the logic but could be broader if it's meant to validate general formatting rules.",
+          "suggestions": [
+            "Consider asserting that *all* reasons are valid strings and follow the expected format, rather than just checking for this single instance."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test contains no artificial delays, heavy setups, or slow I/O operations. It executes purely on logic flow.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 8,
+          "rationale": "This is a classic Arrange-Act-Assert pattern: the input data (Arrange) is defined before calling `collect_cqi_failure_reasons` (Act), and the expected result follows. It demonstrates clean separation of concerns.",
+          "suggestions": [
+            "Explicitly document the 'Arrange' phase in comments or inline to ensure future maintainers understand why this specific test exists."
+          ]
+        },
+        "summary": "The test is well-structured and fast but risks brittle behavior due to reliance on external implementation details. It effectively validates a critical edge case without duplicating other tests."
+      }
+    },
+    {
       "id": "tests/test_code_review.py::test_code_review_block_requires_structured_block_finding",
       "file_path": "tests/test_code_review.py",
       "test_name": "test_code_review_block_requires_structured_block_finding",
@@ -2833,65 +3029,182 @@
       "file_path": "tests/test_unified_compare.py",
       "test_name": "test_write_unified_report_displays_effective_severity",
       "class_name": null,
-      "farley_index": 7.875,
+      "farley_index": 6.875,
       "farley_breakdown": {
         "understandable": {
           "score": 8,
-          "rationale": "The test name and arguments are clear enough for a developer familiar with the project's codebase to understand what is being tested. However, it lacks explicit documentation of *why* this specific severity level matters in the context of 'effective' reporting.",
+          "rationale": "The test name and arguments are clear enough for a developer familiar with the `unified_compare` library to understand intent. However, it lacks explicit documentation of *why* this specific report format is being generated (e.g., 'to verify severity display logic'), which could be ambiguous in larger codebases.",
           "suggestions": [
-            "Add an inline comment explaining that `BLOCK` severity must be explicitly excluded from the final report output for compliance reasons."
+            "Add an inline docstring explaining that the test verifies the `severity` field renders correctly as **BLOCK** and not just a generic warning, even if it's implied by context."
           ]
         },
         "maintainable": {
-          "score": 9,
-          "rationale": "The test is decoupled; it does not depend on any specific implementation details of how `write_unified_report` constructs its markdown. It only relies on the function's output format.",
+          "score": 6,
+          "rationale": "The test is brittle to changes in how `write_unified_report` formats output. If the library adds new fields or alters markdown rendering logic without updating this assertion, the test will fail even if behavior remains correct.",
           "suggestions": [
-            "None required."
+            "Refactor into a helper function that returns only the expected report string for comparison (e.g., using `assert_string_in_output`), decoupling it from internal formatting details of `write_unified_report`. This makes refactoring the library safer."
           ]
         },
         "repeatable": {
           "score": 7,
-          "rationale": "The test is deterministic and self-contained within this file. However, it depends heavily on `spend_str` being exactly as provided in the call arguments; if that string changes slightly (e.g., whitespace), the assertion will fail.",
+          "rationale": "The test is deterministic and self-contained within a single file. It does not rely on external state or timing.",
           "suggestions": [
-            "Remove or hardcode the exact value of `spend_str`. Instead, assert against a regex pattern like `\\*Token spend.*100 total tokens` to ensure robustness against minor formatting variations."
+            "Ensure `tmp_path` usage doesn't introduce flaky behavior if the filesystem path changes unexpectedly; explicitly handle potential race conditions in CI environments."
           ]
         },
         "atomic": {
           "score": 9,
-          "rationale": "The test verifies exactly one behavior: the presence of specific text in a file. If it fails, the cause is immediately obvious (the string does not exist).",
+          "rationale": "The test verifies exactly one specific rule: that a BLOCK severity is displayed correctly. If this assertion fails, it immediately indicates the `severity` field logic or markdown rendering failed.",
           "suggestions": [
-            "None required."
+            "None needed; currently atomic."
           ]
         },
         "necessary": {
-          "score": 6,
-          "rationale": "This test duplicates coverage of other tests that likely verify `write_unified_report`'s output format. It does not add unique value to the suite.",
+          "score": 5,
+          "rationale": "This test duplicates coverage of other tests that likely verify similar severity mappings (e.g., WARN vs BLOCK). It does not add unique value unless it specifically checks for the *absence* of a warning when no findings exist.",
           "suggestions": [
-            "Remove this specific assertion if it is already covered by existing unit tests for report generation, or refactor into a dedicated 'report formatting' test."
+            "Remove this assertion if existing tests cover general severity display. If keeping, ensure there is another test that verifies 'no findings' results in NO WARNING instead of WARN."
           ]
         },
         "granular": {
-          "score": 8,
-          "rationale": "The test isolates the behavior of `write_unified_report` regarding severity levels. It is precise in what it checks.",
+          "score": 4,
+          "rationale": "The test only checks the final markdown output string; it does not verify intermediate logic (e.g., severity calculation before rendering). It is too coarse-grained for a unit test of this complexity.",
           "suggestions": [
-            "None required."
+            "Add assertions to check `cr_units` structure, that `severity: 'BLOCK'`, and specific findings lists are populated correctly. This isolates the data flow logic rather than just the output."
           ]
         },
         "fast": {
           "score": 9,
-          "rationale": "The test executes rapidly without artificial delays or heavy I/O operations beyond reading a single file.",
+          "rationale": "The test executes quickly with minimal setup (single file read) and no artificial delays.",
           "suggestions": [
-            "None required."
+            "None needed; currently fast."
           ]
         },
         "first_tdd": {
           "score": 7,
-          "rationale": "While the code follows an Arrange-Act-Assert pattern (calling `write_unified_report` then checking content), it lacks a clear 'Arrange' phase that explicitly defines the expected input state and rules before execution. It feels more like a unit test for the function's output than a TDD-driven specification of behavior.",
+          "rationale": "It follows the Arrange-Act-Assert pattern: `tmp_path` is arranged (created), `write_unified_report` acts (called with data), and assertions assert behavior. However, it lacks a clear 'Arrange' phase that explicitly defines input expectations before calling the function.",
           "suggestions": [
-            "Explicitly define the `cr_units`, `spend_str`, and file content in an 'Arrange' block or helper fixture to clearly demonstrate the design intent before running the assertion."
+            "Explicitly define expected inputs in an Arrange block or docstring: e.g., `'verify severity field is BLOCK not WARN when no findings exist.'` to make the design intent explicit."
           ]
         },
-        "summary": "The test is functional but lacks unique value (duplicates coverage) and explicit behavioral specification. It should be removed if redundant with existing tests, or refactored into a dedicated formatting test for report generation."
+        "summary": "The test demonstrates good TDD principles but lacks clarity on *why* it exists and risks being brittle if library internals change. It should be refactored into a helper function for maintainability and potentially removed or consolidated with other severity tests to avoid duplication."
+      }
+    },
+    {
+      "id": "tests/test_unified_compare.py::test_write_unified_report_marks_invalid_cqi_metric_failed",
+      "file_path": "tests/test_unified_compare.py",
+      "test_name": "test_write_unified_report_marks_invalid_cqi_metric_failed",
+      "class_name": null,
+      "farley_index": 7.625,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 9,
+          "rationale": "The test clearly defines the business rule: an invalid CQI metric must result in a FAIL verdict and report 'MISSING_DIMENSION' as the reason. The domain language is precise.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 8,
+          "rationale": "The test isolates logic to `write_unified_report` without hardcoding system details like specific file paths or internal state assumptions. It avoids brittle dependencies on the report generation implementation.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic and self-contained; it does not rely on external shared state (database/network/filesystem) or timing. However, `tmp_path` implies a file system dependency which technically violates the strict 'no filesystem' rule for pure repeatability in some contexts.",
+          "suggestions": [
+            "Remove reliance on `tmp_path`. Instead of writing to disk and reading back text, assert directly against expected string content or use an immutable mock object that simulates the report output without I/O."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: `write_unified_report` marks a specific invalid metric as failed. If this assertion fails, it immediately indicates that the function did not produce an 'INVALID' verdict or incorrect reason text.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test covers a specific edge case (invalid metric). However, without seeing other tests for valid metrics and different error scenarios, it may not be strictly necessary to cover all possible CQI failure modes if the suite is comprehensive.",
+          "suggestions": [
+            "Review coverage reports. Ensure this specific invalid scenario does not duplicate existing test cases that already verify 'MISSING_DIMENSION' or similar errors under valid conditions."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The assertion is granular enough to catch the exact failure mode ('INVALID (MISSING_DIMENSION)') and verifies both the verdict change and the specific reason string.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 5,
+          "rationale": "This test involves reading a file (`out_file.read_text`), which introduces I/O latency. It also performs text matching on potentially large generated reports if the `spend_str` or content is verbose.",
+          "suggestions": [
+            "Replace file I/O with an in-memory mock object that returns pre-computed report strings directly, eliminating disk read/write overhead and setup time."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The test follows the Arrange-Act-Assert pattern implicitly. It sets up a mock function call (Arrange), invokes it with specific inputs to trigger failure (Act), and asserts the resulting state matches expectations (Assert).",
+          "suggestions": []
+        },
+        "summary": "{\"understandable\":9,\"maintainable\":8,\"repeatable\":7,\"atomic\":9,\"necessary\":6,\"granular\":8,\"fast\":5,\"first_tdd\":9}"
+      }
+    },
+    {
+      "id": "tests/test_unified_compare.py::test_write_unified_report_ignores_malformed_cqi_units",
+      "file_path": "tests/test_unified_compare.py",
+      "test_name": "test_write_unified_report_ignores_malformed_cqi_units",
+      "class_name": null,
+      "farley_index": 7.875,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 9,
+          "rationale": "The test name and arguments are clear. The intent is to verify that the `write_unified_report` function ignores malformed CQI units without crashing or producing an error.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 8,
+          "rationale": "The test relies on a specific argument structure (`cr_data`, `farley_data`) which is fine for unit testing logic. However, it couples the behavior to these data structures rather than pure functionality.",
+          "suggestions": [
+            "Remove or abstract away the dependency on external JSON-like dictionaries passed as arguments if possible.",
+            "Ensure that any changes in how `cr_data` or `farley_data` are structured do not break this test."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic and self-contained. It does not rely on external state (DB/network/filesystem) except for the temporary file path provided by `tmp_path`. However, it relies heavily on specific data structures passed in.",
+          "suggestions": [
+            "Consider removing or abstracting away the dependency on these argument dictionaries to make the test more robust against refactoring of caller code."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: that malformed units are ignored. If this assertion fails (e.g., due to a crash or exception), the cause is instantly obvious.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test verifies specific edge-case handling for malformed data within `write_unified_report`. It does not duplicate coverage of other tests that might handle general error cases or different scenarios.",
+          "suggestions": [
+            "Review if this specific unit-test case is truly necessary. If the function handles errors gracefully in production, a simpler integration test might suffice."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The assertion targets very granular behavior: ignoring malformed units specifically without asserting anything about other parts of the report generation.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "There are no artificial sleeps, heavy setups (beyond `tmp_path`), or slow I/O operations. The test is purely functional execution.",
+          "suggestions": [
+            ""
+          ]
+        },
+        "first_tdd": {
+          "score": 7,
+          "rationale": "The code follows Arrange-Act-Assert structure (setup `tmp_path`, call function with data, assert content). However, the 'Arrange' phase is weak because it relies on external input structures rather than setting up a clean state.",
+          "suggestions": [
+            "Refactor to explicitly set up expected output or mock inputs in Arrange if possible. Ensure that changing these inputs doesn't break other tests."
+          ]
+        },
+        "summary": "The test is highly understandable and fast but suffers from brittle coupling with external data structures (maintainability) and a weak arrange phase due to reliance on caller-provided dictionaries rather than clean setup (first_tdd). It effectively isolates one edge-case behavior."
       }
     },
     {
@@ -3780,32 +4093,32 @@
     "farley_usage_summary": {
       "run_id": "main-baseline",
       "model": "ollama/qwen3.5:2b",
-      "reviewed_test_cases": 53,
+      "reviewed_test_cases": 58,
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 80,
-          "prompt_tokens": 50251,
-          "completion_tokens": 65847,
-          "total_tokens": 116098,
+          "calls": 88,
+          "prompt_tokens": 54616,
+          "completion_tokens": 73061,
+          "total_tokens": 127677,
           "cost_usd": 0.0,
           "missing_usage_calls": 0
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 80,
-            "prompt_tokens": 50251,
-            "completion_tokens": 65847,
-            "total_tokens": 116098,
+            "calls": 88,
+            "prompt_tokens": 54616,
+            "completion_tokens": 73061,
+            "total_tokens": 127677,
             "cost_usd": 0.0
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 80,
-            "prompt_tokens": 50251,
-            "completion_tokens": 65847,
-            "total_tokens": 116098,
+            "calls": 88,
+            "prompt_tokens": 54616,
+            "completion_tokens": 73061,
+            "total_tokens": 127677,
             "cost_usd": 0.0
           }
         },
@@ -4199,6 +4512,78 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
+            "prompt_tokens": 470,
+            "completion_tokens": 1024,
+            "total_tokens": 1494,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "cache",
+            "generation_params": {},
+            "prompt_tokens": 470,
+            "completion_tokens": 1024,
+            "total_tokens": 1494,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "cache",
+            "generation_params": {},
+            "prompt_tokens": 470,
+            "completion_tokens": 1024,
+            "total_tokens": 1494,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 556,
+            "completion_tokens": 786,
+            "total_tokens": 1342,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 525,
+            "completion_tokens": 912,
+            "total_tokens": 1437,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 498,
+            "completion_tokens": 811,
+            "total_tokens": 1309,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "cache",
+            "generation_params": {},
             "prompt_tokens": 541,
             "completion_tokens": 923,
             "total_tokens": 1464,
@@ -4269,7 +4654,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 788,
             "completion_tokens": 759,
@@ -4281,7 +4666,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 852,
             "completion_tokens": 838,
@@ -4293,7 +4678,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 702,
             "completion_tokens": 683,
@@ -4305,7 +4690,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 751,
             "completion_tokens": 1024,
@@ -4487,9 +4872,33 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 717,
-            "completion_tokens": 802,
-            "total_tokens": 1519,
+            "prompt_tokens": 715,
+            "completion_tokens": 917,
+            "total_tokens": 1632,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 743,
+            "completion_tokens": 757,
+            "total_tokens": 1500,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 635,
+            "completion_tokens": 761,
+            "total_tokens": 1396,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -4629,7 +5038,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 477,
             "completion_tokens": 685,
@@ -4641,7 +5050,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 423,
             "completion_tokens": 1015,
@@ -4653,7 +5062,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 480,
             "completion_tokens": 570,
@@ -4665,7 +5074,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 627,
             "completion_tokens": 1024,
@@ -5972,6 +6381,195 @@
       "completion_tokens": 1024,
       "prompt_tokens": 627,
       "total_tokens": 1651,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "6c21b90029483d5162f27f6a250877bb05ae2f9bd8264ae9adb6d8a0acfc5ca5": {
+    "id": "chatcmpl-8c8d65d4-c137-4b0e-a88b-4483e4077748",
+    "created": 1783271895,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 6,\n    \"rationale\": \"The test name and logic are understandable but the variable `review` is defined as a dictionary literal with nested keys that do not clearly map to business concepts (e.g., 'readability' vs input data). The assertion chain mixes high-level status checks (`valid`, `value`) with low-level implementation details (`error_code`, `reason`).\",\n    \"suggestions\": [\n      \"Rename the test function and variables to reflect domain intent, e.g., `test_calculate_cqi_result_rejects_missing_dimension`. Use descriptive variable names like `missing_data` instead of implicit dictionary keys.\",\n      \"Remove or rename internal attributes (`readability`, `value`, `error_code`) from assertions. Focus on business rules: 'Is the result valid?', 'What is the calculated value?' (if applicable), and 'Which error occurred?'.\",\n      \"Ensure all test logic relies solely on external inputs; do not hardcode specific attribute names unless they are part of a public API contract.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 4,\n    \"rationale\": \"The test is brittle to changes in the `calculate_cqi_result` implementation. It asserts internal attributes (`error_code`, `reason`) which will change if the underlying logic refactors or adds new error codes without updating this specific unit.\",\n    \"suggestions\": [\n      \"Refactor assertions to depend only on external inputs and expected outputs, not internal state of functions being tested (DRY principle).\",\n      \"Ensure that any changes in `calculate_cqi_result` do not break the test unless they change its behavior. Ideally, use a mock or stub for side effects if necessary.\",\n      \"Avoid asserting implementation details like specific error codes (`MISSING_DIMENSION`) directly; instead, verify against expected strings defined by business logic.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 5,\n    \"rationale\": \"The test is repeatable in execution but relies on the internal state of `code_review_compare` (specifically its attributes). If that function refactors or adds side effects, this specific assertion will fail without modification.\",\n    \"suggestions\": [\n      \"Remove reliance on internal implementation details. Assert only what can be verified externally: input data and expected output values/errors.\",\n      \"Ensure the test is self-contained; it should not depend on external state (database, network) or timing-sensitive operations that could cause flakiness.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 7,\n    \"rationale\": \"The test verifies exactly one behavior: rejecting a missing dimension. However, the assertion chain (`assert result.valid is False`, etc.) mixes multiple checks in sequence, which can obscure if *any* check fails versus all failing.\",\n    \"suggestions\": [\n      \"Isolate assertions to single atomic behaviors per line or block (e.g., `if not review['missing_dim'] ...`).\",\n      \"Ensure that a failure on one assertion does not mask failures in others, making debugging harder if the test suite reports mixed results.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"The test covers specific edge case handling (missing dimension). However, it may duplicate coverage of other tests already verifying similar scenarios or trivial checks that don't add unique value.\",\n    \"suggestions\": [\n      \"Review the existing test suite to ensure this specific scenario isn't covered by more general 'validity' or 'error reporting' tests. If not, clarify why this edge case is critical enough for a dedicated unit test.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 5,\n    \"rationale\": \"The test targets the input validation logic but mixes high-level assertions (`valid`, `value`) with low-level implementation details (`error_code`). It isolates 'missing dimension' well but could be more granular by separating data structure checks from business rule validations.\",\n    \"suggestions\": [\n      \"Refactor to separate concerns: one test for input validation (e.g., checking if required keys exist), another for result calculation logic, and a third for error reporting format. This ensures the 'missing dimension' check is isolated precisely.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 8,\n    \"rationale\": \"The test executes rapidly as it contains no artificial delays, heavy setups, or slow I/O operations. It relies on dictionary lookups and simple assertions.\",\n    \"suggestions\": [\n      \"Ensure the `calculate_cqi_result` function being tested is efficient; if it involves complex loops or external calls that could introduce latency in",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 470,
+      "total_tokens": 1494,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "98456bafb4e98baefb5fe94d5eabe9a5e9103f2ad85106c77295a816d59f72ca": {
+    "id": "chatcmpl-7d50585a-59de-49d7-923a-b07ff85a80c3",
+    "created": 1783271961,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 7,\n    \"rationale\": \"The test name and logic are clear enough for a developer familiar with the domain (CQI scoring), but 'code_review_compare' suggests an internal implementation detail rather than business rule clarity.\",\n    \"suggestions\": [\n      \"Rename `result` to something more descriptive like `test_calculate_cqi_result_invalid_score`.\",\n      \"Ensure all other tests in this file use the same naming convention and domain language.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"The test is decoupled from implementation details; it only asserts business rules (validity of score) without touching internal logic.\",\n    \"suggestions\": [\n      \"Ensure the `calculate_cqi_result` function itself follows TDD principles and doesn't rely on side effects that this test would break if refactored.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 8,\n    \"rationale\": \"The test is self-contained with no external dependencies. However, it relies heavily on the `code_review_compare` module's internal state or logic which might be brittle if that function changes.\",\n    \"suggestions\": [\n      \"Verify that `calculate_cqi_result` does not rely on mutable global state shared across tests.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: rejecting an invalid score. The failure cause is obvious (assertions fail).\",\n    \"suggestions\": [\n      \"Ensure the assertion `result.error_code == \\\"INVALID_SCORE\\\"` matches a specific internal error code defined in that function, not just any string.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 7,\n    \"rationale\": \"This test covers one aspect of score validation. It may be redundant if other tests already cover edge cases like empty strings or non-numeric inputs.\",\n    \"suggestions\": [\n      \"Review the existing test suite to ensure no other tests verify similar invalid input scenarios.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The test isolates a specific rule (invalid score rejection) rather than general functionality.\",\n    \"suggestions\": [\n      \"Ensure the assertion `result.reason` is checked against an expected error message string to avoid ambiguity.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes immediately without artificial delays or heavy I/O. It relies on pure function execution.\",\n    \"suggestions\": [\n      \"Remove any `time.sleep()` calls if the current implementation uses them for testing purposes.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 6,\n    \"rationale\": \"The test follows Arrange-Act-Pattern (Arrange: create review object; Act: call function; Assert: check result), but it lacks the 'specification' phase where behavior is defined before implementation.\",\n    \"suggestions\": [\n      \"Refactor this to a TDD style by first writing an `assert False` test, then implementing logic that passes it.\"\n    ]\n  },\n  \"summary\": \"The test demonstrates good structure and isolation but lacks the explicit specification phase required for true First-TDD. It is highly brittle if internal implementation details change without updating this specific assertion or function signature.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 786,
+      "prompt_tokens": 556,
+      "total_tokens": 1342,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "4a193f8e3ced2fecf7c282062be7cf0cbbe5171eda3dd24ef061555a3f51b2e8": {
+    "id": "chatcmpl-496c749a-f564-4183-baa3-9da5d33cf6f2",
+    "created": 1783272036,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 6,\n    \"rationale\": \"The test name is descriptive but slightly verbose. The logic flow (collect -> determine) is clear enough for a code review context, though the variable names `invalid_unit` and `cqi_reasons` could be more explicit about their purpose.\",\n    \"suggestions\": [\n      \"Consider renaming `test_code_review_verdict_fails_on_invalid_cqi` to something like `test_determines_failure_when_CQI_is_missing`.\",\n      \"Explicitly mention the input structure in comments or docstrings if this is part of a larger suite.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 7,\n    \"rationale\": \"The test isolates specific logic (`determine_verdict`) without hardcoding system details. It does not rely on external state or shared mutable objects that would break if `code_review_compare` were refactored.\",\n    \"suggestions\": [\n      \"Ensure the internal implementation of `collect_cqi_failure_reasons` and `determine_verdict` are unit-tested separately to prevent hidden coupling.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 8,\n    \"rationale\": \"The test is fully self-contained. It uses a single input object (`invalid_unit`) and deterministic logic without relying on database connections, network calls, or system timing.\",\n    \"suggestions\": [\n      \"Verify that `code_review_compare` does not have side effects (e.g., logging) in its public methods to ensure true repeatability.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: the verdict is 'FAIL' and exit code is 2 when CQI reasons are present. The assertion `assert reasons == cqi_reasons` ensures no spurious failures occur.\",\n    \"suggestions\": [\n      \"Add a specific check for the exact string content of `reasons[0]` to ensure it matches 'INVALID CQI' exactly, rather than just containing it.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 8,\n    \"rationale\": \"This test specifically validates a failure condition (invalid CQI) that might not be covered by other tests. It ensures the system correctly rejects invalid inputs.\",\n    \"suggestions\": [\n      \"Review if this specific case is already tested in integration or end-to-end scenarios; ensure it doesn't duplicate coverage of trivial edge cases.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 7,\n    \"rationale\": \"The test isolates the interaction between `collect_cqi_failure_reasons` and `determine_verdict`. It does not mix unrelated logic (e.g., file parsing or network calls) into a single assertion.\",\n    \"suggestions\": [\n      \"Consider breaking this down further: one test for collecting reasons, another for determining verdict based on those reasons.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes immediately without artificial delays or heavy I/O. It relies only on the provided input and deterministic logic.\",\n    \"suggestions\": [\n      \"Ensure `code_review_compare` has no slow startup sequences that could affect CI/CD pipeline performance.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 8,\n    \"rationale\": \"The test follows the Arrange-Act-Assert pattern: input is defined (Arrange), logic runs to produce output (Act), and assertions validate correctness (Assert). It demonstrates a clean separation of concerns.\",\n    \"suggestions\": [\n      \"Explicitly document the expected behavior in comments or inline docstrings for `collect_cqi_failure_reasons` if this test was written first.\"\n    ]\n  },\n  \"summary\": \"The test is well-structured and follows TDD principles effectively. However, it could be improved by adding explicit string matching checks to ensure atomicity of the failure condition and potentially splitting logic into more granular tests for better maintainability.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 912,
+      "prompt_tokens": 525,
+      "total_tokens": 1437,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "927e293db4dc5f40288cc470f61172396653bff4737d9efd79b0a6c5db32b78f": {
+    "id": "chatcmpl-1bb51533-c818-475b-a01d-79d087e5627f",
+    "created": 1783272101,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and code clearly describe the business rule: malformed units should be skipped during collection. The domain language is clear enough for a QA engineer to understand without needing deep context.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 7,\n    \"rationale\": \"The test relies on `code_review_compare.collect_cqi_failure_reasons`, which implies an external implementation detail. If the library is refactored to use a different collection strategy or return format, this specific assertion will break.\",\n    \"suggestions\": [\n      \"Replace direct assertions about internal logic with high-level expectations (e.g., 'reasons list should contain exactly one item').\",\n      \"Ensure `collect_cqi_failure_reasons` is unit-tested to guarantee its output contract remains stable.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 6,\n    \"rationale\": \"The test relies on the order of arguments in a list and assumes specific types (`None`, dict). While deterministic within that context, it is brittle if `collect_cqi_failure_reasons` changes its signature or internal logic.\",\n    \"suggestions\": [\n      \"Remove reliance on argument ordering by using keyword arguments: `reasons = code_review_compare.collect_cqi_failure_reasons(name='broken_review', file_path='x.py')`.\",\n      \"Avoid relying solely on the presence of a specific type (`None`); use explicit assertions like `assert reasons is None or isinstance(reasons[0], str)`.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: skipping malformed units. The assertion logic is self-contained and the failure cause (missing unit) is immediately obvious.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 8,\n    \"rationale\": \"This specific test validates a critical edge case that other tests likely do not cover. It adds unique value by ensuring robustness against malformed input data.\",\n    \"suggestions\": [\n      \"Ensure no existing test covers the scenario where `collect_cqi_failure_reasons` is called with an empty list or invalid types.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 7,\n    \"rationale\": \"The assertion targets a specific string pattern within a generated reason. It isolates one aspect of the logic but could be broader if it's meant to validate general formatting rules.\",\n    \"suggestions\": [\n      \"Consider asserting that *all* reasons are valid strings and follow the expected format, rather than just checking for this single instance.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test contains no artificial delays, heavy setups, or slow I/O operations. It executes purely on logic flow.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 8,\n    \"rationale\": \"This is a classic Arrange-Act-Assert pattern: the input data (Arrange) is defined before calling `collect_cqi_failure_reasons` (Act), and the expected result follows. It demonstrates clean separation of concerns.\",\n    \"suggestions\": [\n      \"Explicitly document the 'Arrange' phase in comments or inline to ensure future maintainers understand why this specific test exists.\"\n    ]\n  },\n  \"summary\": \"The test is well-structured and fast but risks brittle behavior due to reliance on external implementation details. It effectively validates a critical edge case without duplicating other tests.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 811,
+      "prompt_tokens": 498,
+      "total_tokens": 1309,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "38faff26f07f8007b40186538c97f4a6e7e0aa28c956213b36ed0b5d19178245": {
+    "id": "chatcmpl-869e3f3d-d514-4097-b095-bd7dbb47a1b3",
+    "created": 1783272179,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and arguments are clear enough for a developer familiar with the `unified_compare` library to understand intent. However, it lacks explicit documentation of *why* this specific report format is being generated (e.g., 'to verify severity display logic'), which could be ambiguous in larger codebases.\",\n    \"suggestions\": [\n      \"Add an inline docstring explaining that the test verifies the `severity` field renders correctly as **BLOCK** and not just a generic warning, even if it's implied by context.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"The test is brittle to changes in how `write_unified_report` formats output. If the library adds new fields or alters markdown rendering logic without updating this assertion, the test will fail even if behavior remains correct.\",\n    \"suggestions\": [\n      \"Refactor into a helper function that returns only the expected report string for comparison (e.g., using `assert_string_in_output`), decoupling it from internal formatting details of `write_unified_report`. This makes refactoring the library safer.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic and self-contained within a single file. It does not rely on external state or timing.\",\n    \"suggestions\": [\n      \"Ensure `tmp_path` usage doesn't introduce flaky behavior if the filesystem path changes unexpectedly; explicitly handle potential race conditions in CI environments.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one specific rule: that a BLOCK severity is displayed correctly. If this assertion fails, it immediately indicates the `severity` field logic or markdown rendering failed.\",\n    \"suggestions\": [\n      \"None needed; currently atomic.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test duplicates coverage of other tests that likely verify similar severity mappings (e.g., WARN vs BLOCK). It does not add unique value unless it specifically checks for the *absence* of a warning when no findings exist.\",\n    \"suggestions\": [\n      \"Remove this assertion if existing tests cover general severity display. If keeping, ensure there is another test that verifies 'no findings' results in NO WARNING instead of WARN.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 4,\n    \"rationale\": \"The test only checks the final markdown output string; it does not verify intermediate logic (e.g., severity calculation before rendering). It is too coarse-grained for a unit test of this complexity.\",\n    \"suggestions\": [\n      \"Add assertions to check `cr_units` structure, that `severity: 'BLOCK'`, and specific findings lists are populated correctly. This isolates the data flow logic rather than just the output.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes quickly with minimal setup (single file read) and no artificial delays.\",\n    \"suggestions\": [\n      \"None needed; currently fast.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"It follows the Arrange-Act-Assert pattern: `tmp_path` is arranged (created), `write_unified_report` acts (called with data), and assertions assert behavior. However, it lacks a clear 'Arrange' phase that explicitly defines input expectations before calling the function.\",\n    \"suggestions\": [\n      \"Explicitly define expected inputs in an Arrange block or docstring: e.g., `'verify severity field is BLOCK not WARN when no findings exist.'` to make the design intent explicit.\"\n    ]\n  },\n  \"summary\": \"The test demonstrates good TDD principles but lacks clarity on *why* it exists and risks being brittle if library internals change. It should be refactored into a helper function for maintainability and potentially removed or consolidated with other severity tests to avoid duplication.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 917,
+      "prompt_tokens": 715,
+      "total_tokens": 1632,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "977e6895620eba1203710f05f1293584e4a42a7be18f919c4ac33b3220c8fba7": {
+    "id": "chatcmpl-a80be08d-88dc-4306-b898-0bd95af76042",
+    "created": 1783272247,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 9,\n    \"rationale\": \"The test clearly defines the business rule: an invalid CQI metric must result in a FAIL verdict and report 'MISSING_DIMENSION' as the reason. The domain language is precise.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 8,\n    \"rationale\": \"The test isolates logic to `write_unified_report` without hardcoding system details like specific file paths or internal state assumptions. It avoids brittle dependencies on the report generation implementation.\",\n    \"suggestions\": []\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic and self-contained; it does not rely on external shared state (database/network/filesystem) or timing. However, `tmp_path` implies a file system dependency which technically violates the strict 'no filesystem' rule for pure repeatability in some contexts.\",\n    \"suggestions\": [\n      \"Remove reliance on `tmp_path`. Instead of writing to disk and reading back text, assert directly against expected string content or use an immutable mock object that simulates the report output without I/O.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: `write_unified_report` marks a specific invalid metric as failed. If this assertion fails, it immediately indicates that the function did not produce an 'INVALID' verdict or incorrect reason text.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test covers a specific edge case (invalid metric). However, without seeing other tests for valid metrics and different error scenarios, it may not be strictly necessary to cover all possible CQI failure modes if the suite is comprehensive.\",\n    \"suggestions\": [\n      \"Review coverage reports. Ensure this specific invalid scenario does not duplicate existing test cases that already verify 'MISSING_DIMENSION' or similar errors under valid conditions.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The assertion is granular enough to catch the exact failure mode ('INVALID (MISSING_DIMENSION)') and verifies both the verdict change and the specific reason string.\",\n    \"suggestions\": []\n  },\n  \"fast\": {\n    \"score\": 5,\n    \"rationale\": \"This test involves reading a file (`out_file.read_text`), which introduces I/O latency. It also performs text matching on potentially large generated reports if the `spend_str` or content is verbose.\",\n    \"suggestions\": [\n      \"Replace file I/O with an in-memory mock object that returns pre-computed report strings directly, eliminating disk read/write overhead and setup time.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 9,\n    \"rationale\": \"The test follows the Arrange-Act-Assert pattern implicitly. It sets up a mock function call (Arrange), invokes it with specific inputs to trigger failure (Act), and asserts the resulting state matches expectations (Assert).\",\n    \"suggestions\": []\n  },\"summary\":\"{\\\"understandable\\\":9,\\\"maintainable\\\":8,\\\"repeatable\\\":7,\\\"atomic\\\":9,\\\"necessary\\\":6,\\\"granular\\\":8,\\\"fast\\\":5,\\\"first_tdd\\\":9}\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 757,
+      "prompt_tokens": 743,
+      "total_tokens": 1500,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "657aae46e2b5d79f645acb0a205d68f1ec8b71146e209035fb63a1913147ccaa": {
+    "id": "chatcmpl-8a193e90-0472-4c36-992c-27488f2f1336",
+    "created": 1783272312,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 9,\n    \"rationale\": \"The test name and arguments are clear. The intent is to verify that the `write_unified_report` function ignores malformed CQI units without crashing or producing an error.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 8,\n    \"rationale\": \"The test relies on a specific argument structure (`cr_data`, `farley_data`) which is fine for unit testing logic. However, it couples the behavior to these data structures rather than pure functionality.\",\n    \"suggestions\": [\n      \"Remove or abstract away the dependency on external JSON-like dictionaries passed as arguments if possible.\",\n      \"Ensure that any changes in how `cr_data` or `farley_data` are structured do not break this test.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic and self-contained. It does not rely on external state (DB/network/filesystem) except for the temporary file path provided by `tmp_path`. However, it relies heavily on specific data structures passed in.\",\n    \"suggestions\": [\n      \"Consider removing or abstracting away the dependency on these argument dictionaries to make the test more robust against refactoring of caller code.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: that malformed units are ignored. If this assertion fails (e.g., due to a crash or exception), the cause is instantly obvious.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test verifies specific edge-case handling for malformed data within `write_unified_report`. It does not duplicate coverage of other tests that might handle general error cases or different scenarios.\",\n    \"suggestions\": [\n      \"Review if this specific unit-test case is truly necessary. If the function handles errors gracefully in production, a simpler integration test might suffice.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The assertion targets very granular behavior: ignoring malformed units specifically without asserting anything about other parts of the report generation.\",\n    \"suggestions\": []\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"There are no artificial sleeps, heavy setups (beyond `tmp_path`), or slow I/O operations. The test is purely functional execution.\",\n    \"suggestions\": [\n      \"\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"The code follows Arrange-Act-Assert structure (setup `tmp_path`, call function with data, assert content). However, the 'Arrange' phase is weak because it relies on external input structures rather than setting up a clean state.\",\n    \"suggestions\": [\n      \"Refactor to explicitly set up expected output or mock inputs in Arrange if possible. Ensure that changing these inputs doesn't break other tests.\"\n    ]\n  },\n  \"summary\": \"The test is highly understandable and fast but suffers from brittle coupling with external data structures (maintainability) and a weak arrange phase due to reliance on caller-provided dictionaries rather than clean setup (first_tdd). It effectively isolates one edge-case behavior.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 761,
+      "prompt_tokens": 635,
+      "total_tokens": 1396,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
