@@ -20,8 +20,10 @@ from scripts.farley_compare import (
     top_regressions as farley_top_regressions,
 )
 from scripts.code_review_compare import (
-    calculate_cqi,
+    calculate_cqi_result,
+    collect_cqi_failure_reasons,
     effective_review_severity,
+    format_cqi_result,
     group_units_by_severity,
     determine_verdict as cr_determine_verdict,
     format_unit_name,
@@ -116,12 +118,20 @@ def _write_header_and_summary(f, unified_verdict: str, reasons: List[str], spend
 
 def _get_cqi_metric(cr_data: Dict[str, Any]) -> Tuple[str, str]:
     """Build CQI metric and status values."""
-    cr_units = cr_data.get("units") or []
+    cr_units = [
+        unit for unit in (cr_data.get("units") or [])
+        if isinstance(unit, dict)
+    ]
     cr_verdict = cr_data.get("verdict") or "PASS"
     if not cr_units:
         return "N/A (no Python code changes)", "PASS"
 
-    scores = [calculate_cqi(u.get("review") or {}) for u in cr_units]
+    cqi_results = [calculate_cqi_result(u.get("review") or {}) for u in cr_units]
+    invalid_count = sum(1 for result in cqi_results if not result.valid)
+    if invalid_count:
+        return f"INVALID ({invalid_count}/{len(cr_units)} unit(s))", "FAIL"
+
+    scores = [result.value for result in cqi_results if result.value is not None]
     avg_cqi = mean(scores) if scores else 10.0
     return f"{avg_cqi:.2f}/10 (average of {len(cr_units)} unit(s))", cr_verdict
 
@@ -188,7 +198,7 @@ def _write_cr_units_overview(f, cr_units: List[Dict[str, Any]]) -> None:
         f.write(
             f"| {_esc(unit.get('file_path'))} "
             f"| {_esc(format_unit_name(unit))} "
-            f"| {calculate_cqi(review):.2f}/10 "
+            f"| {_esc(format_cqi_result(review))} "
             f"| **{_esc(severity)}** "
             f"| {_esc(review.get('summary', ''))} |\n"
         )
@@ -223,7 +233,10 @@ def _write_cr_findings_table(f, findings: List[Dict[str, Any]]) -> None:
 
 
 def _write_code_review_details(f, cr_data: Dict[str, Any]) -> None:
-    cr_units = cr_data.get("units", [])
+    cr_units = [
+        unit for unit in cr_data.get("units", [])
+        if isinstance(unit, dict)
+    ]
     if not cr_units:
         return
     f.write("## 🔍 Code Review Findings\n\n")
@@ -239,7 +252,7 @@ def _write_code_review_details(f, cr_data: Dict[str, Any]) -> None:
             review = unit.get("review") or {}
             severity = effective_review_severity(review)
             f.write(f"#### ⚠️ `{unit.get('file_path')}` -> `{format_unit_name(unit)}` ({severity})\n")
-            f.write(f"**CQI**: {calculate_cqi(review):.2f}/10\n\n")
+            f.write(f"**CQI**: {format_cqi_result(review)}\n\n")
             f.write(f"{review.get('summary', '')}\n\n")
             f.write("| Dimension | Score | Rationale | Suggestions |\n")
             f.write("|---|---|---|---|\n")
@@ -337,7 +350,13 @@ def main():
     # 1. Process Code Review
     cr_units = cr_cassette.get("reviews", [])
     block_units, warn_units, _ = group_units_by_severity(cr_units)
-    cr_verdict, cr_exit, cr_reasons = cr_determine_verdict(block_units, warn_units, args.warn_threshold)
+    cqi_failure_reasons = collect_cqi_failure_reasons(cr_units)
+    cr_verdict, cr_exit, cr_reasons = cr_determine_verdict(
+        block_units,
+        warn_units,
+        args.warn_threshold,
+        cqi_failure_reasons,
+    )
 
     # 2. Process Farley Score
     farley_bsum = {"avg_index": 0.0, "count": 0, "per_property": {}}

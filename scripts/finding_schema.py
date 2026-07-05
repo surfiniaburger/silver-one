@@ -124,6 +124,18 @@ class UnitReviewArtifact(BaseModel):
     raw_response: str = Field(..., description="The original raw unvalidated LLM response string")
 
 
+class CQIResult(BaseModel):
+    valid: bool
+    value: Optional[float] = None
+    reason: Optional[str] = None
+    error_code: Optional[Literal[
+        "MISSING_REVIEW",
+        "MISSING_DIMENSION",
+        "MISSING_SCORE",
+        "INVALID_SCORE",
+    ]] = None
+
+
 def _validate_dimensions(raw_json: Dict[str, Any], review: Any, fields: List[FieldValidation]) -> None:
     dimensions = ["readability", "maintainability", "correctness", "complexity", "security", "test_coverage"]
     for dim in dimensions:
