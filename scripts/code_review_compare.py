@@ -3,39 +3,68 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Optional, Tuple
 
 # Enable relative imports from parent directory
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from scripts.path_utils import validate_input_path, validate_output_path
+from scripts.finding_schema import CQIResult
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+CQI_WEIGHTS = {
+    "readability": 1.5,
+    "maintainability": 1.5,
+    "correctness": 2.0,
+    "complexity": 1.0,
+    "security": 2.0,
+    "test_coverage": 1.0,
+}
 
-def calculate_cqi(review: Dict[str, Any]) -> float:
-    weights = {
-        "readability": 1.5,
-        "maintainability": 1.5,
-        "correctness": 2.0,
-        "complexity": 1.0,
-        "security": 2.0,
-        "test_coverage": 1.0,
-    }
+
+def _invalid_cqi(error_code: str, reason: str) -> CQIResult:
+    return CQIResult(valid=False, error_code=error_code, reason=reason)
+
+
+def calculate_cqi_result(review: Dict[str, Any]) -> CQIResult:
+    if not isinstance(review, dict) or not review:
+        return _invalid_cqi("MISSING_REVIEW", "Review payload is missing or empty.")
+
     total_weighted = 0.0
-    total_weight = sum(weights.values())
+    total_weight = sum(CQI_WEIGHTS.values())
 
-    for prop, weight in weights.items():
+    for prop, weight in CQI_WEIGHTS.items():
         prop_val = review.get(prop)
-        score = 10.0
-        if isinstance(prop_val, dict) and "score" in prop_val:
-            try:
-                score = float(prop_val["score"])
-            except ValueError:
-                pass
+        if not isinstance(prop_val, dict):
+            return _invalid_cqi("MISSING_DIMENSION", f"Required CQI dimension '{prop}' is missing.")
+        score_val = prop_val.get("score")
+        if score_val is None:
+            return _invalid_cqi("MISSING_SCORE", f"Required CQI score for '{prop}' is missing.")
+        if isinstance(score_val, bool):
+            return _invalid_cqi("INVALID_SCORE", f"CQI score for '{prop}' must be numeric, not boolean.")
+        try:
+            score = float(score_val)
+        except (TypeError, ValueError):
+            return _invalid_cqi("INVALID_SCORE", f"CQI score for '{prop}' is not numeric.")
+        if not 0.0 <= score <= 10.0:
+            return _invalid_cqi("INVALID_SCORE", f"CQI score for '{prop}' is outside [0.0, 10.0].")
         total_weighted += score * weight
 
-    return total_weighted / total_weight
+    return CQIResult(valid=True, value=total_weighted / total_weight)
+
+
+def calculate_cqi(review: Dict[str, Any]) -> float:
+    """Compatibility wrapper for legacy callers that expect a float."""
+    result = calculate_cqi_result(review)
+    return result.value if result.valid and result.value is not None else 10.0
+
+
+def format_cqi_result(review: Dict[str, Any]) -> str:
+    result = calculate_cqi_result(review)
+    if result.valid and result.value is not None:
+        return f"{result.value:.2f}/10"
+    return f"INVALID ({result.error_code or 'INVALID_CQI'})"
 
 
 def get_usage_totals(cassette: Dict[str, Any]) -> Dict[str, Any]:
@@ -120,6 +149,8 @@ def group_units_by_severity(reviews: List[Dict[str, Any]]) -> Tuple[List[Dict[st
     warn_units = []
     ok_units = []
     for unit in reviews:
+        if not isinstance(unit, dict):
+            continue
         review = unit.get("review") or {}
         severity = effective_review_severity(review)
         if severity == "BLOCK":
@@ -131,13 +162,37 @@ def group_units_by_severity(reviews: List[Dict[str, Any]]) -> Tuple[List[Dict[st
     return block_units, warn_units, ok_units
 
 
-def determine_verdict(block_units: List[Dict[str, Any]], warn_units: List[Dict[str, Any]], warn_threshold: int) -> Tuple[str, int, List[str]]:
+def collect_cqi_failure_reasons(reviews: List[Dict[str, Any]]) -> List[str]:
+    reasons = []
+    for unit in reviews:
+        if not isinstance(unit, dict):
+            continue
+        review = unit.get("review") or {}
+        result = calculate_cqi_result(review)
+        if result.valid:
+            continue
+        unit_name = format_unit_name(unit)
+        location = f"{unit.get('file_path')} -> {unit_name}"
+        reasons.append(f"INVALID CQI: {location}: {result.reason}")
+    return reasons
+
+
+def determine_verdict(
+    block_units: List[Dict[str, Any]],
+    warn_units: List[Dict[str, Any]],
+    warn_threshold: int,
+    cqi_failure_reasons: Optional[List[str]] = None,
+) -> Tuple[str, int, List[str]]:
     exit_code = 0
     reasons = []
 
     if block_units:
         exit_code = 2
         reasons.append(f"CRITICAL: {len(block_units)} code unit(s) were flagged as BLOCK.")
+
+    if cqi_failure_reasons:
+        exit_code = 2
+        reasons.extend(cqi_failure_reasons)
 
     if len(warn_units) > warn_threshold:
         reasons.append(
@@ -193,7 +248,7 @@ def write_overview(f, reviews: List[Dict[str, Any]]) -> None:
         f.write(
             f"| {unit.get('file_path')} "
             f"| {format_unit_name(unit)} "
-            f"| {calculate_cqi(review):.2f}/10 "
+            f"| {format_cqi_result(review)} "
             f"| **{severity}** "
             f"| {review.get('summary', '')} |\n"
         )
@@ -229,7 +284,7 @@ def write_detailed_feedback(f, reviews: List[Dict[str, Any]]) -> None:
             continue
 
         f.write(f"### ⚠️ {unit.get('file_path')} -> `{format_unit_name(unit)}` ({severity})\n")
-        f.write(f"**Overall CQI**: {calculate_cqi(review):.2f}/10\n\n")
+        f.write(f"**Overall CQI**: {format_cqi_result(review)}\n\n")
         f.write(f"{review.get('summary', '')}\n\n")
         f.write("| Dimension | Score | Rationale | Suggestions |\n")
         f.write("|---|---|---|---|\n")
@@ -262,10 +317,12 @@ def main():
     cassette_data = load_cassette(pr_path)
     reviews = get_reviews(cassette_data)
     block_units, warn_units, _ = group_units_by_severity(reviews)
+    cqi_failure_reasons = collect_cqi_failure_reasons(reviews)
     verdict, exit_code, reasons = determine_verdict(
         block_units,
         warn_units,
         args.warn_threshold,
+        cqi_failure_reasons,
     )
     write_report(
         out_path,

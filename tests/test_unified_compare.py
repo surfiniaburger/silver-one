@@ -251,7 +251,67 @@ def test_write_unified_report_displays_effective_severity(tmp_path):
     )
 
     content = out_file.read_text(encoding="utf-8")
-    assert "| tests/test_code_review.py | test_unsubstantiated_block | 10.00/10 | **WARN** | OK |" in content
+    assert "| tests/test_code_review.py | test_unsubstantiated_block | INVALID (MISSING_DIMENSION) | **WARN** | OK |" in content
     assert "**BLOCK**" not in content
 
 
+def test_write_unified_report_marks_invalid_cqi_metric_failed(tmp_path):
+    from scripts.unified_compare import write_unified_report
+    out_file = tmp_path / "report.md"
+
+    cr_units = [
+        {
+            "file_path": "src/utils.py",
+            "name": "invalid_review",
+            "review": {
+                "severity": "OK",
+                "summary": "Incomplete review",
+            },
+        }
+    ]
+
+    write_unified_report(
+        out_path=out_file,
+        unified_verdict="FAIL",
+        reasons=["INVALID CQI: src/utils.py -> invalid_review: Required CQI dimension 'readability' is missing."],
+        spend_str="**Token spend**: 100 total tokens\n\n",
+        cr_data={"units": cr_units, "verdict": "PASS"},
+        farley_data={
+            "bsum": {"avg_index": 8.0},
+            "psum": {"avg_index": 8.0},
+            "delta": 0.0,
+            "verdict": "PASS",
+            "regressions": [],
+            "baseline_exists": True,
+        },
+        compat_data={"ok": True, "score": 10.0, "regressions": []},
+    )
+
+    content = out_file.read_text(encoding="utf-8")
+    assert "| Code Quality Index (CQI) | INVALID (1/1 unit(s)) | **FAIL** |" in content
+    assert "| src/utils.py | invalid_review | INVALID (MISSING_DIMENSION) | **OK** | Incomplete review |" in content
+
+
+def test_write_unified_report_ignores_malformed_cqi_units(tmp_path):
+    from scripts.unified_compare import write_unified_report
+    out_file = tmp_path / "report.md"
+
+    write_unified_report(
+        out_path=out_file,
+        unified_verdict="PASS",
+        reasons=[],
+        spend_str="**Token spend**: 100 total tokens\n\n",
+        cr_data={"units": ["not-a-unit"], "verdict": "PASS"},
+        farley_data={
+            "bsum": {"avg_index": 8.0},
+            "psum": {"avg_index": 8.0},
+            "delta": 0.0,
+            "verdict": "PASS",
+            "regressions": [],
+            "baseline_exists": True,
+        },
+        compat_data={"ok": True, "score": 10.0, "regressions": []},
+    )
+
+    content = out_file.read_text(encoding="utf-8")
+    assert "| Code Quality Index (CQI) | N/A (no Python code changes) | **PASS** |" in content

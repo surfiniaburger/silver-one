@@ -121,6 +121,69 @@ def test_calculate_cqi():
     assert cqi == pytest.approx(7.72222, rel=1e-4)
 
 
+def test_calculate_cqi_result_rejects_missing_dimension():
+    review = {
+        "readability": {"score": 8, "rationale": "ok"},
+    }
+
+    result = code_review_compare.calculate_cqi_result(review)
+
+    assert result.valid is False
+    assert result.value is None
+    assert result.error_code == "MISSING_DIMENSION"
+    assert "maintainability" in result.reason
+
+
+def test_calculate_cqi_result_rejects_invalid_score():
+    review = {
+        "readability": {"score": 8, "rationale": "ok"},
+        "maintainability": {"score": 9, "rationale": "ok"},
+        "correctness": {"score": "banana", "rationale": "ok"},
+        "complexity": {"score": 10, "rationale": "ok"},
+        "security": {"score": 6, "rationale": "ok"},
+        "test_coverage": {"score": 8, "rationale": "ok"},
+    }
+
+    result = code_review_compare.calculate_cqi_result(review)
+
+    assert result.valid is False
+    assert result.error_code == "INVALID_SCORE"
+    assert "correctness" in result.reason
+
+
+def test_code_review_verdict_fails_on_invalid_cqi():
+    invalid_unit = {
+        "file_path": "x.py",
+        "name": "broken_review",
+        "review": {"severity": "OK", "summary": "missing dimensions"},
+    }
+
+    cqi_reasons = code_review_compare.collect_cqi_failure_reasons([invalid_unit])
+    verdict, exit_code, reasons = code_review_compare.determine_verdict([], [], 3, cqi_reasons)
+
+    assert verdict == "FAIL"
+    assert exit_code == 2
+    assert reasons == cqi_reasons
+    assert "INVALID CQI" in reasons[0]
+
+
+def test_cqi_failure_collection_skips_malformed_units():
+    invalid_unit = {
+        "file_path": "x.py",
+        "name": "broken_review",
+        "review": {"severity": "OK", "summary": "missing dimensions"},
+    }
+
+    reasons = code_review_compare.collect_cqi_failure_reasons([
+        "not-a-unit",
+        invalid_unit,
+        None,
+    ])
+
+    assert len(reasons) == 1
+    assert "x.py -> broken_review" in reasons[0]
+
+
 def test_code_review_block_requires_structured_block_finding():
     unsupported_block = {
         "review": {
