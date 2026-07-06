@@ -2819,6 +2819,138 @@
       }
     },
     {
+      "id": "tests/test_code_review.py::test_code_review_breakdown_recovers_common_llm_output_mistakes",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_code_review_breakdown_recovers_common_llm_output_mistakes",
+      "class_name": null,
+      "farley_index": 6.0,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test name and variable names are descriptive but slightly verbose. The logic flow (construct -> validate -> build context -> assertions) is clear enough for a code review tool specialist.",
+          "suggestions": [
+            "Consider renaming `raw_dict` to something more specific like `'test_input'`. Avoid using the raw dictionary directly in test bodies; prefer mocking or passing pre-validated data structures if possible."
+          ]
+        },
+        "maintainable": {
+          "score": 6,
+          "rationale": "The code relies heavily on `build_validation_context` and specific field names that may change with schema updates. It couples the test logic too tightly to internal implementation details of the CodeReviewBreakdown model.",
+          "suggestions": [
+            "Extract validation context creation into a dedicated helper function or factory method (e.g., `create_test_context`). This ensures tests remain stable even if the underlying data models change."
+          ]
+        },
+        "repeatable": {
+          "score": 4,
+          "rationale": "The test relies on external state (`build_validation_context`), which implies potential non-determinism or shared mutable state. It also lacks a clear 'arrange' phase that is isolated from the system under test.",
+          "suggestions": [
+            "Remove reliance on `build_validation_context`. Instead, construct the necessary context manually within the Arrange block using hardcoded values to ensure deterministic execution without external dependencies."
+          ]
+        },
+        "atomic": {
+          "score": 7,
+          "rationale": "The test verifies multiple properties (summary, severity, scores) in a single run. While this is efficient for regression testing, it makes debugging individual failures harder if the system state changes unexpectedly.",
+          "suggestions": [
+            "Split assertions into smaller blocks or use `pytest.mark.parametrize` to isolate specific property checks. This allows faster identification of which aspect failed and reduces cognitive load during debugging."
+          ]
+        },
+        "necessary": {
+          "score": 5,
+          "rationale": "The test covers the 'missing consequence' finding but does not verify that other findings (like `Complete finding`) are correctly handled or filtered. It also doesn't explicitly check for edge cases where a finding might be dropped incorrectly.",
+          "suggestions": [
+            "Add assertions to ensure all expected findings exist in the parsed list and that only valid ones pass validation."
+          ]
+        },
+        "granular": {
+          "score": 6,
+          "rationale": "The test checks specific field statuses (status == 'REPAIRED', repaired_value). However, it doesn't verify business logic correctness or the integrity of the repair process beyond simple state changes.",
+          "suggestions": [
+            "Add assertions that validate the *content* and *logic* of repairs. For example: `assert breakdown.findings[0].confidence >= 95` to ensure quality, not just status."
+          ]
+        },
+        "fast": {
+          "score": 7,
+          "rationale": "The test avoids sleeps or heavy I/O but includes a manual assertion loop (`for field in context.fields`). This is acceptable for Python tests. However, the lack of mocking could introduce unnecessary overhead if `build_validation_context` performs slow operations.",
+          "suggestions": [
+            "Mock `build_validation_context` to eliminate any potential slowness or side effects during test execution."
+          ]
+        },
+        "first_tdd": {
+          "score": 5,
+          "rationale": "The test follows a basic Arrange-Act-Assert pattern but lacks the 'Arrange' phase's emphasis on setting up an isolated state. It does not explicitly demonstrate how to construct valid input data before running assertions.",
+          "suggestions": [
+            "Explicitly define and mock `raw_dict` in the Arrange block with clear comments explaining why these specific values are chosen (e.g., 'Validating edge case handling'). Ensure the test demonstrates a clean separation of concerns."
+          ]
+        },
+        "summary": ""
+      }
+    },
+    {
+      "id": "tests/test_code_review.py::test_code_review_breakdown_preserves_prebuilt_findings",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_code_review_breakdown_preserves_prebuilt_findings",
+      "class_name": null,
+      "farley_index": 7.0,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test name and logic are clear; however, the assertion `assert breakdown.findings[1] == prebuilt_finding` compares a Python object to another dict directly. This is brittle if types or internal structures change between validation steps.",
+          "suggestions": [
+            "Replace direct equality comparison with identity checks using `is` for objects created by model_validate."
+          ]
+        },
+        "maintainable": {
+          "score": 7,
+          "rationale": "The test relies on specific field names (`findings[0]`, `findings[1]`) and assumes a fixed order. If the schema changes or ordering is altered in future refactors, this test will fail without modification.",
+          "suggestions": [
+            "Remove explicit index-based assertions like `assert breakdown.findings[1] == prebuilt_finding`. Instead, assert that exactly two findings exist with specific expected properties."
+          ]
+        },
+        "repeatable": {
+          "score": 6,
+          "rationale": "The test relies on the order of items in a list (`findings`) and assumes deterministic ordering. If insertion logic changes or external state (like `raw_dict` content) varies slightly, results may not be reproducible.",
+          "suggestions": [
+            "Ensure all inputs are identical before running tests to guarantee determinism."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: that the prebuilt finding is preserved in the breakdown. If this assertion fails, it immediately reveals a bug in preservation logic.",
+          "suggestions": [
+            "Keep assertions focused on single logical units of work to ensure instant failure if any part breaks."
+          ]
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "The test has a unique purpose: validating that prebuilt findings are correctly preserved and not dropped during validation. It does not duplicate coverage from other tests.",
+          "suggestions": [
+            "Ensure this specific preservation logic is covered by no other existing tests to avoid redundancy."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The test isolates the 'preservation' aspect but mixes schema construction with context creation in one block. It could be split into separate steps for better isolation of concerns.",
+          "suggestions": [
+            "Split this logic: first validate and build breakdown alone; then run `build_validation_context` to verify no fields are dropped."
+          ]
+        },
+        "fast": {
+          "score": 5,
+          "rationale": "The test performs a full schema validation (`model_validate`) on the entire input dictionary before running assertions. This includes parsing potentially large or complex schemas unnecessarily for this specific check.",
+          "suggestions": [
+            "Isolate the 'preservation' logic into its own unit test that only validates and reconstructs findings without rebuilding the full context."
+          ]
+        },
+        "first_tdd": {
+          "score": 6,
+          "rationale": "The code follows Arrange-Act-Assert structure (setup input -> build breakdown/context -> assert), but it mixes high-level schema construction with low-level assertion logic. A true TDD test would likely define a simple unit for 'preservation' first.",
+          "suggestions": [
+            "Refactor to separate the 'build validation context' step from the final assertions, creating an intermediate state that can be asserted on independently."
+          ]
+        },
+        "summary": "The test is mostly functional but suffers from brittle comparisons (object equality), lack of isolation between schema building and assertion logic, and potential ordering dependencies. It should be refactored to isolate preservation checks into a dedicated unit test with explicit identity assertions rather than relying on list indices or direct dict comparison."
+      }
+    },
+    {
       "id": "tests/test_code_review.py::test_code_review_breakdown_still_rejects_irreparable_reviews",
       "file_path": "tests/test_code_review.py",
       "test_name": "test_code_review_breakdown_still_rejects_irreparable_reviews",
@@ -4902,32 +5034,32 @@
     "farley_usage_summary": {
       "run_id": "main-baseline",
       "model": "ollama/qwen3.5:2b",
-      "reviewed_test_cases": 71,
+      "reviewed_test_cases": 73,
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 110,
-          "prompt_tokens": 68097,
-          "completion_tokens": 92397,
-          "total_tokens": 160494,
+          "calls": 109,
+          "prompt_tokens": 67008,
+          "completion_tokens": 90962,
+          "total_tokens": 157970,
           "cost_usd": 0.0,
           "missing_usage_calls": 0
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 110,
-            "prompt_tokens": 68097,
-            "completion_tokens": 92397,
-            "total_tokens": 160494,
+            "calls": 109,
+            "prompt_tokens": 67008,
+            "completion_tokens": 90962,
+            "total_tokens": 157970,
             "cost_usd": 0.0
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 110,
-            "prompt_tokens": 68097,
-            "completion_tokens": 92397,
-            "total_tokens": 160494,
+            "calls": 109,
+            "prompt_tokens": 67008,
+            "completion_tokens": 90962,
+            "total_tokens": 157970,
             "cost_usd": 0.0
           }
         },
@@ -5499,7 +5631,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 1015,
             "completion_tokens": 857,
@@ -5525,33 +5657,9 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 1082,
-            "completion_tokens": 1024,
-            "total_tokens": 2106,
-            "has_usage": true,
-            "usage_source": "provider",
-            "cost_usd": 0.0
-          },
-          {
-            "stage": "farley_evaluation",
-            "model": "ollama/qwen3.5:2b",
-            "source": "cache",
-            "generation_params": {},
-            "prompt_tokens": 1082,
-            "completion_tokens": 1024,
-            "total_tokens": 2106,
-            "has_usage": true,
-            "usage_source": "provider",
-            "cost_usd": 0.0
-          },
-          {
-            "stage": "farley_evaluation",
-            "model": "ollama/qwen3.5:2b",
-            "source": "cache",
-            "generation_params": {},
-            "prompt_tokens": 1082,
-            "completion_tokens": 1024,
-            "total_tokens": 2106,
+            "prompt_tokens": 1102,
+            "completion_tokens": 903,
+            "total_tokens": 2005,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -5560,6 +5668,18 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 1055,
+            "completion_tokens": 734,
+            "total_tokens": 1789,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 578,
             "completion_tokens": 683,
@@ -5571,7 +5691,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 1631,
             "completion_tokens": 689,
@@ -5595,7 +5715,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 929,
             "completion_tokens": 865,
@@ -8183,6 +8303,60 @@
       "completion_tokens": 865,
       "prompt_tokens": 929,
       "total_tokens": 1794,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "34e33316efd57333af15445412ccbad36d8fc800ccfc89af0cf77408d2f7110a": {
+    "id": "chatcmpl-10345ad2-6711-42f2-8d09-e9a32b36acf0",
+    "created": 1783356861,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and variable names are descriptive but slightly verbose. The logic flow (construct -> validate -> build context -> assertions) is clear enough for a code review tool specialist.\",\n    \"suggestions\": [\n      \"Consider renaming `raw_dict` to something more specific like `'test_input'`. Avoid using the raw dictionary directly in test bodies; prefer mocking or passing pre-validated data structures if possible.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"The code relies heavily on `build_validation_context` and specific field names that may change with schema updates. It couples the test logic too tightly to internal implementation details of the CodeReviewBreakdown model.\",\n    \"suggestions\": [\n      \"Extract validation context creation into a dedicated helper function or factory method (e.g., `create_test_context`). This ensures tests remain stable even if the underlying data models change.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 4,\n    \"rationale\": \"The test relies on external state (`build_validation_context`), which implies potential non-determinism or shared mutable state. It also lacks a clear 'arrange' phase that is isolated from the system under test.\",\n    \"suggestions\": [\n      \"Remove reliance on `build_validation_context`. Instead, construct the necessary context manually within the Arrange block using hardcoded values to ensure deterministic execution without external dependencies.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 7,\n    \"rationale\": \"The test verifies multiple properties (summary, severity, scores) in a single run. While this is efficient for regression testing, it makes debugging individual failures harder if the system state changes unexpectedly.\",\n    \"suggestions\": [\n      \"Split assertions into smaller blocks or use `pytest.mark.parametrize` to isolate specific property checks. This allows faster identification of which aspect failed and reduces cognitive load during debugging.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"The test covers the 'missing consequence' finding but does not verify that other findings (like `Complete finding`) are correctly handled or filtered. It also doesn't explicitly check for edge cases where a finding might be dropped incorrectly.\",\n    \"suggestions\": [\n      \"Add assertions to ensure all expected findings exist in the parsed list and that only valid ones pass validation.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 6,\n    \"rationale\": \"The test checks specific field statuses (status == 'REPAIRED', repaired_value). However, it doesn't verify business logic correctness or the integrity of the repair process beyond simple state changes.\",\n    \"suggestions\": [\n      \"Add assertions that validate the *content* and *logic* of repairs. For example: `assert breakdown.findings[0].confidence >= 95` to ensure quality, not just status.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 7,\n    \"rationale\": \"The test avoids sleeps or heavy I/O but includes a manual assertion loop (`for field in context.fields`). This is acceptable for Python tests. However, the lack of mocking could introduce unnecessary overhead if `build_validation_context` performs slow operations.\",\n    \"suggestions\": [\n      \"Mock `build_validation_context` to eliminate any potential slowness or side effects during test execution.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 5,\n    \"rationale\": \"The test follows a basic Arrange-Act-Assert pattern but lacks the 'Arrange' phase's emphasis on setting up an isolated state. It does not explicitly demonstrate how to construct valid input data before running assertions.\",\n    \"suggestions\": [\n      \"Explicitly define and mock `raw_dict` in the Arrange block with clear comments explaining why these specific values are chosen (e.g., 'Validating edge case handling'). Ensure the test demonstrates a clean separation of concerns.\"\n    ]\n  },\n  \"summary\": \"\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 903,
+      "prompt_tokens": 1102,
+      "total_tokens": 2005,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "f721928b3a29f69498c660b627f50b2fc7a141ab3ea84d0c4a18bb9a025dfb1e": {
+    "id": "chatcmpl-61e9ac0b-2830-4c45-88fa-bf799db65523",
+    "created": 1783356936,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test name and logic are clear; however, the assertion `assert breakdown.findings[1] == prebuilt_finding` compares a Python object to another dict directly. This is brittle if types or internal structures change between validation steps.\", \"suggestions\": [\"Replace direct equality comparison with identity checks using `is` for objects created by model_validate.\"]},\"maintainable\": {\"score\": 7, \"rationale\": \"The test relies on specific field names (`findings[0]`, `findings[1]`) and assumes a fixed order. If the schema changes or ordering is altered in future refactors, this test will fail without modification.\", \"suggestions\": [\"Remove explicit index-based assertions like `assert breakdown.findings[1] == prebuilt_finding`. Instead, assert that exactly two findings exist with specific expected properties.\"]},\"repeatable\": {\"score\": 6, \"rationale\": \"The test relies on the order of items in a list (`findings`) and assumes deterministic ordering. If insertion logic changes or external state (like `raw_dict` content) varies slightly, results may not be reproducible.\", \"suggestions\": [\"Ensure all inputs are identical before running tests to guarantee determinism.\"]},\"atomic\": {\"score\": 9, \"rationale\": \"The test verifies exactly one behavior: that the prebuilt finding is preserved in the breakdown. If this assertion fails, it immediately reveals a bug in preservation logic.\", \"suggestions\": [\"Keep assertions focused on single logical units of work to ensure instant failure if any part breaks.\"]},\"necessary\": {\"score\": 8, \"rationale\": \"The test has a unique purpose: validating that prebuilt findings are correctly preserved and not dropped during validation. It does not duplicate coverage from other tests.\", \"suggestions\": [\"Ensure this specific preservation logic is covered by no other existing tests to avoid redundancy.\"]},\"granular\": {\"score\": 7, \"rationale\": \"The test isolates the 'preservation' aspect but mixes schema construction with context creation in one block. It could be split into separate steps for better isolation of concerns.\", \"suggestions\": [\"Split this logic: first validate and build breakdown alone; then run `build_validation_context` to verify no fields are dropped.\"]},\"fast\": {\"score\": 5, \"rationale\": \"The test performs a full schema validation (`model_validate`) on the entire input dictionary before running assertions. This includes parsing potentially large or complex schemas unnecessarily for this specific check.\", \"suggestions\": [\"Isolate the 'preservation' logic into its own unit test that only validates and reconstructs findings without rebuilding the full context.\"]},\"first_tdd\": {\"score\": 6, \"rationale\": \"The code follows Arrange-Act-Assert structure (setup input -> build breakdown/context -> assert), but it mixes high-level schema construction with low-level assertion logic. A true TDD test would likely define a simple unit for 'preservation' first.\", \"suggestions\": [\"Refactor to separate the 'build validation context' step from the final assertions, creating an intermediate state that can be asserted on independently.\"]\n},\"summary\":\"The test is mostly functional but suffers from brittle comparisons (object equality), lack of isolation between schema building and assertion logic, and potential ordering dependencies. It should be refactored to isolate preservation checks into a dedicated unit test with explicit identity assertions rather than relying on list indices or direct dict comparison.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 734,
+      "prompt_tokens": 1055,
+      "total_tokens": 1789,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
