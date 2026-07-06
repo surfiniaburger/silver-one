@@ -337,6 +337,10 @@ def _validate_findings(raw_json: Dict[str, Any], review: Any, fields: List[Field
 
     parsed_idx = 0
     for idx, raw_find in enumerate(raw_findings):
+        if isinstance(raw_find, EngineeringFinding):
+            parsed_idx += 1
+            continue
+
         if not isinstance(raw_find, dict):
             _record_dropped_finding(idx, raw_find, fields, "finding is not an object")
             continue
@@ -380,7 +384,7 @@ def _validate_top_level_review_fields(raw_json: Dict[str, Any], review: Any, fie
             raw_value=None,
             repaired_value=parsed_severity,
             repair_type="missing_default",
-            repair_reason="missing severity repaired to WARN"
+            repair_reason="missing severity repaired to OK"
         ))
 
 

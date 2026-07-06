@@ -391,7 +391,7 @@ def test_code_review_breakdown_recovers_common_llm_output_mistakes():
     context = build_validation_context(raw_dict, breakdown)
 
     assert breakdown.summary == ""
-    assert breakdown.severity == "WARN"
+    assert breakdown.severity == "OK"
     assert breakdown.readability.score == pytest.approx(8.5)
     assert breakdown.maintainability.score == pytest.approx(9.0)
     assert len(breakdown.findings) == 1
@@ -401,15 +401,75 @@ def test_code_review_breakdown_recovers_common_llm_output_mistakes():
     assert fields["summary"].status == "REPAIRED"
     assert fields["summary"].repair_type == "missing_default"
     assert fields["severity"].status == "REPAIRED"
-    assert fields["severity"].repaired_value == "WARN"
+    assert fields["severity"].repaired_value == "OK"
     assert fields["readability.score"].status == "REPAIRED"
     assert fields["readability.score"].repaired_value == pytest.approx(8.5)
     assert fields["findings[0]"].status == "REPAIRED"
     assert fields["findings[0]"].repair_type == "dropped_invalid_finding"
+    # Field indexes refer to the original raw findings list, not the filtered parsed findings list.
     assert fields["findings[1].confidence"].status == "REPAIRED"
     assert fields["findings[1].evidence.path"].status == "NORMALIZED"
     assert context.repaired is True
     assert context.normalized is True
+
+
+def test_code_review_breakdown_preserves_prebuilt_findings():
+    from scripts.finding_schema import EngineeringFinding, build_validation_context
+    from scripts.code_review_evaluator import CodeReviewBreakdown
+
+    prebuilt_finding = EngineeringFinding.model_validate({
+        "title": "Prebuilt finding",
+        "category": "Readability",
+        "severity": "INFO",
+        "evidence": {"location_type": "code", "path": "src/foo.py", "details": {}},
+        "engineering_rationale": "Already validated.",
+        "engineering_consequence": "Preserving it avoids data loss.",
+        "confidence": 0.9,
+        "recommended_action": "Keep the validated object.",
+    })
+    valid_finding_dict = {
+        "title": "Dictionary finding",
+        "category": "Maintainability",
+        "severity": "WARN",
+        "evidence": {"location_type": "code", "path": "src/bar.py", "details": {}},
+        "engineering_rationale": "Valid dict input.",
+        "engineering_consequence": "Validation should happen once in the pre-validator.",
+        "confidence": 90,
+        "recommended_action": "Return the validated object.",
+    }
+    invalid_finding_dict = {
+        "title": "Invalid finding",
+        "category": "Correctness",
+    }
+    raw_dict = {
+        "readability": {"score": 8, "rationale": "Good readability"},
+        "maintainability": {"score": 9, "rationale": "Good maintainability"},
+        "correctness": {"score": 7, "rationale": "Mostly correct"},
+        "complexity": {"score": 7, "rationale": "Moderate complexity"},
+        "security": {"score": 9, "rationale": "No security issue"},
+        "test_coverage": {"score": 8, "rationale": "Covered"},
+        "summary": "Valid review",
+        "severity": "OK",
+        "findings": [prebuilt_finding, valid_finding_dict, invalid_finding_dict, "bad"],
+    }
+
+    breakdown = CodeReviewBreakdown.model_validate(raw_dict)
+
+    assert len(breakdown.findings) == 2
+    assert breakdown.findings[0] == prebuilt_finding
+    assert isinstance(breakdown.findings[1], EngineeringFinding)
+    assert breakdown.findings[1].title == "Dictionary finding"
+    assert breakdown.findings[1].confidence == pytest.approx(0.9)
+
+    context = build_validation_context(raw_dict, breakdown)
+    dropped_fields = [
+        field for field in context.fields
+        if field.repair_type == "dropped_invalid_finding"
+    ]
+    assert len(dropped_fields) == 2
+    assert {field.field_name for field in dropped_fields} == {"findings[2]", "findings[3]"}
+    assert "findings[0]" not in {field.field_name for field in context.fields}
+    assert context.repaired is True
 
 
 def test_code_review_breakdown_still_rejects_irreparable_reviews():

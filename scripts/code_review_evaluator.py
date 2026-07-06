@@ -77,7 +77,7 @@ class CodeReviewBreakdown(BaseModel):
     security: PropertyEvaluation
     test_coverage: PropertyEvaluation
     summary: str = Field("", description="A brief summary of the overall code quality.")
-    severity: Literal["OK", "WARN", "BLOCK"] = Field("WARN", description="Top-level verdict per unit.")
+    severity: Literal["OK", "WARN", "BLOCK"] = Field("OK", description="Top-level verdict per unit.")
     findings: List[EngineeringFinding] = Field(
         default_factory=list,
         description="List of structured engineering findings supporting this evaluation."
@@ -102,13 +102,13 @@ class CodeReviewBreakdown(BaseModel):
 
         valid_findings = []
         for finding in v:
-            if not isinstance(finding, dict):
-                continue
-            try:
-                EngineeringFinding.model_validate(finding)
-            except Exception:
-                continue
-            valid_findings.append(finding)
+            if isinstance(finding, EngineeringFinding):
+                valid_findings.append(finding)
+            elif isinstance(finding, dict):
+                try:
+                    valid_findings.append(EngineeringFinding.model_validate(finding))
+                except Exception:
+                    continue
         return valid_findings
 
 
