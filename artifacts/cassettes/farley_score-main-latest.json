@@ -1194,6 +1194,274 @@
       }
     },
     {
+      "id": "tests/test_compatibility.py::test_run_compatibility_check_failed_diff",
+      "file_path": "tests/test_compatibility.py",
+      "test_name": "test_run_compatibility_check_failed_diff",
+      "class_name": null,
+      "farley_index": 7.0,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the scenario (running a check on 'origin/missing' with an error), but lacks explicit documentation of the business rule or expected outcome in plain language.",
+          "suggestions": [
+            "Add comments explaining why 'unknown revision' causes CHECK_FAILED and what constitutes a compatible state."
+          ]
+        },
+        "maintainable": {
+          "score": 6,
+          "rationale": "The test relies on `monkeypatch` to inject an arbitrary function into the global namespace. This makes it brittle if that specific attribute name changes in future refactors.",
+          "suggestions": [
+            "Use fixtures or dependency injection (e.g., a mock class) instead of monkeypatching globals."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic and self-contained; however, it relies on the specific function name `get_changed_lines` which may change if refactored.",
+          "suggestions": [
+            "Ensure all external dependencies are mocked or injected via a fixture to prevent reliance on internal implementation details."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: the result state and score. If it fails, the cause is immediately obvious (the assertion error).",
+          "suggestions": [
+            "Ensure no side effects occur outside these assertions to guarantee atomicity of this specific check."
+          ]
+        },
+        "necessary": {
+          "score": 5,
+          "rationale": "This test duplicates coverage for 'CHECK_FAILED' and `compatible=False` which are likely covered by other tests. It does not add unique value.",
+          "suggestions": [
+            "Review the existing test suite to ensure these assertions aren't redundant with previously written tests."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The test isolates specific attributes (`state`, `compatible`, `score`, `details`) but could be more granular by testing edge cases like empty result objects.",
+          "suggestions": [
+            "Add assertions for edge cases (e.g., empty list results) to ensure the logic holds under different inputs."
+          ]
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "The test executes rapidly without artificial delays or heavy I/O. The only potential bottleneck is `pytest.approx(0.0)` if it involves network calls.",
+          "suggestions": [
+            "Remove any slow assertions like `approx` unless they are critical; prefer direct numeric comparisons for speed."
+          ]
+        },
+        "first_tdd": {
+          "score": 6,
+          "rationale": "The test follows a basic Arrange-Act-Assert structure but lacks explicit separation of concerns. The 'Arrange' phase (mocking) is buried inside the function definition.",
+          "suggestions": [
+            "Explicitly separate setup logic into an `@pytest.fixture` or helper to clearly define what state exists before running."
+          ]
+        },
+        "summary": "The test demonstrates good isolation and atomicity but suffers from brittleness due to global monkeypatching, redundancy in assertions, and a lack of explicit documentation. It is not fully TDD-compliant as it does not explicitly separate Arrange-Act-Assert phases cleanly enough for maintainability."
+      }
+    },
+    {
+      "id": "tests/test_compatibility.py::test_run_compatibility_check_pass",
+      "file_path": "tests/test_compatibility.py",
+      "test_name": "test_run_compatibility_check_pass",
+      "class_name": null,
+      "farley_index": 7.0,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the scenario (running a compatibility check on modified source) and expected outcome. However, it lacks explicit documentation of *why* this specific change should pass or fail in business terms.",
+          "suggestions": [
+            "Add comments explaining that `get_changed_lines` returning `[1]` indicates exactly one line changed is sufficient for PASS."
+          ]
+        },
+        "maintainable": {
+          "score": 7,
+          "rationale": "The test relies heavily on mocking external functions (`scripts.compatibility_check.get_changed_lines`, etc.) which creates a brittle dependency. If the implementation of `run_compatibility_check_result` changes its internal logic or if these mocks are removed in favor of real assertions, the test will break unexpectedly.",
+          "suggestions": [
+            "Replace all mocked function calls with direct unit tests for individual functions (e.g., testing `get_changed_lines`, `get_base_file_content`).",
+            "'Arrange' should be self-contained; do not rely on external state or side effects."
+          ]
+        },
+        "repeatable": {
+          "score": 6,
+          "rationale": "The test is deterministic in execution flow but relies entirely on the mocked return values of specific functions. If those mock implementations change slightly (e.g., order of items), the result might vary.",
+          "suggestions": [
+            "Ensure mocks are idempotent and strictly follow a canonical contract. Avoid relying on external state or network calls."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: that `run_compatibility_check_result` returns the correct state when specific inputs are provided. The assertion is isolated to this single function's output.",
+          "suggestions": [
+            "Ensure no side effects occur outside these assertions."
+          ]
+        },
+        "necessary": {
+          "score": 5,
+          "rationale": "This test only covers a very narrow edge case (one line changed). It does not verify the core logic of `run_compatibility_check_result` or handle more complex scenarios like multiple changes.",
+          "suggestions": [
+            "Add tests for different numbers of lines changed to ensure robustness."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The test is granular enough to isolate specific inputs and outputs. However, it could be further refined by asserting the internal state object directly rather than just `result.state`.",
+          "suggestions": [
+            "Assert `result.compatible`, `regressions`, etc., individually if they represent distinct business rules."
+          ]
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "The test executes quickly as it involves minimal I/O and no artificial delays. The only potential bottleneck is the file write operation.",
+          "suggestions": [
+            "Use a faster method to create files (e.g., `Path.write_bytes` or in-memory strings) if performance becomes an issue."
+          ]
+        },
+        "first_tdd": {
+          "score": 6,
+          "rationale": "The test follows Arrange-Act-Pattern but lacks explicit separation of concerns. The 'Arrange' phase mixes setup logic with the specific input configuration for a single case.",
+          "suggestions": [
+            "Explicitly separate the fixture/setup from the action in `test_run_compatibility_check_pass`.",
+            "'Arrange' should be reusable; do not hardcode inputs inside each test."
+          ]
+        },
+        "summary": "The test is well-structured and fast but suffers from brittle mocking, lack of business context documentation, and insufficient coverage for edge cases. It needs to move away from heavy reliance on external mocks toward direct unit testing of core logic functions while adding more comprehensive scenario tests."
+      }
+    },
+    {
+      "id": "tests/test_compatibility.py::test_run_compatibility_check_fail",
+      "file_path": "tests/test_compatibility.py",
+      "test_name": "test_run_compatibility_check_fail",
+      "class_name": null,
+      "farley_index": 6.0,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 6,
+          "rationale": "The test name and logic are understandable but slightly cluttered with implementation details like specific file paths (`tmp_path`, `scripts.compatibility_check`). The business rule (compatibility check failure due to parameter removal) is clear enough for a developer familiar with the codebase.",
+          "suggestions": [
+            "Rename function arguments from generic placeholders to meaningful names if possible, e.g., `test_run_compatibility_check_fail_with_removed_param`."
+          ]
+        },
+        "maintainable": {
+          "score": 4,
+          "rationale": "The test is brittle because it relies on specific file paths and hardcoded lambda functions that simulate the behavior of external scripts. If `scripts.compatibility_check` changes its internal logic or path handling in a future refactor, this test will break without modification.",
+          "suggestions": [
+            "Remove all references to absolute file paths (`tmp_path / \"module.py\"`) and instead use relative imports or abstract base classes (ABC) for the compatibility check module. Ensure `monkeypatch` arguments are generic where possible."
+          ]
+        },
+        "repeatable": {
+          "score": 5,
+          "rationale": "The test is repeatable in isolation but relies on external state (`scripts.compatibility_check`). It depends on the existence and behavior of an external module that may change between runs or across environments.",
+          "suggestions": [
+            "Mock `scripts.compatibility_check` directly within the function body using a dedicated mock class to ensure deterministic, self-contained execution without relying on real file system operations."
+          ]
+        },
+        "atomic": {
+          "score": 7,
+          "rationale": "The test verifies exactly one behavior: that running `run_compatibility_check_result` results in a failure state and specific regression messages. The assertion logic is clear.",
+          "suggestions": [
+            "Ensure the mock setup for `scripts.compatibility_check` does not leave side effects on other parts of the system (e.g., no file writes). Add an explicit cleanup step if any temporary files are created."
+          ]
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test covers a specific edge case: parameter removal. However, it may duplicate coverage of other tests already verifying compatibility failures or regressions in general.",
+          "suggestions": [
+            "Review the existing regression and failure handling tests to ensure this specific scenario is not covered elsewhere. If redundant, refactor into a dedicated unit test for `run_compatibility_check_result`."
+          ]
+        },
+        "granular": {
+          "score": 5,
+          "rationale": "The assertion checks the final state (`state`, `compatible`) and specific regression patterns. It is granular enough to catch this failure mode but could be more targeted by checking intermediate values like `result.score` or specific line numbers if they are critical.",
+          "suggestions": [
+            "Add assertions for intermediate states (e.g., `assert result.state == \"FAIL\"`) and ensure the regression pattern check is precise enough to avoid false positives from unrelated code changes."
+          ]
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "The test executes quickly because it uses mocked external dependencies (`monkeypatch`, `tmp_path`). There are no artificial sleeps or heavy I/O operations.",
+          "suggestions": [
+            "Ensure the mock setup is as fast as possible. Avoid unnecessary string concatenations in mocks that could slow down execution."
+          ]
+        },
+        "first_tdd": {
+          "score": 7,
+          "rationale": "The test follows a basic Arrange-Act-Assert structure but lacks explicit separation of concerns regarding the 'Arrange' phase (mocking). The behavior is specified in the setup, which is good for TDD principles.",
+          "suggestions": [
+            "Explicitly document the expected input/output contract at the top of the test file or within a `@pytest.fixture` to clearly define what inputs are required and how they relate to the business rule. Ensure the 'Arrange' phase (mocking) is isolated from the 'Act' phase (calling functions)."
+          ]
+        },
+        "summary": "The test demonstrates good TDD principles but suffers significantly in maintainability due to brittle external dependencies on specific file paths and mocks."
+      }
+    },
+    {
+      "id": "tests/test_compatibility.py::test_run_compatibility_check_invalid_pr_syntax",
+      "file_path": "tests/test_compatibility.py",
+      "test_name": "test_run_compatibility_check_invalid_pr_syntax",
+      "class_name": null,
+      "farley_index": 5.0,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 6,
+          "rationale": "The test name and logic are understandable but slightly cluttered with implementation details like `monkeypatch` usage which obscures the core business rule (syntax validation).",
+          "suggestions": [
+            "Remove all monkeypatching; use a dedicated fixture or helper function to simulate invalid syntax without mocking external dependencies.",
+            "Refactor the test name from 'test_run_compatibility_check_invalid_pr_syntax' to something like `test_runs_validity_check_on_invalid_python_syntax` for clarity."
+          ]
+        },
+        "maintainable": {
+          "score": 4,
+          "rationale": "The test is brittle because it relies on specific internal function names (`get_changed_lines`, `get_base_file_content`) and their exact behavior. Refactoring these functions would break the test.",
+          "suggestions": [
+            "Extract a dedicated helper method or class to handle compatibility checks, ensuring tests remain decoupled from implementation details of those helpers."
+          ]
+        },
+        "repeatable": {
+          "score": 3,
+          "rationale": "The test relies on `tmp_path` and specific file paths which can vary between runs or environments. It also depends heavily on the order of operations in a mock function.",
+          "suggestions": [
+            "Use an isolated temporary directory with fixed names for reproducibility across different runner instances."
+          ]
+        },
+        "atomic": {
+          "score": 7,
+          "rationale": "The test verifies exactly one behavior: syntax validation. However, the assertion `assert result.compatible is False` could be brittle if other parts of the logic depend on this flag.",
+          "suggestions": [
+            "Ensure that setting `compatible = False` does not trigger side effects in unrelated code paths within the compatibility check module."
+          ]
+        },
+        "necessary": {
+          "score": 5,
+          "rationale": "This test covers a specific edge case (invalid syntax). However, it might duplicate coverage of general 'syntax error' tests or be too narrow compared to broader integration checks.",
+          "suggestions": [
+            "Review if this specific file-level check is necessary; consider merging with other syntactic validation tests unless there's a unique reason for isolated testing."
+          ]
+        },
+        "granular": {
+          "score": 6,
+          "rationale": "The test isolates the syntax error message and state change. However, it mixes setup (file creation) with logic verification in one function.",
+          "suggestions": [
+            "Separate file initialization from validation assertions to ensure granular control over each step of the check."
+          ]
+        },
+        "fast": {
+          "score": 5,
+          "rationale": "The test involves writing a temporary file and running an external script (`run_compatibility_check_result`), which introduces I/O overhead.",
+          "suggestions": [
+            "Pre-compute the expected result or use mocking to avoid actual disk writes during every run. Remove unnecessary sleeps if any exist in `run_compatibility_check_result`.",
+            "Ensure no artificial delays are introduced by external calls."
+          ]
+        },
+        "first_tdd": {
+          "score": 4,
+          "rationale": "The test follows a basic Arrange-Act-Assert pattern but the 'Arrange' phase (creating files and mocking) is messy. It does not clearly demonstrate design properties of how compatibility checks should be structured.",
+          "suggestions": [
+            "Refactor to strictly separate: 1) Setup fixtures, 2) Act (run check), 3) Assert specific failure modes without side effects."
+          ]
+        },
+        "summary": "The test is partially functional but suffers from high brittleness due to external mocking and lack of isolation. It fails the 'atomic' score because it mixes setup with logic verification in a single function, making debugging difficult if `compatible` has unintended side effects."
+      }
+    },
+    {
       "id": "tests/test_extractor_async.py::test_async_test_is_extracted",
       "file_path": "tests/test_extractor_async.py",
       "test_name": "test_async_test_is_extracted",
@@ -2969,6 +3237,364 @@
       }
     },
     {
+      "id": "tests/test_unified_compare.py::test_parse_compatibility_result_legacy_pass",
+      "file_path": "tests/test_unified_compare.py",
+      "test_name": "test_parse_compatibility_result_legacy_pass",
+      "class_name": null,
+      "farley_index": 7.875,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the input data structure and expected output fields (`state`, `compatible`, `score`). However, it lacks a clear business rule description (e.g., 'Verify legacy compatibility result parsing'), making intent slightly ambiguous for new developers.",
+          "suggestions": [
+            "Add a comment or docstring explaining what this test verifies regarding the legacy pass case."
+          ]
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "The test is decoupled from system implementation details. It does not rely on specific database queries, network calls, or external fixtures; it only asserts internal state and attributes of the `result` object.",
+          "suggestions": [
+            "Ensure that if `parse_compatibility_result` changes its return signature (e.g., adding a new field), this test will automatically fail without needing to update logic elsewhere."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic and self-contained. However, it relies on `pytest.approx(10.0)` which introduces a slight dependency on the pytest approximation context or floating-point tolerance expectations that could vary between environments.",
+          "suggestions": [
+            "Explicitly define the expected float value (e.g., `assert result.score == 10.0`) to ensure strict determinism across all execution contexts."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: parsing a specific input and asserting three distinct properties of the resulting object. There is no hidden side effect or complex logic flow that could cause ambiguity in failure causes.",
+          "suggestions": [
+            "None needed; this is already atomic."
+          ]
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test likely duplicates coverage of other tests (e.g., `test_parse_compatibility_result_pass` or similar). It does not add unique value unless it specifically targets the 'legacy' path which is already covered by a general pass case.",
+          "suggestions": [
+            "Review if there are existing tests for this specific legacy scenario. If so, remove this test to avoid duplication and maintain coverage efficiency."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The assertion targets precise attributes (`state`, `compatible`, `score`) rather than vague outcomes like 'success' or 'error'. This isolates the specific behavior of parsing and validating legacy results.",
+          "suggestions": [
+            "None needed; assertions are already granular."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes rapidly. It contains no artificial sleeps (`time.sleep`), heavy setup code (no fixtures or database connections), and minimal I/O operations.",
+          "suggestions": [
+            "None needed; execution is already fast."
+          ]
+        },
+        "first_tdd": {
+          "score": 7,
+          "rationale": "The test follows the Arrange-Act-Assert pattern (Arrange: input data -> Act: call function/parse -> Assert results). However, it lacks a clear 'specification' or expected behavior description before running the code.",
+          "suggestions": [
+            "Add an explicit `expected` variable at the top of the test to clearly define what constitutes a valid legacy pass result (e.g., `result = parse_compatibility_result(...)`, then assert against it)."
+          ]
+        },
+        "summary": "The test is well-structured and fast but lacks clear documentation for business rules. It risks duplication if other tests cover similar scenarios."
+      }
+    },
+    {
+      "id": "tests/test_unified_compare.py::test_resolve_farley_baseline_first_run",
+      "file_path": "tests/test_unified_compare.py",
+      "test_name": "test_resolve_farley_baseline_first_run",
+      "class_name": null,
+      "farley_index": 8.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the input file name and expected output structure. The logic follows a straightforward sequence of assertions that map directly to the function's return values.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "This is an isolated unit test with no dependencies on external state or system internals. It verifies only specific attributes of a single object instance without side effects.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 10,
+          "rationale": "The test is fully self-contained and deterministic. No network calls, database queries, or timing-dependent operations are present; the result will be identical every time it runs.",
+          "suggestions": []
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "Each assertion verifies a distinct aspect of the object's state. If any fail, the specific attribute being checked is immediately obvious without needing to inspect the full traceback or diff.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 7,
+          "rationale": "While not duplicating other tests (e.g., 'test_resolve_farley_baseline'), it does verify trivial state details like `available` and `required`. These are often redundant if the caller already validates them or checks for specific error conditions.",
+          "suggestions": [
+            "Consider removing assertions on low-level attributes (`result.available`, `result.required`) unless they represent critical invariants that must be checked independently of other tests."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The test isolates the specific behavior: resolving a baseline with missing data and verifying its resulting state. It does not mix unrelated logic or cover edge cases outside this single scenario.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 10,
+          "rationale": "The test executes immediately without artificial delays, heavy setup code, or slow I/O operations. It relies solely on the function's internal logic and built-in data structures.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The test follows a clean Arrange-Act-Assert pattern: `resolve_farley_baseline` is called (act), followed by assertions on its return value's properties. The intent to verify specific state transitions is clear.",
+          "suggestions": []
+        },
+        "summary": "{\"understandable\":8,\"maintainable\":9,\"repeatable\":10,\"atomic\":9,\"necessary\":7,\"granular\":8,\"fast\":10,\"first_tdd\":9}"
+      }
+    },
+    {
+      "id": "tests/test_unified_compare.py::test_resolve_farley_baseline_missing_required",
+      "file_path": "tests/test_unified_compare.py",
+      "test_name": "test_resolve_farley_baseline_missing_required",
+      "class_name": null,
+      "farley_index": 8.0,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 9,
+          "rationale": "The test clearly defines the input file name and boolean flag `required=True`, making its intent unambiguous. It uses standard terminology ('BASELINE_MISSING', 'available') that aligns with common software testing conventions.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 8,
+          "rationale": "The test is decoupled from the implementation of `resolve_farley_baseline`. While it relies on a specific function signature (`required=True`), this abstraction allows for future changes in that function without breaking the test logic.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic and self-contained. However, relying on `cassette == {\"tests\": []}` introduces a potential brittle point if the cassette format ever changes or if other tests modify this specific key unexpectedly.",
+          "suggestions": [
+            "Consider asserting that `result.cassette` exists before comparing its contents to ensure robustness against future cassette schema updates."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: the resolution of a missing baseline. If this assertion fails (e.g., due to an exception in `resolve_farley_baseline`), it immediately indicates that specific logic is broken.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "This test covers the edge case where no required file exists and a baseline cannot be resolved. It does not duplicate coverage of other tests but fills a critical gap in testing failure scenarios for missing resources.",
+          "suggestions": [
+            "Ensure this specific scenario is covered by integration or end-to-end tests that simulate real-world deployment failures."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The test isolates the behavior of resolving a baseline with `required=True` and checking its resulting state. It does not mix unrelated logic like file system operations into this specific assertion.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 6,
+          "rationale": "While there are no artificial sleeps or heavy I/O in the code itself, relying on cassette comparison (`cassette == ...`) can be slow if the test suite is large and many tests share this specific assertion. This adds unnecessary overhead to repeated runs.",
+          "suggestions": [
+            "Replace `assert cassette == {\"tests\": []}` with a direct check like `result.cassette.get('tests')` or similar, which avoids string comparison of potentially nested structures."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The test follows the Arrange-Act-Assert pattern implicitly: it sets up by calling `resolve_farley_baseline`, acts by asserting specific state values, and asserts that these conditions hold true. It demonstrates a clean separation of concerns.",
+          "suggestions": []
+        },
+        "summary": "This is an excellent TDD example demonstrating high-quality test design (First_TDD). The only minor concern regarding maintainability stems from the reliance on cassette equality comparison (`cassette == ...`), which can be slow and brittle if the data structure changes. Replacing this with direct attribute access would further improve performance and robustness."
+      }
+    },
+    {
+      "id": "tests/test_unified_compare.py::test_resolve_farley_baseline_available",
+      "file_path": "tests/test_unified_compare.py",
+      "test_name": "test_resolve_farley_baseline_available",
+      "class_name": null,
+      "farley_index": 7.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the business rule: a `baseline.json` file must exist and be resolvable. The intent is unambiguous for anyone reading it.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 7,
+          "rationale": "While the logic is simple, hardcoding `PROJECT_ROOT` via monkeypatching makes this test brittle if the project structure changes or if tests are run in different environments. It couples too tightly to a specific implementation detail.",
+          "suggestions": [
+            "Remove explicit `monkeypatch.setattr`. Instead, rely on Python's standard library path resolution (e.g., inspecting `__file__` relative paths) so the test works regardless of where it is invoked from."
+          ]
+        },
+        "repeatable": {
+          "score": 9,
+          "rationale": "The test is fully self-contained. It uses only local files and no external databases or network calls.",
+          "suggestions": []
+        },
+        "atomic": {
+          "score": 8,
+          "rationale": "If the assertion `result.state == \"AVAILABLE\"` fails, it immediately reveals that the baseline file was not found or could not be resolved. The cause is obvious without needing to inspect internal state objects.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test verifies a specific edge case (baseline availability). However, if there are existing tests for other scenarios where baselines exist but fail resolution, this might duplicate coverage or be redundant. It should only run when the baseline is actually required by the system logic.",
+          "suggestions": []
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The test isolates exactly one behavior: reading a file and checking its contents against expected JSON structure.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "There are no artificial sleeps, heavy setups (other than `tmp_path`), or slow I/O operations. The execution is purely deterministic.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 8,
+          "rationale": "The test follows the Arrange-Act-Assert pattern: it sets up a known state (`baseline.json` exists) and then acts by calling the function to verify the result matches expectations.",
+          "suggestions": []
+        },
+        "summary": "This is an excellent example of TDD. It passes 7 out of 8 properties, with only minor issues regarding maintainability due to monkeypatching."
+      }
+    },
+    {
+      "id": "tests/test_unified_compare.py::test_resolve_farley_baseline_corrupted_json",
+      "file_path": "tests/test_unified_compare.py",
+      "test_name": "test_resolve_farley_baseline_corrupted_json",
+      "class_name": null,
+      "farley_index": 7.375,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the input (corrupted JSON), expected output state ('BASELINE_CORRUPTED'), and side effects. However, it lacks a clear 'business rule' description in ubiquitous language; instead of saying what should happen conceptually, it relies on specific string literals like '{not-json'.",
+          "suggestions": [
+            "Replace literal strings with descriptive error messages or domain concepts (e.g., 'invalid JSON syntax')."
+          ]
+        },
+        "maintainable": {
+          "score": 6,
+          "rationale": "The test is brittle because the assertion `assert cassette == {\"tests\": []}` assumes a specific internal structure of the result object that may change during refactoring. It also relies on global monkeypatching which can be fragile across different environments.",
+          "suggestions": [
+            "Remove direct assertions about internal data structures (cassette). Instead, assert only observable behaviors like 'no tests were run' or use mocking to verify side effects without inspecting internals."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic and self-contained within the file. It does not rely on external shared state (database/network/filesystem) except for `tmp_path`, which is standard in unit tests.",
+          "suggestions": [
+            "Ensure no hidden dependencies exist; if using fixtures or mocks extensively elsewhere, ensure this specific test doesn't introduce new ones."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: the resolution of a corrupted JSON file. If it fails, the cause is immediately obvious (the assertion error). It does not mix multiple unrelated behaviors.",
+          "suggestions": [
+            "None needed; this is an excellent example of atomic testing."
+          ]
+        },
+        "necessary": {
+          "score": 5,
+          "rationale": "This test duplicates coverage already provided by other tests in `test_unified_compare.py` that likely handle various JSON error scenarios. It does not add unique value to the suite.",
+          "suggestions": [
+            "Review existing test cases for similar corruption handling logic and remove this redundant test unless it addresses a specific edge case or regression scenario."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The test is somewhat granular in asserting state changes (state == 'BASELINE_CORRUPTED', available = False), but the assertion `assert cassette == {\"tests\": []}` is too specific and brittle. It isolates implementation details rather than pure behavior.",
+          "suggestions": [
+            "Refine assertions to focus on observable outcomes only, avoiding deep inspection of internal data structures."
+          ]
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "The test executes rapidly as it contains no artificial sleeps or heavy I/O operations. The `monkeypatch` and file write are standard lightweight operations.",
+          "suggestions": [
+            "None needed; this is a fast unit test."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "This demonstrates the 'Arrange-Act-Assert' pattern effectively: Arrange (setup tmp_path/monkeypatch), Act (call resolve_farley_baseline with specific input), Assert (verify state and side effects). It clearly specifies behavior before implementation.",
+          "suggestions": [
+            "None needed; this is a strong TDD example."
+          ]
+        },
+        "summary": "The test demonstrates excellent adherence to the 'first_tdd' principle but suffers from brittleness due to internal assertions. While understandable, it risks being unnecessary if redundant with existing tests and brittle against future refactoring of result structures."
+      }
+    },
+    {
+      "id": "tests/test_unified_compare.py::test_resolve_farley_baseline_corrupted_shape",
+      "file_path": "tests/test_unified_compare.py",
+      "test_name": "test_resolve_farley_baseline_corrupted_shape",
+      "class_name": null,
+      "farley_index": 7.0,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the input (corrupted JSON), expected output state ('BASELINE_CORRUPTED'), and side effects. However, it lacks a clear 'business rule' description; instead of stating what constitutes corruption or how to detect it, it relies on an opaque function call `resolve_farley_baseline` which is not documented.",
+          "suggestions": [
+            "Explicitly define the business rule: e.g., 'A baseline file containing empty test arrays should be marked as CORRUPTED.'"
+          ]
+        },
+        "maintainable": {
+          "score": 7,
+          "rationale": "The code relies heavily on `monkeypatch` to alter global state (`PROJECT_ROOT`). This makes the test brittle; if `unified_compare` is refactored or moved elsewhere, this specific setup becomes fragile. It also couples the test logic directly with a file path and JSON structure that might change.",
+          "suggestions": [
+            "Remove all use of `monkeypatch`. Instead, mock the function's return value in an isolated fixture to verify behavior without altering global state."
+          ]
+        },
+        "repeatable": {
+          "score": 6,
+          "rationale": "The test is deterministic but relies on file I/O (`write_text`, reading from disk). While this avoids network/database issues, it introduces a dependency on the local filesystem path structure. If `tmp_path` changes or if the script imports change paths dynamically, reproducibility across environments can be compromised.",
+          "suggestions": [
+            "Ensure all inputs are fully mocked within an isolated fixture to avoid any reliance on file system state."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: that a corrupted baseline results in the specific error states and path returned by `resolve_farley_baseline`. The assertion chain is clean. If this fails, it immediately indicates corruption logic failure.",
+          "suggestions": [
+            "No changes needed."
+          ]
+        },
+        "necessary": {
+          "score": 5,
+          "rationale": "This test appears to be a unit integration check for the specific function's error handling path rather than an end-to-end behavior verification. It duplicates coverage of other tests that likely verify `BASELINE_CORRUPTED` in different scenarios (e.g., missing file vs empty array).",
+          "suggestions": [
+            "Remove this test if it is redundant with existing unit/integration tests for the same function's error handling."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The assertion `assert cassette == {'tests': []}` verifies a specific internal state. However, without context on what 'cassette' represents in this library (e.g., is it the full result object or just metadata?), its granularity regarding the actual business logic of corruption detection is limited.",
+          "suggestions": [
+            "Clarify if `cassette` contains all relevant data points for a corrupted baseline. If so, ensure assertions cover edge cases like missing keys."
+          ]
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "The test executes quickly as it involves simple file I/O and dictionary operations without heavy setup or network calls.",
+          "suggestions": [
+            "No changes needed."
+          ]
+        },
+        "first_tdd": {
+          "score": 6,
+          "rationale": "While the code follows an `Arrange-Act-Assert` pattern (mocking -> calling function -> asserting), it lacks a clear 'specification' of what constitutes corruption. The test assumes knowledge about how `resolve_farley_baseline` handles errors that is not visible in this snippet.",
+          "suggestions": [
+            "Add a dedicated spec or docstring explaining the exact conditions under which a baseline file should be marked as CORRUPTED."
+          ]
+        },
+        "summary": "The code passes basic TDD structure but fails on critical properties: it lacks clear business rules (understandable, first_tdd), relies heavily on fragile global state manipulation (`monkeypatch`) making it brittle and non-repeatable across environments. It also risks redundancy if the test is not unique in its coverage of error scenarios."
+      }
+    },
+    {
       "id": "tests/test_unified_compare.py::test_write_unified_report_with_findings",
       "file_path": "tests/test_unified_compare.py",
       "test_name": "test_write_unified_report_with_findings",
@@ -3205,6 +3831,135 @@
           ]
         },
         "summary": "The test is highly understandable and fast but suffers from brittle coupling with external data structures (maintainability) and a weak arrange phase due to reliance on caller-provided dictionaries rather than clean setup (first_tdd). It effectively isolates one edge-case behavior."
+      }
+    },
+    {
+      "id": "tests/test_unified_compare.py::test_write_unified_report_displays_baseline_state",
+      "file_path": "tests/test_unified_compare.py",
+      "test_name": "test_write_unified_report_displays_baseline_state",
+      "class_name": null,
+      "farley_index": 7.875,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test name and arguments are descriptive enough for a developer familiar with the `unified_compare` library to understand intent. However, it lacks explicit documentation of *why* this specific baseline state is being tested (e.g., 'Verify that missing baselines trigger FAIL verdict'), which could be clearer.",
+          "suggestions": [
+            "Add an assertion or comment explicitly stating: 'Verifies failure logic when Farley baseline file is absent.'",
+            "Consider adding a docstring to the `write_unified_report` call explaining expected behavior for missing baselines."
+          ]
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "The test isolates logic within its own file and does not rely on external state (DB/network/filesystem) or shared mutable variables. It is self-contained regarding the `write_unified_report` function's behavior.",
+          "suggestions": [
+            "Ensure no side effects occur in other files when this module runs; verify imports are clean."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic and self-contained. However, it relies on `tmp_path` which implies a filesystem state that might vary between environments or if the runner re-runs without cleanup in some CI setups (though typically safe). It does not rely on external shared mutable state.",
+          "suggestions": [
+            "Explicitly verify file existence before reading to ensure deterministic behavior across runs."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one rule: that the report generation logic correctly handles a missing baseline by setting `baseline_exists` to False and failing. The assertion checks specific content strings which directly map to these internal state variables.",
+          "suggestions": [
+            "Ensure no other assertions in this file interfere with reading or writing files; keep it focused on one behavior."
+          ]
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "This test covers the specific edge case of a missing baseline. While `test_unified_compare.py` likely contains general tests for report generation and verdicts, this file specifically targets the 'baseline existence' logic to ensure it is not duplicated elsewhere.",
+          "suggestions": [
+            "Review other files in `/tests/` to confirm no existing test covers 'missing baseline handling'; if none exist, keep this specific test."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The test is somewhat granular but mixes high-level configuration (`spend_str`, `cr_data`) with low-level file I/O assertions. It asserts the *content* of a generated report rather than just verifying that specific internal flags were set correctly.",
+          "suggestions": [
+            "Refine assertions to check only critical fields (e.g., `baseline_exists: False` and verdict logic) instead of full markdown content which may include unrelated formatting."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes quickly. It uses a single function call with minimal setup (`tmp_path`) and no artificial delays or heavy I/O operations beyond reading the generated file.",
+          "suggestions": [
+            "Remove any `sleep()` calls if present in other parts of this suite; ensure no blocking network calls occur."
+          ]
+        },
+        "first_tdd": {
+          "score": 6,
+          "rationale": "The test follows Arrange-Act-Pattern loosely (Arrange: create file/vars -> Act: call function -> Assert). However, it lacks a clear 'specification' of the expected behavior before running. It asserts implementation details (`baseline_exists`) rather than verifying high-level design properties like 'Does missing baseline cause FAIL?'.",
+          "suggestions": [
+            "Refactor to explicitly state in Arrange: `assert farley_data['baseline_exists'] == False`. This makes the test's purpose (verifying failure logic) explicit before any setup.",
+            "Ensure assertions check design properties, not just implementation details."
+          ]
+        },
+        "summary": "{\"understandable\":8,\"maintainable\":9,\"repeatable\":7,\"atomic\":9,\"necessary\":8,\"granular\":7,\"fast\":9,\"first_tdd\":6}"
+      }
+    },
+    {
+      "id": "tests/test_unified_compare.py::test_write_unified_report_displays_compatibility_check_failed",
+      "file_path": "tests/test_unified_compare.py",
+      "test_name": "test_write_unified_report_displays_compatibility_check_failed",
+      "class_name": null,
+      "farley_index": 7.875,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 9,
+          "rationale": "The test name and arguments are clear. The intent is to verify that a 'FAIL' verdict results in the report displaying specific failure details (Score: 0/10) and state ('CHECK_FAILED').",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 8,
+          "rationale": "The test is decoupled from implementation; it only asserts the output content. However, `write_unified_report` might be brittle if its internal logic changes to handle 'FAIL' differently than expected.",
+          "suggestions": [
+            "Ensure `write_unified_report` explicitly handles a FAIL verdict by setting specific fields (like `verdict`, `reason`) rather than relying on side effects or default behaviors that could change between versions."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is self-contained and deterministic. It does not rely on external state (database/filesystem) except for the temporary file path passed via `tmp_path`. The output content check ensures repeatability.",
+          "suggestions": [
+            "Remove any implicit reliance on system time or randomization if the report generation logic uses them, even though they aren't explicitly shown in this snippet."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: that a FAIL verdict produces specific output. If it fails, the cause is instantly obvious (missing assertions or incorrect content).",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test covers 'FAIL' handling but does not cover other verdict states ('PASS', 'WARN'). It duplicates coverage of a specific edge case rather than generalizing the logic.",
+          "suggestions": [
+            "Add tests for PASS and WARN scenarios to ensure `write_unified_report` handles all valid return codes uniformly, preventing future regressions in those paths."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The test is granular enough. It isolates the specific assertion that a FAIL verdict results in `CHECK_FAILED` state and score of 0.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "No artificial sleeps or heavy I/O operations are present. The test reads the file once to verify content existence and string presence, which is efficient for this scope.",
+          "suggestions": [
+            "Ensure `write_unified_report` does not perform unnecessary disk writes during setup if possible; however, since it's a unit-like integration test with an explicit output path, speed isn't the primary concern here."
+          ]
+        },
+        "first_tdd": {
+          "score": 7,
+          "rationale": "The code structure follows Arrange-Act-Assert. However, `write_unified_report` is called without a clear 'Arrange' phase (e.g., mocking dependencies or setting up the environment), which makes it harder to verify that only this specific behavior was tested.",
+          "suggestions": [
+            "Explicitly mock external dependencies (`scripts.unified_compare`) in Arrange. If `write_unified_report` is an integration test, ensure all side effects (like file system writes) are isolated or mocked so the 'Arrange' phase clearly defines the state before 'Act'.",
+            "Consider adding a setup step to initialize the report writer with specific expectations for FAIL vs PASS outputs."
+          ]
+        },
+        "summary": "The test is highly understandable and atomic. It effectively verifies one behavior (FAIL handling). However, it lacks comprehensive coverage of other verdicts and relies on an external function's internal logic without explicit mocking in the Arrange phase, which could lead to brittle tests if that function changes."
       }
     },
     {
@@ -4093,32 +4848,32 @@
     "farley_usage_summary": {
       "run_id": "main-baseline",
       "model": "ollama/qwen3.5:2b",
-      "reviewed_test_cases": 58,
+      "reviewed_test_cases": 70,
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 88,
-          "prompt_tokens": 54616,
-          "completion_tokens": 73061,
-          "total_tokens": 127677,
+          "calls": 106,
+          "prompt_tokens": 64010,
+          "completion_tokens": 88605,
+          "total_tokens": 152615,
           "cost_usd": 0.0,
           "missing_usage_calls": 0
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 88,
-            "prompt_tokens": 54616,
-            "completion_tokens": 73061,
-            "total_tokens": 127677,
+            "calls": 106,
+            "prompt_tokens": 64010,
+            "completion_tokens": 88605,
+            "total_tokens": 152615,
             "cost_usd": 0.0
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 88,
-            "prompt_tokens": 54616,
-            "completion_tokens": 73061,
-            "total_tokens": 127677,
+            "calls": 106,
+            "prompt_tokens": 64010,
+            "completion_tokens": 88605,
+            "total_tokens": 152615,
             "cost_usd": 0.0
           }
         },
@@ -4287,6 +5042,90 @@
             "prompt_tokens": 612,
             "completion_tokens": 693,
             "total_tokens": 1305,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 484,
+            "completion_tokens": 1024,
+            "total_tokens": 1508,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "cache",
+            "generation_params": {},
+            "prompt_tokens": 484,
+            "completion_tokens": 1024,
+            "total_tokens": 1508,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "cache",
+            "generation_params": {},
+            "prompt_tokens": 484,
+            "completion_tokens": 1024,
+            "total_tokens": 1508,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 483,
+            "completion_tokens": 660,
+            "total_tokens": 1143,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 557,
+            "completion_tokens": 745,
+            "total_tokens": 1302,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 577,
+            "completion_tokens": 965,
+            "total_tokens": 1542,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 554,
+            "completion_tokens": 881,
+            "total_tokens": 1435,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -4510,18 +5349,6 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
-            "generation_params": {},
-            "prompt_tokens": 470,
-            "completion_tokens": 1024,
-            "total_tokens": 1494,
-            "has_usage": true,
-            "usage_source": "provider",
-            "cost_usd": 0.0
-          },
-          {
-            "stage": "farley_evaluation",
-            "model": "ollama/qwen3.5:2b",
             "source": "cache",
             "generation_params": {},
             "prompt_tokens": 470,
@@ -4546,7 +5373,19 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
+            "generation_params": {},
+            "prompt_tokens": 470,
+            "completion_tokens": 1024,
+            "total_tokens": 1494,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 556,
             "completion_tokens": 786,
@@ -4558,7 +5397,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 525,
             "completion_tokens": 912,
@@ -4570,7 +5409,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 498,
             "completion_tokens": 811,
@@ -4786,11 +5625,23 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "cache",
+            "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 832,
+            "prompt_tokens": 459,
+            "completion_tokens": 852,
+            "total_tokens": 1311,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 483,
             "completion_tokens": 1024,
-            "total_tokens": 1856,
+            "total_tokens": 1507,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -4800,9 +5651,9 @@
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
             "generation_params": {},
-            "prompt_tokens": 832,
+            "prompt_tokens": 483,
             "completion_tokens": 1024,
-            "total_tokens": 1856,
+            "total_tokens": 1507,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -4812,9 +5663,105 @@
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
             "generation_params": {},
-            "prompt_tokens": 832,
+            "prompt_tokens": 483,
             "completion_tokens": 1024,
-            "total_tokens": 1856,
+            "total_tokens": 1507,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 448,
+            "completion_tokens": 631,
+            "total_tokens": 1079,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 449,
+            "completion_tokens": 686,
+            "total_tokens": 1135,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 501,
+            "completion_tokens": 527,
+            "total_tokens": 1028,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 500,
+            "completion_tokens": 745,
+            "total_tokens": 1245,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 504,
+            "completion_tokens": 856,
+            "total_tokens": 1360,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 850,
+            "completion_tokens": 1024,
+            "total_tokens": 1874,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "cache",
+            "generation_params": {},
+            "prompt_tokens": 850,
+            "completion_tokens": 1024,
+            "total_tokens": 1874,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "cache",
+            "generation_params": {},
+            "prompt_tokens": 850,
+            "completion_tokens": 1024,
+            "total_tokens": 1874,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -4870,7 +5817,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 715,
             "completion_tokens": 917,
@@ -4882,7 +5829,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 743,
             "completion_tokens": 757,
@@ -4894,11 +5841,35 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 635,
             "completion_tokens": 761,
             "total_tokens": 1396,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 706,
+            "completion_tokens": 975,
+            "total_tokens": 1681,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 701,
+            "completion_tokens": 877,
+            "total_tokens": 1578,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -6570,6 +7541,411 @@
       "completion_tokens": 761,
       "prompt_tokens": 635,
       "total_tokens": 1396,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "5f858b3992de6c367f1d63acc051002f3245609b106ffd39cc30d7a5a35bf536": {
+    "id": "chatcmpl-4456f19e-269f-4029-b50c-8ef2dcfea05e",
+    "created": 1783346487,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 4,\n    \"rationale\": \"The test name and logic are understandable but slightly obscured by the use of `monkeypatch` to simulate a specific state change rather than describing the business rule directly. The intent is clear (verify compatibility check behavior), but it relies on mocking external implementation details (`scripts.compatibility_check.get_changed_lines`) which obscures the 'what' from the user.\",\n    \"suggestions\": [\n      \"Remove `monkeypatch` and explicitly define what data should be returned if no changes are detected. For example: `assert scripts.compatibility_check.get_changed_lines(...) == []`. This makes the test self-contained regarding its inputs/outputs without relying on external state manipulation.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 3,\n    \"rationale\": \"The test is brittle because it relies entirely on `monkeypatch` to inject a specific side effect. If the underlying implementation of `scripts.compatibility_check.get_changed_lines` changes or if external dependencies are refactored without updating this mock setup, the test will fail unexpectedly.\",\n    \"suggestions\": [\n      \"Decouple from system internals by asserting against expected return values directly (e.g., empty list for no changes) rather than mocking them. This ensures the test remains valid regardless of how `scripts.compatibility_check` is implemented in production.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 2,\n    \"rationale\": \"The test relies on external shared state (`monkeypatch`) and potentially non-deterministic behavior if the underlying script logic varies. It cannot be fully reproduced without setting up a specific mock environment.\",\n    \"suggestions\": [\n      \"Remove `monkeypatch` to ensure determinism. The test should verify expected return values directly, making it self-contained and repeatable across different environments or runs.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 5,\n    \"rationale\": \"The test verifies multiple assertions in a single block: state, `compatible` flag, and score. While this is atomic execution of the logic within one function call, it mixes verification of different properties (state vs compatibility) which can make debugging complex if they fail independently.\",\n    \"suggestions\": [\n      \"Refactor into separate test methods or assertions to isolate each property clearly: `test_run_compatibility_check_not_executed_returns_correct_state()`, etc. This improves atomicity and clarity.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"The test verifies the state of a specific check (`NOT_EXECUTED`) which is likely covered by other tests (e.g., `test_run_compatibility_check_executed`). However, it does verify two additional properties: `compatible` and `score`. If these are not critical for distinguishing this scenario from others, they may be redundant.\",\n    \"suggestions\": [\n      \"Review if verifying the score is necessary. Often, a simple state check suffices unless specific scoring logic needs validation in isolation.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 3,\n    \"rationale\": \"The test targets one behavior (the result of `run_compatibility_check_result`), but it mixes assertions about the overall state with properties (`compatible`, `score`) that might be tested elsewhere. It is not granular enough to isolate a single design decision or edge case effectively.\",\n    \"suggestions\": [\n      \"Isolate specific behaviors: one test for 'not executed' (state only), another for 'executed but compatible', and another if score logic needs verification separately.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 5,\n    \"rationale\": \"The `monkeypatch` setup is relatively fast compared to network calls or heavy I/O. However, the lack of explicit assertions on return values could lead to slower execution if the mock logic involves complex side effects.\",\n    \"suggestions\": [\n      \"Ensure all mocked functions are pure and deterministic without hidden side effects that might slow down test isolation.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 4,\n    \"rationale\": \"The code demonstrates a basic Arrange-Act-Assert pattern but lacks the explicit separation of concerns. The 'Arrange' phase (mocking) is mixed with Act and Assert in one function, making it harder to follow how the test was designed initially.\",\n    \"suggestions\": [\n      \"Explicitly separate `setup` logic from assertions: use a helper or context manager for mocking if needed. Clearly define what behavior should be 'arranged' before running the check.\"\n    ]\n  },\n  \"",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 484,
+      "total_tokens": 1508,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "bd574fcc7745096caa1dafd2959593177dddd94f64d80316e1bd2053339415ec": {
+    "id": "chatcmpl-e7e2ca39-3863-4218-8603-f76c979aa7d4",
+    "created": 1783346558,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the scenario (running a check on 'origin/missing' with an error), but lacks explicit documentation of the business rule or expected outcome in plain language.\", \"suggestions\": [\"Add comments explaining why 'unknown revision' causes CHECK_FAILED and what constitutes a compatible state.\"]},\n  \"maintainable\": {\"score\": 6, \"rationale\": \"The test relies on `monkeypatch` to inject an arbitrary function into the global namespace. This makes it brittle if that specific attribute name changes in future refactors.\", \"suggestions\": [\"Use fixtures or dependency injection (e.g., a mock class) instead of monkeypatching globals.\"]},\n  \"repeatable\": {\"score\": 7, \"rationale\": \"The test is deterministic and self-contained; however, it relies on the specific function name `get_changed_lines` which may change if refactored.\", \"suggestions\": [\"Ensure all external dependencies are mocked or injected via a fixture to prevent reliance on internal implementation details.\"]},\n  \"atomic\": {\"score\": 9, \"rationale\": \"The test verifies exactly one behavior: the result state and score. If it fails, the cause is immediately obvious (the assertion error).\", \"suggestions\": [\"Ensure no side effects occur outside these assertions to guarantee atomicity of this specific check.\"]},\n  \"necessary\": {\"score\": 5, \"rationale\": \"This test duplicates coverage for 'CHECK_FAILED' and `compatible=False` which are likely covered by other tests. It does not add unique value.\", \"suggestions\": [\"Review the existing test suite to ensure these assertions aren't redundant with previously written tests.\"]},\n  \"granular\": {\"score\": 7, \"rationale\": \"The test isolates specific attributes (`state`, `compatible`, `score`, `details`) but could be more granular by testing edge cases like empty result objects.\", \"suggestions\": [\"Add assertions for edge cases (e.g., empty list results) to ensure the logic holds under different inputs.\"]},\n  \"fast\": {\"score\": 8, \"rationale\": \"The test executes rapidly without artificial delays or heavy I/O. The only potential bottleneck is `pytest.approx(0.0)` if it involves network calls.\", \"suggestions\": [\"Remove any slow assertions like `approx` unless they are critical; prefer direct numeric comparisons for speed.\"]},\n  \"first_tdd\": {\"score\": 6, \"rationale\": \"The test follows a basic Arrange-Act-Assert structure but lacks explicit separation of concerns. The 'Arrange' phase (mocking) is buried inside the function definition.\", \"suggestions\": [\"Explicitly separate setup logic into an `@pytest.fixture` or helper to clearly define what state exists before running.\"]},\"summary\": \"The test demonstrates good isolation and atomicity but suffers from brittleness due to global monkeypatching, redundancy in assertions, and a lack of explicit documentation. It is not fully TDD-compliant as it does not explicitly separate Arrange-Act-Assert phases cleanly enough for maintainability.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 660,
+      "prompt_tokens": 483,
+      "total_tokens": 1143,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "a6c8c520975ccd01d19c50114cfc3bdc9ba4adc7166d598ee9d576fa233efe25": {
+    "id": "chatcmpl-efdfe24c-05a9-4f7b-910c-e77c22a7ff8e",
+    "created": 1783346627,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the scenario (running a compatibility check on modified source) and expected outcome. However, it lacks explicit documentation of *why* this specific change should pass or fail in business terms.\", \"suggestions\": [\"Add comments explaining that `get_changed_lines` returning `[1]` indicates exactly one line changed is sufficient for PASS.\"]},\n  \"maintainable\": {\"score\": 7, \"rationale\": \"The test relies heavily on mocking external functions (`scripts.compatibility_check.get_changed_lines`, etc.) which creates a brittle dependency. If the implementation of `run_compatibility_check_result` changes its internal logic or if these mocks are removed in favor of real assertions, the test will break unexpectedly.\", \"suggestions\": [\"Replace all mocked function calls with direct unit tests for individual functions (e.g., testing `get_changed_lines`, `get_base_file_content`).\", \"'Arrange' should be self-contained; do not rely on external state or side effects.\"]},\n  \"repeatable\": {\"score\": 6, \"rationale\": \"The test is deterministic in execution flow but relies entirely on the mocked return values of specific functions. If those mock implementations change slightly (e.g., order of items), the result might vary.\", \"suggestions\": [\"Ensure mocks are idempotent and strictly follow a canonical contract. Avoid relying on external state or network calls.\"]},\n  \"atomic\": {\"score\": 9, \"rationale\": \"The test verifies exactly one behavior: that `run_compatibility_check_result` returns the correct state when specific inputs are provided. The assertion is isolated to this single function's output.\", \"suggestions\": [\"Ensure no side effects occur outside these assertions.\"]},\n  \"necessary\": {\"score\": 5, \"rationale\": \"This test only covers a very narrow edge case (one line changed). It does not verify the core logic of `run_compatibility_check_result` or handle more complex scenarios like multiple changes.\", \"suggestions\": [\"Add tests for different numbers of lines changed to ensure robustness.\"]},\n  \"granular\": {\"score\": 7, \"rationale\": \"The test is granular enough to isolate specific inputs and outputs. However, it could be further refined by asserting the internal state object directly rather than just `result.state`.\", \"suggestions\": [\"Assert `result.compatible`, `regressions`, etc., individually if they represent distinct business rules.\"]},\n  \"fast\": {\"score\": 8, \"rationale\": \"The test executes quickly as it involves minimal I/O and no artificial delays. The only potential bottleneck is the file write operation.\", \"suggestions\": [\"Use a faster method to create files (e.g., `Path.write_bytes` or in-memory strings) if performance becomes an issue.\"]},\n  \"first_tdd\": {\"score\": 6, \"rationale\": \"The test follows Arrange-Act-Pattern but lacks explicit separation of concerns. The 'Arrange' phase mixes setup logic with the specific input configuration for a single case.\", \"suggestions\": [\"Explicitly separate the fixture/setup from the action in `test_run_compatibility_check_pass`.\", \"'Arrange' should be reusable; do not hardcode inputs inside each test.\"]},\"summary\":\"The test is well-structured and fast but suffers from brittle mocking, lack of business context documentation, and insufficient coverage for edge cases. It needs to move away from heavy reliance on external mocks toward direct unit testing of core logic functions while adding more comprehensive scenario tests.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 745,
+      "prompt_tokens": 557,
+      "total_tokens": 1302,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "26e7b0fe1281fe9dcc452b97ac63d753c9014ca2a9b9cc7b7f9bcf98977ceee8": {
+    "id": "chatcmpl-52d31768-4e0e-4079-b433-838ddde15764",
+    "created": 1783346707,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 6,\n    \"rationale\": \"The test name and logic are understandable but slightly cluttered with implementation details like specific file paths (`tmp_path`, `scripts.compatibility_check`). The business rule (compatibility check failure due to parameter removal) is clear enough for a developer familiar with the codebase.\",\n    \"suggestions\": [\n      \"Rename function arguments from generic placeholders to meaningful names if possible, e.g., `test_run_compatibility_check_fail_with_removed_param`.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 4,\n    \"rationale\": \"The test is brittle because it relies on specific file paths and hardcoded lambda functions that simulate the behavior of external scripts. If `scripts.compatibility_check` changes its internal logic or path handling in a future refactor, this test will break without modification.\",\n    \"suggestions\": [\n      \"Remove all references to absolute file paths (`tmp_path / \\\"module.py\\\"`) and instead use relative imports or abstract base classes (ABC) for the compatibility check module. Ensure `monkeypatch` arguments are generic where possible.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 5,\n    \"rationale\": \"The test is repeatable in isolation but relies on external state (`scripts.compatibility_check`). It depends on the existence and behavior of an external module that may change between runs or across environments.\",\n    \"suggestions\": [\n      \"Mock `scripts.compatibility_check` directly within the function body using a dedicated mock class to ensure deterministic, self-contained execution without relying on real file system operations.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 7,\n    \"rationale\": \"The test verifies exactly one behavior: that running `run_compatibility_check_result` results in a failure state and specific regression messages. The assertion logic is clear.\",\n    \"suggestions\": [\n      \"Ensure the mock setup for `scripts.compatibility_check` does not leave side effects on other parts of the system (e.g., no file writes). Add an explicit cleanup step if any temporary files are created.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test covers a specific edge case: parameter removal. However, it may duplicate coverage of other tests already verifying compatibility failures or regressions in general.\",\n    \"suggestions\": [\n      \"Review the existing regression and failure handling tests to ensure this specific scenario is not covered elsewhere. If redundant, refactor into a dedicated unit test for `run_compatibility_check_result`.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 5,\n    \"rationale\": \"The assertion checks the final state (`state`, `compatible`) and specific regression patterns. It is granular enough to catch this failure mode but could be more targeted by checking intermediate values like `result.score` or specific line numbers if they are critical.\",\n    \"suggestions\": [\n      \"Add assertions for intermediate states (e.g., `assert result.state == \\\"FAIL\\\"`) and ensure the regression pattern check is precise enough to avoid false positives from unrelated code changes.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 8,\n    \"rationale\": \"The test executes quickly because it uses mocked external dependencies (`monkeypatch`, `tmp_path`). There are no artificial sleeps or heavy I/O operations.\",\n    \"suggestions\": [\n      \"Ensure the mock setup is as fast as possible. Avoid unnecessary string concatenations in mocks that could slow down execution.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"The test follows a basic Arrange-Act-Assert structure but lacks explicit separation of concerns regarding the 'Arrange' phase (mocking). The behavior is specified in the setup, which is good for TDD principles.\",\n    \"suggestions\": [\n      \"Explicitly document the expected input/output contract at the top of the test file or within a `@pytest.fixture` to clearly define what inputs are required and how they relate to the business rule. Ensure the 'Arrange' phase (mocking) is isolated from the 'Act' phase (calling functions).\"\n    ]\n  },\n  \"summary\": \"The test demonstrates good TDD principles but suffers significantly in maintainability due to brittle external dependencies on specific file paths and mocks.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 965,
+      "prompt_tokens": 577,
+      "total_tokens": 1542,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "0031302683d081a2d07bcdce1b3bdca36baa1874f356b7fff0fb7b03a1922ec5": {
+    "id": "chatcmpl-c62610ba-823b-4e96-83fa-279e44b05210",
+    "created": 1783346775,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 6,\n    \"rationale\": \"The test name and logic are understandable but slightly cluttered with implementation details like `monkeypatch` usage which obscures the core business rule (syntax validation).\",\n    \"suggestions\": [\n      \"Remove all monkeypatching; use a dedicated fixture or helper function to simulate invalid syntax without mocking external dependencies.\",\n      \"Refactor the test name from 'test_run_compatibility_check_invalid_pr_syntax' to something like `test_runs_validity_check_on_invalid_python_syntax` for clarity.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 4,\n    \"rationale\": \"The test is brittle because it relies on specific internal function names (`get_changed_lines`, `get_base_file_content`) and their exact behavior. Refactoring these functions would break the test.\",\n    \"suggestions\": [\n      \"Extract a dedicated helper method or class to handle compatibility checks, ensuring tests remain decoupled from implementation details of those helpers.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 3,\n    \"rationale\": \"The test relies on `tmp_path` and specific file paths which can vary between runs or environments. It also depends heavily on the order of operations in a mock function.\",\n    \"suggestions\": [\n      \"Use an isolated temporary directory with fixed names for reproducibility across different runner instances.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 7,\n    \"rationale\": \"The test verifies exactly one behavior: syntax validation. However, the assertion `assert result.compatible is False` could be brittle if other parts of the logic depend on this flag.\",\n    \"suggestions\": [\n      \"Ensure that setting `compatible = False` does not trigger side effects in unrelated code paths within the compatibility check module.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test covers a specific edge case (invalid syntax). However, it might duplicate coverage of general 'syntax error' tests or be too narrow compared to broader integration checks.\",\n    \"suggestions\": [\n      \"Review if this specific file-level check is necessary; consider merging with other syntactic validation tests unless there's a unique reason for isolated testing.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 6,\n    \"rationale\": \"The test isolates the syntax error message and state change. However, it mixes setup (file creation) with logic verification in one function.\",\n    \"suggestions\": [\n      \"Separate file initialization from validation assertions to ensure granular control over each step of the check.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 5,\n    \"rationale\": \"The test involves writing a temporary file and running an external script (`run_compatibility_check_result`), which introduces I/O overhead.\",\n    \"suggestions\": [\n      \"Pre-compute the expected result or use mocking to avoid actual disk writes during every run. Remove unnecessary sleeps if any exist in `run_compatibility_check_result`.\",\n      \"Ensure no artificial delays are introduced by external calls.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 4,\n    \"rationale\": \"The test follows a basic Arrange-Act-Assert pattern but the 'Arrange' phase (creating files and mocking) is messy. It does not clearly demonstrate design properties of how compatibility checks should be structured.\",\n    \"suggestions\": [\n      \"Refactor to strictly separate: 1) Setup fixtures, 2) Act (run check), 3) Assert specific failure modes without side effects.\"\n    ]\n  },\n  \"summary\": \"The test is partially functional but suffers from high brittleness due to external mocking and lack of isolation. It fails the 'atomic' score because it mixes setup with logic verification in a single function, making debugging difficult if `compatible` has unintended side effects.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 881,
+      "prompt_tokens": 554,
+      "total_tokens": 1435,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "dd9bb0afea7437c971b9c8f2bc8ce0c5c5f2e89c116ab7788511f22640713427": {
+    "id": "chatcmpl-57502c57-facb-4148-bb9a-73b71712f1b6",
+    "created": 1783346843,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test clearly defines the input data structure and expected output fields (`state`, `compatible`, `score`). However, it lacks a clear business rule description (e.g., 'Verify legacy compatibility result parsing'), making intent slightly ambiguous for new developers.\",\n    \"suggestions\": [\n      \"Add a comment or docstring explaining what this test verifies regarding the legacy pass case.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"The test is decoupled from system implementation details. It does not rely on specific database queries, network calls, or external fixtures; it only asserts internal state and attributes of the `result` object.\",\n    \"suggestions\": [\n      \"Ensure that if `parse_compatibility_result` changes its return signature (e.g., adding a new field), this test will automatically fail without needing to update logic elsewhere.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic and self-contained. However, it relies on `pytest.approx(10.0)` which introduces a slight dependency on the pytest approximation context or floating-point tolerance expectations that could vary between environments.\",\n    \"suggestions\": [\n      \"Explicitly define the expected float value (e.g., `assert result.score == 10.0`) to ensure strict determinism across all execution contexts.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: parsing a specific input and asserting three distinct properties of the resulting object. There is no hidden side effect or complex logic flow that could cause ambiguity in failure causes.\",\n    \"suggestions\": [\n      \"None needed; this is already atomic.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test likely duplicates coverage of other tests (e.g., `test_parse_compatibility_result_pass` or similar). It does not add unique value unless it specifically targets the 'legacy' path which is already covered by a general pass case.\",\n    \"suggestions\": [\n      \"Review if there are existing tests for this specific legacy scenario. If so, remove this test to avoid duplication and maintain coverage efficiency.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The assertion targets precise attributes (`state`, `compatible`, `score`) rather than vague outcomes like 'success' or 'error'. This isolates the specific behavior of parsing and validating legacy results.\",\n    \"suggestions\": [\n      \"None needed; assertions are already granular.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes rapidly. It contains no artificial sleeps (`time.sleep`), heavy setup code (no fixtures or database connections), and minimal I/O operations.\",\n    \"suggestions\": [\n      \"None needed; execution is already fast.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"The test follows the Arrange-Act-Assert pattern (Arrange: input data -> Act: call function/parse -> Assert results). However, it lacks a clear 'specification' or expected behavior description before running the code.\",\n    \"suggestions\": [\n      \"Add an explicit `expected` variable at the top of the test to clearly define what constitutes a valid legacy pass result (e.g., `result = parse_compatibility_result(...)`, then assert against it).\"\n    ]\n  },\n  \"summary\": \"The test is well-structured and fast but lacks clear documentation for business rules. It risks duplication if other tests cover similar scenarios.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 852,
+      "prompt_tokens": 459,
+      "total_tokens": 1311,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "fa37730457384a25bd3baecc0cde7c55d980d31c101c458a62378008fb0cc291": {
+    "id": "chatcmpl-0ea5b1d3-d719-45a6-ac99-2fa73444f7ba",
+    "created": 1783346921,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test clearly defines the input data structure and expected output fields. However, it lacks a clear 'business rule' statement explaining *why* this specific combination of inputs should result in `CHECK_FAILED`, making the intent slightly implicit rather than explicit.\",\n    \"suggestions\": [\n      \"Add an assertion like: `assert not result.compatible` or `assert len(result.details) > 0` to explicitly state that a failure condition exists, regardless of specific values.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"The test is decoupled from system implementation details. It does not rely on external shared state or database operations; it only asserts the internal attributes returned by `parse_compatibility_result`. This makes refactoring the parser logic safe without breaking this specific unit.\",\n    \"suggestions\": [\n      \"Ensure that if `result` is ever modified in a different way (e.g., via side effects), these assertions would break. Consider adding an assertion like: `assert result.state == 'CHECK_FAILED' and not result.compatible`, which covers both properties simultaneously.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic in execution order but relies on the external function's internal state. If `parse_compatibility_result` itself has side effects or non-deterministic behavior (e.g., random seed usage), this test will fail to reproduce consistently across runs.\",\n    \"suggestions\": [\n      \"Verify that `result.compatible`, `reason`, and `details` are purely derived from the input dictionary without any external dependencies. If possible, mock or stub these attributes in a unit test before calling `parse_compatibility_result`. Alternatively, ensure no side effects occur during execution.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 6,\n    \"rationale\": \"The test verifies multiple assertions within one function. While the cause is obvious (all conditions must hold), if any single assertion fails due to a bug in `parse_compatibility_result`, it's harder to pinpoint which specific attribute caused the failure compared to testing them individually.\",\n    \"suggestions\": [\n      \"Split this test into two smaller, atomic tests: one verifying state and reason (`test_parse_state_and_reason`), another for compatibility index and details. This isolates failures more precisely.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test duplicates coverage of other similar unit tests (e.g., `parse_compatibility_result_check_passed`). It does not add unique value; it simply re-verifies the same logic in a different context. The business rule is already covered by passing cases.\",\n    \"suggestions\": [\n      \"Remove this specific failing case test if there are existing unit tests that cover similar scenarios (e.g., `test_parse_compatibility_result_check_passed`). Focus on edge-case or boundary-condition testing instead.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 4,\n    \"rationale\": \"The assertion logic is not granular enough. It checks multiple attributes in a single block without isolating the specific failure mode (e.g., syntax error vs. missing field). This makes debugging difficult if one attribute fails while others pass.\",\n    \"suggestions\": [\n      \"Refactor to check each attribute independently: `assert result.state == 'CHECK_FAILED'` and then separate assertions for other fields, or use a single assertion like `assert not (result.compatible is False)`.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes rapidly with no artificial sleeps, heavy setups, or unneeded I/O operations. It relies solely on the function call and attribute access.\",\n    \"suggestions\": [\n      \"No changes needed here; this is already fast.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 6,\n    \"rationale\": \"The test follows a basic Arrange-Act-Assert pattern but lacks the 'specification' phase. It does not explicitly state what behavior should be expected before running it (e.g., `assert result.state == 'CHECK_FAILED'` is an assertion of fact rather than a specification).\",\n    \"suggestions\": [\n      \"Add a comment or inline spec: '# Expected Behavior: Parser returns CHECK_FAILED when syntax error occurs'. This clarifies the design intent and ensures future developers understand why this test exists.\"\n    ]\n  },\n  \"summary\": \"The test",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 483,
+      "total_tokens": 1507,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "ef5aa0bce71c2b0d6f4dfd9047043225f2fdc2cf61a8e7d136a873e1215eeb15": {
+    "id": "chatcmpl-d9a1c088-f443-4367-8d9a-8835a7cd14d7",
+    "created": 1783346971,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test clearly defines the input file name and expected output structure. The logic follows a straightforward sequence of assertions that map directly to the function's return values.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"This is an isolated unit test with no dependencies on external state or system internals. It verifies only specific attributes of a single object instance without side effects.\",\n    \"suggestions\": []\n  },\n  \"repeatable\": {\n    \"score\": 10,\n    \"rationale\": \"The test is fully self-contained and deterministic. No network calls, database queries, or timing-dependent operations are present; the result will be identical every time it runs.\",\n    \"suggestions\": []\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"Each assertion verifies a distinct aspect of the object's state. If any fail, the specific attribute being checked is immediately obvious without needing to inspect the full traceback or diff.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 7,\n    \"rationale\": \"While not duplicating other tests (e.g., 'test_resolve_farley_baseline'), it does verify trivial state details like `available` and `required`. These are often redundant if the caller already validates them or checks for specific error conditions.\",\n    \"suggestions\": [\n      \"Consider removing assertions on low-level attributes (`result.available`, `result.required`) unless they represent critical invariants that must be checked independently of other tests.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The test isolates the specific behavior: resolving a baseline with missing data and verifying its resulting state. It does not mix unrelated logic or cover edge cases outside this single scenario.\",\n    \"suggestions\": []\n  },\n  \"fast\": {\n    \"score\": 10,\n    \"rationale\": \"The test executes immediately without artificial delays, heavy setup code, or slow I/O operations. It relies solely on the function's internal logic and built-in data structures.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 9,\n    \"rationale\": \"The test follows a clean Arrange-Act-Assert pattern: `resolve_farley_baseline` is called (act), followed by assertions on its return value's properties. The intent to verify specific state transitions is clear.\",\n    \"suggestions\": []\n  },\"summary\":\"{\\\"understandable\\\":8,\\\"maintainable\\\":9,\\\"repeatable\\\":10,\\\"atomic\\\":9,\\\"necessary\\\":7,\\\"granular\\\":8,\\\"fast\\\":10,\\\"first_tdd\\\":9}\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 631,
+      "prompt_tokens": 448,
+      "total_tokens": 1079,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "d6962297b01cf69a5d06875072f93a63c8cd1732552e63de8a45097dbda7e86f": {
+    "id": "chatcmpl-3a739b72-9245-4c99-97ba-11eb2614b30d",
+    "created": 1783347024,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 9, \"rationale\": \"The test clearly defines the input file name and boolean flag `required=True`, making its intent unambiguous. It uses standard terminology ('BASELINE_MISSING', 'available') that aligns with common software testing conventions.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 8, \"rationale\": \"The test is decoupled from the implementation of `resolve_farley_baseline`. While it relies on a specific function signature (`required=True`), this abstraction allows for future changes in that function without breaking the test logic.\", \"suggestions\": []},\n  \"repeatable\": {\"score\": 7, \"rationale\": \"The test is deterministic and self-contained. However, relying on `cassette == {\\\"tests\\\": []}` introduces a potential brittle point if the cassette format ever changes or if other tests modify this specific key unexpectedly.\", \"suggestions\": [\"Consider asserting that `result.cassette` exists before comparing its contents to ensure robustness against future cassette schema updates.\"]},\n  \"atomic\": {\"score\": 9, \"rationale\": \"The test verifies exactly one behavior: the resolution of a missing baseline. If this assertion fails (e.g., due to an exception in `resolve_farley_baseline`), it immediately indicates that specific logic is broken.\", \"suggestions\": []},\n  \"necessary\": {\"score\": 8, \"rationale\": \"This test covers the edge case where no required file exists and a baseline cannot be resolved. It does not duplicate coverage of other tests but fills a critical gap in testing failure scenarios for missing resources.\", \"suggestions\": [\"Ensure this specific scenario is covered by integration or end-to-end tests that simulate real-world deployment failures.\"]},\n  \"granular\": {\"score\": 8, \"rationale\": \"The test isolates the behavior of resolving a baseline with `required=True` and checking its resulting state. It does not mix unrelated logic like file system operations into this specific assertion.\", \"suggestions\": []},\n  \"fast\": {\"score\": 6, \"rationale\": \"While there are no artificial sleeps or heavy I/O in the code itself, relying on cassette comparison (`cassette == ...`) can be slow if the test suite is large and many tests share this specific assertion. This adds unnecessary overhead to repeated runs.\", \"suggestions\": [\"Replace `assert cassette == {\\\"tests\\\": []}` with a direct check like `result.cassette.get('tests')` or similar, which avoids string comparison of potentially nested structures.\"]},\n  \"first_tdd\": {\"score\": 9, \"rationale\": \"The test follows the Arrange-Act-Assert pattern implicitly: it sets up by calling `resolve_farley_baseline`, acts by asserting specific state values, and asserts that these conditions hold true. It demonstrates a clean separation of concerns.\", \"suggestions\": []},\"summary\": \"This is an excellent TDD example demonstrating high-quality test design (First_TDD). The only minor concern regarding maintainability stems from the reliance on cassette equality comparison (`cassette == ...`), which can be slow and brittle if the data structure changes. Replacing this with direct attribute access would further improve performance and robustness.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 686,
+      "prompt_tokens": 449,
+      "total_tokens": 1135,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "c4d004656e051728afb40145483f1bf114b2c4bc27e7dfec9619edcf0583752c": {
+    "id": "chatcmpl-fd0c3a54-9948-43e4-82a4-f788cdd696f0",
+    "created": 1783347069,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the business rule: a `baseline.json` file must exist and be resolvable. The intent is unambiguous for anyone reading it.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 7, \"rationale\": \"While the logic is simple, hardcoding `PROJECT_ROOT` via monkeypatching makes this test brittle if the project structure changes or if tests are run in different environments. It couples too tightly to a specific implementation detail.\", \"suggestions\": [\"Remove explicit `monkeypatch.setattr`. Instead, rely on Python's standard library path resolution (e.g., inspecting `__file__` relative paths) so the test works regardless of where it is invoked from.\"]},\n  \"repeatable\": {\"score\": 9, \"rationale\": \"The test is fully self-contained. It uses only local files and no external databases or network calls.\", \"suggestions\": []},\n  \"atomic\": {\"score\": 8, \"rationale\": \"If the assertion `result.state == \\\"AVAILABLE\\\"` fails, it immediately reveals that the baseline file was not found or could not be resolved. The cause is obvious without needing to inspect internal state objects.\"},\n  \"necessary\": {\"score\": 6, \"rationale\": \"This test verifies a specific edge case (baseline availability). However, if there are existing tests for other scenarios where baselines exist but fail resolution, this might duplicate coverage or be redundant. It should only run when the baseline is actually required by the system logic.\"},\n  \"granular\": {\"score\": 7, \"rationale\": \"The test isolates exactly one behavior: reading a file and checking its contents against expected JSON structure.\", \"suggestions\": []},\n  \"fast\": {\"score\": 9, \"rationale\": \"There are no artificial sleeps, heavy setups (other than `tmp_path`), or slow I/O operations. The execution is purely deterministic.\"},\n  \"first_tdd\": {\"score\": 8, \"rationale\": \"The test follows the Arrange-Act-Assert pattern: it sets up a known state (`baseline.json` exists) and then acts by calling the function to verify the result matches expectations.\", \"suggestions\": []},\"summary\": \"This is an excellent example of TDD. It passes 7 out of 8 properties, with only minor issues regarding maintainability due to monkeypatching.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 527,
+      "prompt_tokens": 501,
+      "total_tokens": 1028,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "291b23e64c6694b0d30cbe12946bcadcd199549d9bfd7f0ba9f7c80e1fcb51f7": {
+    "id": "chatcmpl-323b1bcc-ce58-4d04-91a4-6b46eeea692a",
+    "created": 1783347128,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the input (corrupted JSON), expected output state ('BASELINE_CORRUPTED'), and side effects. However, it lacks a clear 'business rule' description in ubiquitous language; instead of saying what should happen conceptually, it relies on specific string literals like '{not-json'.\", \"suggestions\": [\"Replace literal strings with descriptive error messages or domain concepts (e.g., 'invalid JSON syntax').\"]},\n  \"maintainable\": {\"score\": 6, \"rationale\": \"The test is brittle because the assertion `assert cassette == {\\\"tests\\\": []}` assumes a specific internal structure of the result object that may change during refactoring. It also relies on global monkeypatching which can be fragile across different environments.\", \"suggestions\": [\"Remove direct assertions about internal data structures (cassette). Instead, assert only observable behaviors like 'no tests were run' or use mocking to verify side effects without inspecting internals.\"]},\n  \"repeatable\": {\"score\": 7, \"rationale\": \"The test is deterministic and self-contained within the file. It does not rely on external shared state (database/network/filesystem) except for `tmp_path`, which is standard in unit tests.\", \"suggestions\": [\"Ensure no hidden dependencies exist; if using fixtures or mocks extensively elsewhere, ensure this specific test doesn't introduce new ones.\"]},\n  \"atomic\": {\"score\": 9, \"rationale\": \"The test verifies exactly one behavior: the resolution of a corrupted JSON file. If it fails, the cause is immediately obvious (the assertion error). It does not mix multiple unrelated behaviors.\", \"suggestions\": [\"None needed; this is an excellent example of atomic testing.\"]},\n  \"necessary\": {\"score\": 5, \"rationale\": \"This test duplicates coverage already provided by other tests in `test_unified_compare.py` that likely handle various JSON error scenarios. It does not add unique value to the suite.\", \"suggestions\": [\"Review existing test cases for similar corruption handling logic and remove this redundant test unless it addresses a specific edge case or regression scenario.\"]},\n  \"granular\": {\"score\": 7, \"rationale\": \"The test is somewhat granular in asserting state changes (state == 'BASELINE_CORRUPTED', available = False), but the assertion `assert cassette == {\\\"tests\\\": []}` is too specific and brittle. It isolates implementation details rather than pure behavior.\", \"suggestions\": [\"Refine assertions to focus on observable outcomes only, avoiding deep inspection of internal data structures.\"]},\n  \"fast\": {\"score\": 8, \"rationale\": \"The test executes rapidly as it contains no artificial sleeps or heavy I/O operations. The `monkeypatch` and file write are standard lightweight operations.\", \"suggestions\": [\"None needed; this is a fast unit test.\"]},\"first_tdd\": {\"score\": 9, \"rationale\": \"This demonstrates the 'Arrange-Act-Assert' pattern effectively: Arrange (setup tmp_path/monkeypatch), Act (call resolve_farley_baseline with specific input), Assert (verify state and side effects). It clearly specifies behavior before implementation.\", \"suggestions\": [\"None needed; this is a strong TDD example.\"]},\"summary\": \"The test demonstrates excellent adherence to the 'first_tdd' principle but suffers from brittleness due to internal assertions. While understandable, it risks being unnecessary if redundant with existing tests and brittle against future refactoring of result structures.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 745,
+      "prompt_tokens": 500,
+      "total_tokens": 1245,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "ed5bc5b3e0c332d2760ac86f8773d642287104eb934ad88119e773feaa782e22": {
+    "id": "chatcmpl-3b64aa7b-92e5-4f85-87fa-d97124b84f53",
+    "created": 1783347194,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the input (corrupted JSON), expected output state ('BASELINE_CORRUPTED'), and side effects. However, it lacks a clear 'business rule' description; instead of stating what constitutes corruption or how to detect it, it relies on an opaque function call `resolve_farley_baseline` which is not documented.\", \"suggestions\": [\"Explicitly define the business rule: e.g., 'A baseline file containing empty test arrays should be marked as CORRUPTED.'\"]\n},\"maintainable\": {\"score\": 7, \"rationale\": \"The code relies heavily on `monkeypatch` to alter global state (`PROJECT_ROOT`). This makes the test brittle; if `unified_compare` is refactored or moved elsewhere, this specific setup becomes fragile. It also couples the test logic directly with a file path and JSON structure that might change.\", \"suggestions\": [\"Remove all use of `monkeypatch`. Instead, mock the function's return value in an isolated fixture to verify behavior without altering global state.\"\n  ]},\n\"repeatable\": {\"score\": 6, \"rationale\": \"The test is deterministic but relies on file I/O (`write_text`, reading from disk). While this avoids network/database issues, it introduces a dependency on the local filesystem path structure. If `tmp_path` changes or if the script imports change paths dynamically, reproducibility across environments can be compromised.\", \"suggestions\": [\"Ensure all inputs are fully mocked within an isolated fixture to avoid any reliance on file system state.\"\n  ]},\n\"atomic\": {\"score\": 9, \"rationale\": \"The test verifies exactly one behavior: that a corrupted baseline results in the specific error states and path returned by `resolve_farley_baseline`. The assertion chain is clean. If this fails, it immediately indicates corruption logic failure.\", \"suggestions\": [\"No changes needed.\"\n  ]},\n\"necessary\": {\"score\": 5, \"rationale\": \"This test appears to be a unit integration check for the specific function's error handling path rather than an end-to-end behavior verification. It duplicates coverage of other tests that likely verify `BASELINE_CORRUPTED` in different scenarios (e.g., missing file vs empty array).\", \"suggestions\": [\"Remove this test if it is redundant with existing unit/integration tests for the same function's error handling.\"\n  ]},\n\"granular\": {\"score\": 7, \"rationale\": \"The assertion `assert cassette == {'tests': []}` verifies a specific internal state. However, without context on what 'cassette' represents in this library (e.g., is it the full result object or just metadata?), its granularity regarding the actual business logic of corruption detection is limited.\", \"suggestions\": [\"Clarify if `cassette` contains all relevant data points for a corrupted baseline. If so, ensure assertions cover edge cases like missing keys.\"\n  ]},\n\"fast\": {\"score\": 8, \"rationale\": \"The test executes quickly as it involves simple file I/O and dictionary operations without heavy setup or network calls.\", \"suggestions\": [\"No changes needed.\"\n  ]},\n\"first_tdd\": {\"score\": 6, \"rationale\": \"While the code follows an `Arrange-Act-Assert` pattern (mocking -> calling function -> asserting), it lacks a clear 'specification' of what constitutes corruption. The test assumes knowledge about how `resolve_farley_baseline` handles errors that is not visible in this snippet.\", \"suggestions\": [\"Add a dedicated spec or docstring explaining the exact conditions under which a baseline file should be marked as CORRUPTED.\"\n  ]},\"summary\": \"The code passes basic TDD structure but fails on critical properties: it lacks clear business rules (understandable, first_tdd), relies heavily on fragile global state manipulation (`monkeypatch`) making it brittle and non-repeatable across environments. It also risks redundancy if the test is not unique in its coverage of error scenarios.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 856,
+      "prompt_tokens": 504,
+      "total_tokens": 1360,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "0d75592cb5f51de15eb124572532cdf74b3d5a4af4b8e22f96b6ff1f3d7f1368": {
+    "id": "chatcmpl-fe00c053-4b91-4139-b5de-7c0d246e515a",
+    "created": 1783347278,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 4,\n    \"rationale\": \"The test name and arguments are technical jargon-heavy ('tmp_path', 'farley_regressions'), obscuring the core intent: verifying a report generation function. The business rule is buried in nested dictionaries rather than clear assertions.\",\n    \"suggestions\": [\n      \"Rename `test_write_unified_report_full` to something descriptive like `verify_quality_report_generation`.\",\n      \"Extract the logic for parsing 'farley_data' and 'compat_data' into helper functions or inline variables. The test should assert on specific strings ('FAIL', '**Token spend**') rather than reconstructing complex data structures.\",\n      \"Remove all references to internal implementation details like `tmp_path` (unless it's a fixture) and abstract the report generation logic if possible.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 3,\n    \"rationale\": \"The test is brittle because it relies on specific string literals in its arguments (`'Fix this function'`, `'test_one'`). If these strings change or are removed from the source code during refactoring, the test will fail immediately without revealing a deeper issue.\",\n    \"suggestions\": [\n      \"Remove hardcoded text assertions. Instead of `assert \\\"Fix this function\\\" in content`, assert that specific error messages appear when the logic fails (e.g., via mocking or exception handling).\",\n      \"Avoid passing arbitrary data structures as arguments to test functions if they are meant for internal reporting; instead, mock these inputs and verify only the output format.\",\n      \"Ensure no external state is modified. The current code modifies `out_file` directly without cleanup logic (e.g., using a context manager or explicit deletion), which violates maintainability.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 2,\n    \"rationale\": \"The test relies on external shared state: the file system (`tmp_path`) and potentially network/external services if `write_unified_report` makes calls. It is not self-contained; it depends on an arbitrary directory structure that may change between runs.\",\n    \"suggestions\": [\n      \"Use a deterministic temporary directory (e.g., `/dev/null` or a fixed path) to ensure the test can be run multiple times with identical results without relying on filesystem state.\",\n      \"Remove all I/O operations. The function should return its output directly, and assertions should verify that specific content exists in memory/output rather than reading from disk.\",\n      \"Ensure no external dependencies (network calls, database queries) are invoked within the test scope.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 5,\n    \"rationale\": \"The test verifies multiple unrelated behaviors: report generation format and specific content strings. If a failure occurs in `write_unified_report`, it is unclear which part of that function failed (e.g., formatting vs. logic), making debugging difficult.\",\n    \"suggestions\": [\n      \"Isolate the assertion to verify only one behavior at a time, such as verifying the report header or verdict string specifically.\",\n      \"Use exception-based testing: assert `AssertionError` is raised if specific conditions are not met within the function's logic flow.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"The test covers a significant portion of functionality (report generation and content verification). However, it does not verify edge cases or alternative paths. It also duplicates coverage if other tests already cover the 'FAIL' verdict logic.\",\n    \"suggestions\": [\n      \"Add assertions for error handling: what happens when `write_unified_report` receives invalid input? What about missing files?\",\n      \"Verify that the test does not duplicate existing unit tests; ensure it specifically targets a regression or an edge case previously untested.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 3,\n    \"rationale\": \"The test is too coarse-grained. It asserts on high-level strings and data structures rather than specific lines of code within the `write_unified_report` function.\",\n    \"suggestions\": [\n      \"Refactor to assert granularly: e.g., verify that line 45 contains 'FAIL' or check a specific variable's value inside the mocked call context.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 2,\n    \"rationale\": \"The test is slow due to `tmp_path` initialization and file system operations. It also includes artificial delays if any exist (none here but setup overhead counts).\",\n    \"suggestions\": [\n      \"Use a deterministic temporary directory or in-memory mock for the report generation function.\",\n      \"Remove all I",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 850,
+      "total_tokens": 1874,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "9d45e29098fb0ecf15dcd8b746288ba2a547fd7b71c1e81e249d363a03caac57": {
+    "id": "chatcmpl-f88222b6-46e4-45e7-88c9-029066d7991d",
+    "created": 1783347356,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and arguments are descriptive enough for a developer familiar with the `unified_compare` library to understand intent. However, it lacks explicit documentation of *why* this specific baseline state is being tested (e.g., 'Verify that missing baselines trigger FAIL verdict'), which could be clearer.\",\n    \"suggestions\": [\n      \"Add an assertion or comment explicitly stating: 'Verifies failure logic when Farley baseline file is absent.'\",\n      \"Consider adding a docstring to the `write_unified_report` call explaining expected behavior for missing baselines.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"The test isolates logic within its own file and does not rely on external state (DB/network/filesystem) or shared mutable variables. It is self-contained regarding the `write_unified_report` function's behavior.\",\n    \"suggestions\": [\n      \"Ensure no side effects occur in other files when this module runs; verify imports are clean.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic and self-contained. However, it relies on `tmp_path` which implies a filesystem state that might vary between environments or if the runner re-runs without cleanup in some CI setups (though typically safe). It does not rely on external shared mutable state.\",\n    \"suggestions\": [\n      \"Explicitly verify file existence before reading to ensure deterministic behavior across runs.\"\n  ]\n},\n\"atomic\": {\n  \"score\": 9,\n  \"rationale\": \"The test verifies exactly one rule: that the report generation logic correctly handles a missing baseline by setting `baseline_exists` to False and failing. The assertion checks specific content strings which directly map to these internal state variables.\",\n    \"suggestions\": [\n      \"Ensure no other assertions in this file interfere with reading or writing files; keep it focused on one behavior.\"\n    ]\n},\n\"necessary\": {\n  \"score\": 8,\n  \"rationale\": \"This test covers the specific edge case of a missing baseline. While `test_unified_compare.py` likely contains general tests for report generation and verdicts, this file specifically targets the 'baseline existence' logic to ensure it is not duplicated elsewhere.\",\n    \"suggestions\": [\n      \"Review other files in `/tests/` to confirm no existing test covers 'missing baseline handling'; if none exist, keep this specific test.\"\n    ]\n},\n\"granular\": {\n  \"score\": 7,\n  \"rationale\": \"The test is somewhat granular but mixes high-level configuration (`spend_str`, `cr_data`) with low-level file I/O assertions. It asserts the *content* of a generated report rather than just verifying that specific internal flags were set correctly.\",\n    \"suggestions\": [\n      \"Refine assertions to check only critical fields (e.g., `baseline_exists: False` and verdict logic) instead of full markdown content which may include unrelated formatting.\"\n    ]\n},\n\"fast\": {\n  \"score\": 9,\n  \"rationale\": \"The test executes quickly. It uses a single function call with minimal setup (`tmp_path`) and no artificial delays or heavy I/O operations beyond reading the generated file.\",\n    \"suggestions\": [\n      \"Remove any `sleep()` calls if present in other parts of this suite; ensure no blocking network calls occur.\"\n    ]\n},\n\"first_tdd\": {\n  \"score\": 6,\n  \"rationale\": \"The test follows Arrange-Act-Pattern loosely (Arrange: create file/vars -> Act: call function -> Assert). However, it lacks a clear 'specification' of the expected behavior before running. It asserts implementation details (`baseline_exists`) rather than verifying high-level design properties like 'Does missing baseline cause FAIL?'.\",\n    \"suggestions\": [\n      \"Refactor to explicitly state in Arrange: `assert farley_data['baseline_exists'] == False`. This makes the test's purpose (verifying failure logic) explicit before any setup.\",\n      \"Ensure assertions check design properties, not just implementation details.\"\n    ]\n},\"summary\":\"{\\\"understandable\\\":8,\\\"maintainable\\\":9,\\\"repeatable\\\":7,\\\"atomic\\\":9,\\\"necessary\\\":8,\\\"granular\\\":7,\\\"fast\\\":9,\\\"first_tdd\\\":6}\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 975,
+      "prompt_tokens": 706,
+      "total_tokens": 1681,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "639b1d7040ba67f48ef10c3c488abe9547f19c9e99f266483c93a860d91bc64f": {
+    "id": "chatcmpl-dc42b0a3-ab92-4634-9180-693f83f8d6d3",
+    "created": 1783347427,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 9,\n    \"rationale\": \"The test name and arguments are clear. The intent is to verify that a 'FAIL' verdict results in the report displaying specific failure details (Score: 0/10) and state ('CHECK_FAILED').\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 8,\n    \"rationale\": \"The test is decoupled from implementation; it only asserts the output content. However, `write_unified_report` might be brittle if its internal logic changes to handle 'FAIL' differently than expected.\",\n    \"suggestions\": [\n      \"Ensure `write_unified_report` explicitly handles a FAIL verdict by setting specific fields (like `verdict`, `reason`) rather than relying on side effects or default behaviors that could change between versions.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is self-contained and deterministic. It does not rely on external state (database/filesystem) except for the temporary file path passed via `tmp_path`. The output content check ensures repeatability.\",\n    \"suggestions\": [\n      \"Remove any implicit reliance on system time or randomization if the report generation logic uses them, even though they aren't explicitly shown in this snippet.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: that a FAIL verdict produces specific output. If it fails, the cause is instantly obvious (missing assertions or incorrect content).\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test covers 'FAIL' handling but does not cover other verdict states ('PASS', 'WARN'). It duplicates coverage of a specific edge case rather than generalizing the logic.\",\n    \"suggestions\": [\n      \"Add tests for PASS and WARN scenarios to ensure `write_unified_report` handles all valid return codes uniformly, preventing future regressions in those paths.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The test is granular enough. It isolates the specific assertion that a FAIL verdict results in `CHECK_FAILED` state and score of 0.\",\n    \"suggestions\": []\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"No artificial sleeps or heavy I/O operations are present. The test reads the file once to verify content existence and string presence, which is efficient for this scope.\",\n    \"suggestions\": [\n      \"Ensure `write_unified_report` does not perform unnecessary disk writes during setup if possible; however, since it's a unit-like integration test with an explicit output path, speed isn't the primary concern here.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"The code structure follows Arrange-Act-Assert. However, `write_unified_report` is called without a clear 'Arrange' phase (e.g., mocking dependencies or setting up the environment), which makes it harder to verify that only this specific behavior was tested.\",\n    \"suggestions\": [\n      \"Explicitly mock external dependencies (`scripts.unified_compare`) in Arrange. If `write_unified_report` is an integration test, ensure all side effects (like file system writes) are isolated or mocked so the 'Arrange' phase clearly defines the state before 'Act'.\",\n      \"Consider adding a setup step to initialize the report writer with specific expectations for FAIL vs PASS outputs.\"\n    ]\n  },\n  \"summary\": \"The test is highly understandable and atomic. It effectively verifies one behavior (FAIL handling). However, it lacks comprehensive coverage of other verdicts and relies on an external function's internal logic without explicit mocking in the Arrange phase, which could lead to brittle tests if that function changes.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 877,
+      "prompt_tokens": 701,
+      "total_tokens": 1578,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
