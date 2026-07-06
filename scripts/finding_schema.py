@@ -153,6 +153,64 @@ class BaselineCheckResult(BaseModel):
     details: List[str] = Field(default_factory=list)
 
 
+def _record_dimension_score_validation(
+    dim: str,
+    raw_dim: Dict[str, Any],
+    parsed_dim: Any,
+    fields: List[FieldValidation],
+) -> None:
+    raw_score = raw_dim.get("score")
+    parsed_score = getattr(parsed_dim, "score", None)
+    if raw_score is None or parsed_score is None:
+        return
+
+    try:
+        raw_score_float = float(raw_score)
+    except (ValueError, TypeError):
+        fields.append(FieldValidation(
+            field_name=f"{dim}.score",
+            status="INVALID",
+            raw_value=raw_score,
+            repaired_value=parsed_score,
+            repair_reason="non-numeric value"
+        ))
+        return
+
+    if 10.0 < raw_score_float <= 100.0:
+        fields.append(FieldValidation(
+            field_name=f"{dim}.score",
+            status="REPAIRED",
+            raw_value=raw_score,
+            repaired_value=parsed_score,
+            repair_type="scaled_percentage",
+            repair_reason="score scale conversion"
+        ))
+
+
+def _record_dimension_rationale_validation(
+    dim: str,
+    raw_dim: Dict[str, Any],
+    parsed_dim: Any,
+    fields: List[FieldValidation],
+) -> None:
+    raw_rat = raw_dim.get("rationale")
+    parsed_rat = getattr(parsed_dim, "rationale", "")
+    if raw_rat is None:
+        fields.append(FieldValidation(
+            field_name=f"{dim}.rationale",
+            status="NORMALIZED",
+            raw_value=None,
+            repaired_value=""
+        ))
+    elif str(raw_rat).strip() != str(raw_rat):
+        fields.append(FieldValidation(
+            field_name=f"{dim}.rationale",
+            status="NORMALIZED",
+            raw_value=raw_rat,
+            repaired_value=parsed_rat
+        ))
+
+
 def _validate_dimensions(raw_json: Dict[str, Any], review: Any, fields: List[FieldValidation]) -> None:
     dimensions = ["readability", "maintainability", "correctness", "complexity", "security", "test_coverage"]
     for dim in dimensions:
@@ -160,24 +218,9 @@ def _validate_dimensions(raw_json: Dict[str, Any], review: Any, fields: List[Fie
         parsed_dim = getattr(review, dim, None)
         if not isinstance(raw_dim, dict) or parsed_dim is None:
             continue
-        
-        # Rationale
-        raw_rat = raw_dim.get("rationale")
-        parsed_rat = getattr(parsed_dim, "rationale", "")
-        if raw_rat is None:
-            fields.append(FieldValidation(
-                field_name=f"{dim}.rationale",
-                status="NORMALIZED",
-                raw_value=None,
-                repaired_value=""
-            ))
-        elif str(raw_rat).strip() != str(raw_rat):
-            fields.append(FieldValidation(
-                field_name=f"{dim}.rationale",
-                status="NORMALIZED",
-                raw_value=raw_rat,
-                repaired_value=parsed_rat
-            ))
+
+        _record_dimension_score_validation(dim, raw_dim, parsed_dim, fields)
+        _record_dimension_rationale_validation(dim, raw_dim, parsed_dim, fields)
 
 
 def _validate_finding_strings(idx: int, raw_find: Dict[str, Any], parsed_find: Any, fields: List[FieldValidation]) -> None:
@@ -262,19 +305,88 @@ def _validate_single_finding(idx: int, raw_find: Dict[str, Any], parsed_find: An
     _validate_finding_path(idx, raw_find, parsed_find, fields)
 
 
+def _record_dropped_finding(
+    idx: int,
+    raw_find: Any,
+    fields: List[FieldValidation],
+    reason: str,
+) -> None:
+    fields.append(FieldValidation(
+        field_name=f"findings[{idx}]",
+        status="REPAIRED",
+        raw_value=raw_find,
+        repaired_value=None,
+        repair_type="dropped_invalid_finding",
+        repair_reason=reason
+    ))
+
+
+def _is_valid_engineering_finding(raw_find: Dict[str, Any]) -> tuple[bool, Optional[str]]:
+    try:
+        EngineeringFinding.model_validate(raw_find)
+    except Exception as exc:
+        return False, str(exc)
+    return True, None
+
+
 def _validate_findings(raw_json: Dict[str, Any], review: Any, fields: List[FieldValidation]) -> None:
     raw_findings = raw_json.get("findings", [])
     parsed_findings = getattr(review, "findings", [])
     if not isinstance(raw_findings, list) or not isinstance(parsed_findings, list):
         return
-        
-    for idx, (raw_find, parsed_find) in enumerate(zip(raw_findings, parsed_findings)):
-        if isinstance(raw_find, dict):
-            _validate_single_finding(idx, raw_find, parsed_find, fields)
+
+    parsed_idx = 0
+    for idx, raw_find in enumerate(raw_findings):
+        if not isinstance(raw_find, dict):
+            _record_dropped_finding(idx, raw_find, fields, "finding is not an object")
+            continue
+
+        valid_finding, invalid_reason = _is_valid_engineering_finding(raw_find)
+        if not valid_finding:
+            _record_dropped_finding(idx, raw_find, fields, invalid_reason or "invalid finding")
+            continue
+
+        if parsed_idx < len(parsed_findings):
+            _validate_single_finding(idx, raw_find, parsed_findings[parsed_idx], fields)
+        parsed_idx += 1
+
+
+def _validate_top_level_review_fields(raw_json: Dict[str, Any], review: Any, fields: List[FieldValidation]) -> None:
+    parsed_summary = getattr(review, "summary", "")
+    if "summary" not in raw_json:
+        fields.append(FieldValidation(
+            field_name="summary",
+            status="REPAIRED",
+            raw_value=None,
+            repaired_value=parsed_summary,
+            repair_type="missing_default",
+            repair_reason="missing summary repaired to empty string"
+        ))
+    else:
+        raw_summary = raw_json.get("summary")
+        if raw_summary is not None and str(raw_summary).strip() != str(raw_summary):
+            fields.append(FieldValidation(
+                field_name="summary",
+                status="NORMALIZED",
+                raw_value=raw_summary,
+                repaired_value=parsed_summary
+            ))
+
+    parsed_severity = getattr(review, "severity", None)
+    if "severity" not in raw_json:
+        fields.append(FieldValidation(
+            field_name="severity",
+            status="REPAIRED",
+            raw_value=None,
+            repaired_value=parsed_severity,
+            repair_type="missing_default",
+            repair_reason="missing severity repaired to WARN"
+        ))
 
 
 def build_validation_context(raw_json: Dict[str, Any], review: Any) -> ValidationContext:
     fields = []
+    _validate_top_level_review_fields(raw_json, review, fields)
     _validate_dimensions(raw_json, review, fields)
     _validate_findings(raw_json, review, fields)
     repaired = any(f.status == "REPAIRED" for f in fields)

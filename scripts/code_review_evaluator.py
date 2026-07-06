@@ -54,6 +54,8 @@ class PropertyEvaluation(BaseModel):
         
         if 0.0 <= val <= 10.0:
             return val
+        elif 10.0 < val <= 100.0:
+            return val / 10.0
         else:
             raise ValueError("Score is out of bounds [0.0, 10.0].")
 
@@ -74,8 +76,8 @@ class CodeReviewBreakdown(BaseModel):
     complexity: PropertyEvaluation
     security: PropertyEvaluation
     test_coverage: PropertyEvaluation
-    summary: str = Field(..., description="A brief summary of the overall code quality.")
-    severity: Literal["OK", "WARN", "BLOCK"] = Field(..., description="Top-level verdict per unit.")
+    summary: str = Field("", description="A brief summary of the overall code quality.")
+    severity: Literal["OK", "WARN", "BLOCK"] = Field("WARN", description="Top-level verdict per unit.")
     findings: List[EngineeringFinding] = Field(
         default_factory=list,
         description="List of structured engineering findings supporting this evaluation."
@@ -89,6 +91,25 @@ class CodeReviewBreakdown(BaseModel):
         if not isinstance(v, str):
             raise ValueError("summary must be a string.")
         return v.strip()
+
+    @field_validator("findings", mode="before")
+    @classmethod
+    def drop_invalid_findings(cls, v):
+        if v is None:
+            return []
+        if not isinstance(v, list):
+            raise ValueError("findings must be a list.")
+
+        valid_findings = []
+        for finding in v:
+            if not isinstance(finding, dict):
+                continue
+            try:
+                EngineeringFinding.model_validate(finding)
+            except Exception:
+                continue
+            valid_findings.append(finding)
+        return valid_findings
 
 
 SYSTEM_PROMPT = """You are an elite, senior software engineer and security auditor.
@@ -190,6 +211,10 @@ def _process_field_telemetry(field: Dict[str, Any], summary: Dict[str, Any]) -> 
             summary["details"]["repaired_confidence_count"] += 1
         elif "score" in field_name:
             summary["details"]["repaired_score_count"] += 1
+        elif field.get("repair_type") == "dropped_invalid_finding":
+            summary["details"]["dropped_finding_count"] += 1
+        elif field.get("repair_type") == "missing_default":
+            summary["details"]["repaired_default_count"] += 1
     elif status == "NORMALIZED":
         if "path" in field_name:
             summary["details"]["normalized_path_count"] += 1
@@ -255,6 +280,8 @@ def build_validation_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
         "details": {
             "repaired_confidence_count": 0,
             "repaired_score_count": 0,
+            "repaired_default_count": 0,
+            "dropped_finding_count": 0,
             "normalized_path_count": 0,
             "normalized_text_count": 0,
             "invalid_field_count": 0,

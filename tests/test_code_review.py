@@ -230,13 +230,16 @@ def test_pydantic_validators():
 
     # 1. Test score limits (out of bounds raises ValidationError)
     with pytest.raises(ValidationError):
-        PropertyEvaluation.model_validate({"score": 15, "rationale": "Over limit"})
+        PropertyEvaluation.model_validate({"score": 150, "rationale": "Over limit"})
     
     with pytest.raises(ValidationError):
         PropertyEvaluation.model_validate({"score": "N/A", "rationale": "Invalid"})
 
     prop_ok = PropertyEvaluation.model_validate({"score": 8.5, "rationale": "Ok"})
     assert prop_ok.score == pytest.approx(8.5)
+
+    prop_percent = PropertyEvaluation.model_validate({"score": 85, "rationale": "Ok"})
+    assert prop_percent.score == pytest.approx(8.5)
 
     # 2. Test confidence parsing (98 -> 0.98)
     finding = EngineeringFinding.model_validate({
@@ -350,24 +353,104 @@ def test_unit_review_artifact():
     assert fields["findings[0].evidence.path"]["repaired_value"] == "src/foo.py"
 
 
+def test_code_review_breakdown_recovers_common_llm_output_mistakes():
+    from scripts.finding_schema import build_validation_context
+    from scripts.code_review_evaluator import CodeReviewBreakdown
+
+    raw_dict = {
+        "readability": {"score": 85, "rationale": "Good readability"},
+        "maintainability": {"score": 90, "rationale": "Good maintainability"},
+        "correctness": {"score": 75, "rationale": "Mostly correct"},
+        "complexity": {"score": 70, "rationale": "Moderate complexity"},
+        "security": {"score": 95, "rationale": "No security issue"},
+        "test_coverage": {"score": 80, "rationale": "Covered"},
+        "findings": [
+            {
+                "title": "Missing consequence",
+                "category": "Maintainability",
+                "severity": "WARN",
+                "evidence": {"location_type": "code", "path": "src/foo.py", "details": {}},
+                "engineering_rationale": "The rationale exists.",
+                "confidence": 0.8,
+                "recommended_action": "Add the missing consequence.",
+            },
+            {
+                "title": "Complete finding",
+                "category": "Readability",
+                "severity": "INFO",
+                "evidence": {"location_type": "code", "path": "/src/foo.py", "details": {}},
+                "engineering_rationale": "A complete rationale.",
+                "engineering_consequence": "Readers understand the concern.",
+                "confidence": 90,
+                "recommended_action": "Keep the finding complete.",
+            },
+        ],
+    }
+
+    breakdown = CodeReviewBreakdown.model_validate(raw_dict)
+    context = build_validation_context(raw_dict, breakdown)
+
+    assert breakdown.summary == ""
+    assert breakdown.severity == "WARN"
+    assert breakdown.readability.score == pytest.approx(8.5)
+    assert breakdown.maintainability.score == pytest.approx(9.0)
+    assert len(breakdown.findings) == 1
+    assert breakdown.findings[0].title == "Complete finding"
+
+    fields = {field.field_name: field for field in context.fields}
+    assert fields["summary"].status == "REPAIRED"
+    assert fields["summary"].repair_type == "missing_default"
+    assert fields["severity"].status == "REPAIRED"
+    assert fields["severity"].repaired_value == "WARN"
+    assert fields["readability.score"].status == "REPAIRED"
+    assert fields["readability.score"].repaired_value == pytest.approx(8.5)
+    assert fields["findings[0]"].status == "REPAIRED"
+    assert fields["findings[0]"].repair_type == "dropped_invalid_finding"
+    assert fields["findings[1].confidence"].status == "REPAIRED"
+    assert fields["findings[1].evidence.path"].status == "NORMALIZED"
+    assert context.repaired is True
+    assert context.normalized is True
+
+
+def test_code_review_breakdown_still_rejects_irreparable_reviews():
+    from scripts.code_review_evaluator import CodeReviewBreakdown
+    from pydantic import ValidationError
+
+    raw_dict = {
+        "readability": {"score": "not-a-score", "rationale": "Bad score"},
+        "maintainability": {"score": 90, "rationale": "Good maintainability"},
+        "correctness": {"score": 75, "rationale": "Mostly correct"},
+        "complexity": {"score": 70, "rationale": "Moderate complexity"},
+        "security": {"score": 95, "rationale": "No security issue"},
+        "test_coverage": {"score": 80, "rationale": "Covered"},
+    }
+
+    with pytest.raises(ValidationError):
+        CodeReviewBreakdown.model_validate(raw_dict)
+
+
 def test_strict_type_coercion_regressions():
     from scripts.finding_schema import EngineeringFinding, Evidence
     from scripts.code_review_evaluator import PropertyEvaluation
     from pydantic import ValidationError
 
     # --- Score validator tests ---
-    # Accept 5, 5.5, "5.5"
+    # Accept 5, 5.5, "5.5", and percentage-style scores.
     p1 = PropertyEvaluation.model_validate({"score": 5, "rationale": "ok"})
     assert p1.score == pytest.approx(5.0)
     p2 = PropertyEvaluation.model_validate({"score": 5.5, "rationale": "ok"})
     assert p2.score == pytest.approx(5.5)
     p3 = PropertyEvaluation.model_validate({"score": "5.5", "rationale": "ok"})
     assert p3.score == pytest.approx(5.5)
+    p4 = PropertyEvaluation.model_validate({"score": 85, "rationale": "ok"})
+    assert p4.score == pytest.approx(8.5)
 
-    # Reject True, False, None, [], {}, "banana"
+    # Reject True, False, None, [], {}, "banana", and values outside 0-100.
     for invalid in [True, False, None, [], {}, "banana"]:
         with pytest.raises(ValidationError):
             PropertyEvaluation.model_validate({"score": invalid, "rationale": "ok"})
+    with pytest.raises(ValidationError):
+        PropertyEvaluation.model_validate({"score": 101, "rationale": "too high"})
 
     # --- Confidence validator tests ---
     # Helper to build raw finding structure
@@ -546,7 +629,21 @@ def test_telemetry_aggregation():
                 "fields": [
                     {"field_name": "findings[0].confidence", "status": "REPAIRED", "raw_value": 95, "repaired_value": 0.95},
                     {"field_name": "findings[0].evidence.path", "status": "NORMALIZED", "raw_value": "/a.py", "repaired_value": "a.py"},
-                    {"field_name": "readability.rationale", "status": "NORMALIZED", "raw_value": "  foo  ", "repaired_value": "foo"}
+                    {"field_name": "readability.rationale", "status": "NORMALIZED", "raw_value": "  foo  ", "repaired_value": "foo"},
+                    {
+                        "field_name": "summary",
+                        "status": "REPAIRED",
+                        "raw_value": None,
+                        "repaired_value": "",
+                        "repair_type": "missing_default",
+                    },
+                    {
+                        "field_name": "findings[1]",
+                        "status": "REPAIRED",
+                        "raw_value": {},
+                        "repaired_value": None,
+                        "repair_type": "dropped_invalid_finding",
+                    },
                 ]
             }
         },
@@ -570,6 +667,8 @@ def test_telemetry_aggregation():
     assert summary["normalized_units"] == 0
     assert summary["details"]["repaired_confidence_count"] == 1
     assert summary["details"]["repaired_score_count"] == 0
+    assert summary["details"]["repaired_default_count"] == 1
+    assert summary["details"]["dropped_finding_count"] == 1
     assert summary["details"]["normalized_path_count"] == 1
     assert summary["details"]["normalized_text_count"] == 1
 
