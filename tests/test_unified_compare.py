@@ -1,5 +1,11 @@
 import pytest
-from scripts.unified_compare import combine_token_spend
+import json
+
+from scripts.unified_compare import (
+    combine_token_spend,
+    parse_compatibility_result,
+    resolve_farley_baseline,
+)
 
 
 def test_combine_token_spend_empty():
@@ -74,6 +80,99 @@ def test_write_unified_report_basic(tmp_path):
     assert "Score: 10.0/10" in content
 
 
+def test_parse_compatibility_result_legacy_pass():
+    result = parse_compatibility_result({
+        "pass": True,
+        "compatibility_index": 10.0,
+        "regressions": [],
+    })
+
+    assert result.state == "PASS"
+    assert result.compatible is True
+    assert result.score == pytest.approx(10.0)
+
+
+def test_parse_compatibility_result_check_failed():
+    result = parse_compatibility_result({
+        "state": "CHECK_FAILED",
+        "pass": False,
+        "compatibility_index": 0.0,
+        "reason": "Parser failed.",
+        "details": ["bad syntax"],
+    })
+
+    assert result.state == "CHECK_FAILED"
+    assert result.compatible is False
+    assert result.reason == "Parser failed."
+    assert result.details == ["bad syntax"]
+
+
+def test_resolve_farley_baseline_first_run():
+    result, path, cassette = resolve_farley_baseline("missing-baseline.json", required=False)
+
+    assert result.state == "FIRST_RUN"
+    assert result.available is False
+    assert result.required is False
+    assert path is None
+    assert cassette == {"tests": []}
+
+
+def test_resolve_farley_baseline_missing_required():
+    result, path, cassette = resolve_farley_baseline("missing-baseline.json", required=True)
+
+    assert result.state == "BASELINE_MISSING"
+    assert result.available is False
+    assert result.required is True
+    assert path is None
+    assert cassette == {"tests": []}
+
+
+def test_resolve_farley_baseline_available(tmp_path, monkeypatch):
+    from scripts import unified_compare
+
+    monkeypatch.setattr(unified_compare, "PROJECT_ROOT", tmp_path)
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(json.dumps({"tests": []}), encoding="utf-8")
+
+    result, path, cassette = resolve_farley_baseline("baseline.json", required=True)
+
+    assert result.state == "AVAILABLE"
+    assert result.available is True
+    assert result.required is True
+    assert path == baseline
+    assert cassette == {"tests": []}
+
+
+def test_resolve_farley_baseline_corrupted_json(tmp_path, monkeypatch):
+    from scripts import unified_compare
+
+    monkeypatch.setattr(unified_compare, "PROJECT_ROOT", tmp_path)
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text("{not-json", encoding="utf-8")
+
+    result, path, cassette = resolve_farley_baseline("baseline.json", required=True)
+
+    assert result.state == "BASELINE_CORRUPTED"
+    assert result.available is False
+    assert path == baseline
+    assert cassette == {"tests": []}
+
+
+def test_resolve_farley_baseline_corrupted_shape(tmp_path, monkeypatch):
+    from scripts import unified_compare
+
+    monkeypatch.setattr(unified_compare, "PROJECT_ROOT", tmp_path)
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(json.dumps({"not_tests": []}), encoding="utf-8")
+
+    result, path, cassette = resolve_farley_baseline("baseline.json", required=False)
+
+    assert result.state == "BASELINE_CORRUPTED"
+    assert result.available is False
+    assert path == baseline
+    assert cassette == {"tests": []}
+
+
 def test_write_unified_report_full(tmp_path):
     from scripts.unified_compare import write_unified_report
     out_file = tmp_path / "report.md"
@@ -119,6 +218,7 @@ def test_write_unified_report_full(tmp_path):
     assert "Fix this function" in content
     assert "test_one" in content
     assert "Removed method foo" in content
+    assert "FAIL (Score: 8.0/10)" in content
 
 
 def test_write_unified_report_null_values(tmp_path):
@@ -315,3 +415,68 @@ def test_write_unified_report_ignores_malformed_cqi_units(tmp_path):
 
     content = out_file.read_text(encoding="utf-8")
     assert "| Code Quality Index (CQI) | N/A (no Python code changes) | **PASS** |" in content
+
+
+def test_write_unified_report_displays_baseline_state(tmp_path):
+    from scripts.unified_compare import write_unified_report
+    out_file = tmp_path / "report.md"
+
+    write_unified_report(
+        out_path=out_file,
+        unified_verdict="FAIL",
+        reasons=["FARLEY BASELINE: Farley baseline is required but was not found."],
+        spend_str="**Token spend**: 100 total tokens\n\n",
+        cr_data={"units": [], "verdict": "PASS"},
+        farley_data={
+            "bsum": {"avg_index": 0.0},
+            "psum": {"avg_index": 8.0},
+            "delta": 0.0,
+            "verdict": "PASS",
+            "regressions": [],
+            "baseline_exists": False,
+            "baseline_state": "BASELINE_MISSING",
+            "baseline_reason": "Farley baseline is required but was not found.",
+            "baseline_details": ["missing baseline.json"],
+        },
+        compat_data={"ok": True, "score": 10.0, "regressions": [], "state": "PASS"},
+    )
+
+    content = out_file.read_text(encoding="utf-8")
+    assert "| Farley Test Quality | PR avg: 8.00 (baseline missing) | **FAIL** |" in content
+    assert "State: **BASELINE_MISSING**" in content
+    assert "missing baseline.json" in content
+
+
+def test_write_unified_report_displays_compatibility_check_failed(tmp_path):
+    from scripts.unified_compare import write_unified_report
+    out_file = tmp_path / "report.md"
+
+    write_unified_report(
+        out_path=out_file,
+        unified_verdict="FAIL",
+        reasons=["API COMPATIBILITY CHECK_FAILED: Parser failed."],
+        spend_str="**Token spend**: 100 total tokens\n\n",
+        cr_data={"units": [], "verdict": "PASS"},
+        farley_data={
+            "bsum": {"avg_index": 8.0},
+            "psum": {"avg_index": 8.0},
+            "delta": 0.0,
+            "verdict": "PASS",
+            "regressions": [],
+            "baseline_exists": True,
+            "baseline_state": "AVAILABLE",
+        },
+        compat_data={
+            "ok": False,
+            "score": 0.0,
+            "regressions": [],
+            "state": "CHECK_FAILED",
+            "reason": "Parser failed.",
+            "details": ["bad syntax"],
+        },
+    )
+
+    content = out_file.read_text(encoding="utf-8")
+    assert "| API Compatibility | CHECK_FAILED (Score: 0.0/10) | **FAIL** |" in content
+    assert "State: **CHECK_FAILED**" in content
+    assert "bad syntax" in content

@@ -12,6 +12,7 @@ from typing import Dict, Any, List, Tuple
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from scripts.path_utils import validate_input_path, validate_output_path
+from scripts.finding_schema import BaselineCheckResult, CompatibilityCheckResult
 from scripts.farley_compare import (
     compute_suite_summary as farley_compute_summary,
     merge_virtual_suite,
@@ -51,6 +52,123 @@ def safe_load_json(path: Path) -> Dict[str, Any]:
     except Exception as e:
         print(f"Warning: failed to load JSON from {path}: {e}", file=sys.stderr)
         return {}
+
+
+def load_json_strict(path: Path) -> Dict[str, Any]:
+    """Load JSON and raise when the file is missing, malformed, or not an object."""
+    with path.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} must contain a JSON object.")
+    return data
+
+
+def resolve_farley_baseline(
+    baseline_arg: str,
+    required: bool,
+) -> Tuple[BaselineCheckResult, Path | None, Dict[str, Any]]:
+    """Resolve and load the Farley baseline with explicit baseline semantics."""
+    try:
+        baseline_path = validate_input_path(baseline_arg, PROJECT_ROOT)
+    except ValueError as exc:
+        if required:
+            return (
+                BaselineCheckResult(
+                    state="BASELINE_MISSING",
+                    available=False,
+                    required=True,
+                    reason="Farley baseline is required but was not found.",
+                    details=[str(exc)],
+                ),
+                None,
+                {"tests": []},
+            )
+        return (
+            BaselineCheckResult(
+                state="FIRST_RUN",
+                available=False,
+                required=False,
+                reason="No Farley baseline exists yet; first-run mode is active.",
+                details=[str(exc)],
+            ),
+            None,
+            {"tests": []},
+        )
+
+    try:
+        baseline_data = load_json_strict(baseline_path)
+    except Exception as exc:
+        return (
+            BaselineCheckResult(
+                state="BASELINE_CORRUPTED",
+                available=False,
+                required=required,
+                reason="Farley baseline exists but could not be loaded as valid JSON.",
+                details=[str(exc)],
+            ),
+            baseline_path,
+            {"tests": []},
+        )
+
+    tests = baseline_data.get("tests")
+    if not isinstance(tests, list):
+        return (
+            BaselineCheckResult(
+                state="BASELINE_CORRUPTED",
+                available=False,
+                required=required,
+                reason="Farley baseline exists but does not contain a tests list.",
+                details=[f"{baseline_path}: missing or invalid 'tests' field."],
+            ),
+            baseline_path,
+            {"tests": []},
+        )
+
+    return (
+        BaselineCheckResult(
+            state="AVAILABLE",
+            available=True,
+            required=required,
+            reason="Farley baseline is available.",
+        ),
+        baseline_path,
+        baseline_data,
+    )
+
+
+def parse_compatibility_result(compat_results: Dict[str, Any]) -> CompatibilityCheckResult:
+    """Normalize compatibility result JSON into the explicit state model."""
+    regressions = compat_results.get("regressions")
+    if not isinstance(regressions, list):
+        regressions = []
+
+    details = compat_results.get("details")
+    if not isinstance(details, list):
+        details = []
+
+    state = compat_results.get("state")
+    if state in {"PASS", "FAIL", "NOT_EXECUTED", "CHECK_FAILED"}:
+        compatible = compat_results.get("pass")
+        if compatible is None:
+            compatible = state in {"PASS", "NOT_EXECUTED"}
+    else:
+        compatible = compat_results.get("pass") if compat_results.get("pass") is not None else True
+        state = "PASS" if compatible else "FAIL"
+
+    raw_score = compat_results.get("compatibility_index")
+    default_score = 0.0
+    if compatible:
+        default_score = 10.0
+    score = raw_score if raw_score is not None else default_score
+
+    return CompatibilityCheckResult(
+        state=state,
+        compatible=bool(compatible),
+        score=float(score),
+        regressions=[str(item) for item in regressions],
+        reason=compat_results.get("reason"),
+        details=[str(item) for item in details],
+    )
 
 
 def get_token_totals(cassette: Dict[str, Any], key: str) -> Dict[str, Any]:
@@ -138,7 +256,8 @@ def _get_cqi_metric(cr_data: Dict[str, Any]) -> Tuple[str, str]:
 
 def _get_farley_metric(farley_data: Dict[str, Any]) -> Tuple[str, str]:
     """Build Farley metric and status values."""
-    farley_baseline_exists = farley_data.get("baseline_exists") or False
+    baseline_state = farley_data.get("baseline_state") or ("AVAILABLE" if farley_data.get("baseline_exists") else "FIRST_RUN")
+    farley_baseline_exists = baseline_state == "AVAILABLE"
     farley_bsum = farley_data.get("bsum") or {}
     farley_psum = farley_data.get("psum") or {}
     farley_delta = farley_data.get("delta") if farley_data.get("delta") is not None else 0.0
@@ -152,15 +271,24 @@ def _get_farley_metric(farley_data: Dict[str, Any]) -> Tuple[str, str]:
             f"Baseline avg: {farley_bsum_avg:.2f} \\| PR avg: {farley_psum_avg:.2f} \\| Delta: {farley_delta:+.2f}",
             farley_verdict,
         )
+    if baseline_state == "BASELINE_MISSING":
+        return f"PR avg: {farley_psum_avg:.2f} (baseline missing)", "FAIL"
+    if baseline_state == "BASELINE_CORRUPTED":
+        return f"PR avg: {farley_psum_avg:.2f} (baseline corrupted)", "FAIL"
     return f"PR avg: {farley_psum_avg:.2f} (no baseline to compare)", farley_verdict
 
 
 def _get_compat_metric(compat_data: Dict[str, Any]) -> Tuple[str, str]:
     """Build API Compatibility metric and status values."""
+    state = compat_data.get("state")
     compat_score = compat_data.get("score") if compat_data.get("score") is not None else 10.0
     compat_ok = compat_data.get("ok") if compat_data.get("ok") is not None else True
+    if state == "NOT_EXECUTED":
+        return "NOT_EXECUTED (no changed non-test Python source)", "PASS"
+    if state == "CHECK_FAILED":
+        return f"CHECK_FAILED (Score: {compat_score:.1f}/10)", "FAIL"
     verdict = "PASS" if compat_ok else "FAIL"
-    return f"Score: {compat_score:.1f}/10", verdict
+    return f"{state or verdict} (Score: {compat_score:.1f}/10)", verdict
 
 
 def _write_metrics_overview(
@@ -265,7 +393,18 @@ def _write_code_review_details(f, cr_data: Dict[str, Any]) -> None:
 
 
 def _write_farley_details(f, farley_data: Dict[str, Any]) -> None:
-    farley_baseline_exists = farley_data.get("baseline_exists", False)
+    baseline_state = farley_data.get("baseline_state") or ("AVAILABLE" if farley_data.get("baseline_exists") else "FIRST_RUN")
+    baseline_reason = farley_data.get("baseline_reason")
+    if baseline_state in {"FIRST_RUN", "BASELINE_MISSING", "BASELINE_CORRUPTED"}:
+        f.write("## 🧪 Farley Baseline State\n\n")
+        f.write(f"- State: **{baseline_state}**\n")
+        if baseline_reason:
+            f.write(f"- Reason: {baseline_reason}\n")
+        for detail in farley_data.get("baseline_details", []):
+            f.write(f"- Detail: {detail}\n")
+        f.write("\n")
+
+    farley_baseline_exists = baseline_state == "AVAILABLE"
     farley_regressions = farley_data.get("regressions", [])
     if farley_baseline_exists and farley_regressions:
         f.write("## 🧪 Farley Test Regressions\n\n")
@@ -284,6 +423,18 @@ def _write_farley_details(f, farley_data: Dict[str, Any]) -> None:
 
 
 def _write_compatibility_details(f, compat_data: Dict[str, Any]) -> None:
+    state = compat_data.get("state")
+    reason = compat_data.get("reason")
+    details = compat_data.get("details") or []
+    if state in {"NOT_EXECUTED", "CHECK_FAILED"}:
+        f.write("## 🔌 API Compatibility State\n\n")
+        f.write(f"- State: **{state}**\n")
+        if reason:
+            f.write(f"- Reason: {reason}\n")
+        for detail in details:
+            f.write(f"- Detail: {detail}\n")
+        f.write("\n")
+
     compat_regressions = compat_data.get("regressions", [])
     if compat_regressions:
         f.write("## 🔌 API Compatibility Regressions\n\n")
@@ -319,6 +470,11 @@ def parse_args():
     parser.add_argument("--compatibility-results", required=True, help="API compatibility JSON results path")
     parser.add_argument("--out", required=True, help="Markdown report output path")
     parser.add_argument("--warn-threshold", type=int, default=3, help="Max allowed WARN code review units")
+    parser.add_argument(
+        "--require-farley-baseline",
+        action="store_true",
+        help="Fail the unified report when the Farley baseline is missing.",
+    )
     return parser.parse_args()
 
 
@@ -335,17 +491,14 @@ def main():
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    # Farley baseline exists check
-    farley_baseline_exists = True
-    try:
-        farley_base_path = validate_input_path(args.farley_baseline, PROJECT_ROOT)
-    except ValueError:
-        farley_baseline_exists = False
-
     # Load cassettes & results
     cr_cassette = safe_load_json(cr_pr_path)
     farley_pr_cassette = safe_load_json(farley_pr_path)
     compat_results = safe_load_json(compat_path)
+    baseline_result, _, farley_base_cassette = resolve_farley_baseline(
+        args.farley_baseline,
+        args.require_farley_baseline,
+    )
 
     # 1. Process Code Review
     cr_units = cr_cassette.get("reviews", [])
@@ -366,10 +519,8 @@ def main():
     farley_exit = 0
     farley_reasons = []
     farley_regressions = []
-    farley_base_cassette = {"tests": []}
 
-    if farley_baseline_exists:
-        farley_base_cassette = safe_load_json(farley_base_path)
+    if baseline_result.available:
         farley_bsum = farley_compute_summary(farley_base_cassette)
         
         virtual_suite = merge_virtual_suite(farley_base_cassette, farley_pr_cassette)
@@ -387,9 +538,7 @@ def main():
         farley_regressions = farley_top_regressions(farley_base_cassette, farley_pr_cassette, top_n=10)
 
     # 3. Process Compatibility Check
-    compat_ok = compat_results.get("pass") if compat_results.get("pass") is not None else True
-    compat_score = compat_results.get("compatibility_index") if compat_results.get("compatibility_index") is not None else 10.0
-    compat_regressions = compat_results.get("regressions", [])
+    compat_result = parse_compatibility_result(compat_results)
 
     # Compile Unified Verdict & Reasons
     unified_reasons = []
@@ -406,10 +555,19 @@ def main():
         exit_code = 2
         unified_reasons.extend(farley_reasons)
 
-    if not compat_ok:
+    if baseline_result.state in {"BASELINE_MISSING", "BASELINE_CORRUPTED"}:
         unified_verdict = "FAIL"
         exit_code = 2
-        unified_reasons.append(f"API COMPATIBILITY: {len(compat_regressions)} backward-compatibility breaking change(s) found.")
+        unified_reasons.append(f"FARLEY BASELINE: {baseline_result.reason}")
+
+    if compat_result.state == "CHECK_FAILED":
+        unified_verdict = "FAIL"
+        exit_code = 2
+        unified_reasons.append(f"API COMPATIBILITY CHECK_FAILED: {compat_result.reason}")
+    elif not compat_result.compatible:
+        unified_verdict = "FAIL"
+        exit_code = 2
+        unified_reasons.append(f"API COMPATIBILITY: {len(compat_result.regressions)} backward-compatibility breaking change(s) found.")
 
     spend_str = combine_token_spend(cr_cassette, farley_pr_cassette)
 
@@ -423,12 +581,18 @@ def main():
         "delta": farley_delta,
         "verdict": farley_verdict,
         "regressions": farley_regressions,
-        "baseline_exists": farley_baseline_exists,
+        "baseline_exists": baseline_result.available,
+        "baseline_state": baseline_result.state,
+        "baseline_reason": baseline_result.reason,
+        "baseline_details": baseline_result.details,
     }
     compat_data = {
-        "ok": compat_ok,
-        "score": compat_score,
-        "regressions": compat_regressions,
+        "ok": compat_result.compatible,
+        "score": compat_result.score,
+        "regressions": compat_result.regressions,
+        "state": compat_result.state,
+        "reason": compat_result.reason,
+        "details": compat_result.details,
     }
 
     # Write unified report
