@@ -2686,61 +2686,66 @@
       "file_path": "tests/test_code_review.py",
       "test_name": "test_pydantic_validators",
       "class_name": null,
-      "farley_index": 7.25,
+      "farley_index": 7.75,
       "farley_breakdown": {
         "understandable": {
           "score": 8,
-          "rationale": "The test clearly demonstrates the business rule for confidence parsing (98 -> 0.98) and validation of empty strings via `assert` statements.",
-          "suggestions": []
+          "rationale": "The test clearly demonstrates the business rule: Pydantic validation errors occur for out-of-bounds values (150) and invalid types ('N/A'), while valid numeric strings are accepted. However, it lacks a clear 'arrange' phase that explicitly defines what constitutes an 'out of bounds' case versus just any non-numeric input.",
+          "suggestions": [
+            "Explicitly define the boundary condition in comments or setup logic (e.g., `assert len('N/A') == 0` to prove type mismatch triggers validation, rather than relying solely on Pydantic's generic behavior which might be implementation-dependent)."
+          ]
         },
         "maintainable": {
           "score": 7,
-          "rationale": "Tests are decoupled from implementation details but rely on specific Pydantic model structures which may become brittle if the schema changes without test updates. The use of nested dicts in evidence is less maintainable than flat lists.",
+          "rationale": "The test is decoupled from system internals; it tests the contract between `PropertyEvaluation.model_validate()` and input data. However, it relies heavily on specific field names (`confidence`, `evidence.path`) which may change if internal schema structures are refactored without updating this test.",
           "suggestions": [
-            "Use `model_dump()` and `model_validate_json()` for more robust serialization/deserialization handling."
+            "Add a unit test for edge cases where fields exist but have default values (empty strings) to ensure the model handles missing or empty data gracefully, independent of external schemas."
           ]
         },
         "repeatable": {
-          "score": 6,
-          "rationale": "Tests are deterministic but rely on external shared state (the specific Pydantic model classes) which could change between runs if the library version updates. No reliance on network or filesystem.",
+          "score": 9,
+          "rationale": "The tests are fully self-contained and deterministic; they do not rely on databases, network calls, file systems, or timing-dependent behavior.",
           "suggestions": [
-            "Ensure all imports and models are stable; avoid dynamic class instantiation in tests."
+            "None required."
           ]
         },
         "atomic": {
-          "score": 9,
-          "rationale": "Each test verifies exactly one distinct behavior: validation of score bounds, confidence parsing logic, path normalization, and empty string preservation. Failures pinpoint specific rule violations instantly.",
-          "suggestions": []
+          "score": 8,
+          "rationale": "Each test verifies a distinct rule: validation error handling for out-of-bounds types vs. valid strings, and confidence parsing conversion (98 -> 0.98). The failure cause is immediately obvious if the assertion fails.",
+          "suggestions": [
+            "None required."
+          ]
         },
         "necessary": {
-          "score": 8,
-          "rationale": "Tests cover critical edge cases (bounds, invalid types) that are essential for the property evaluation system's correctness but do not duplicate coverage of other tests like schema validation or general model construction.",
+          "score": 6,
+          "rationale": "The tests cover specific Pydantic validation scenarios but do not comprehensively test all possible edge cases for `EngineeringFinding` (e.g., empty fields vs. default values). They duplicate coverage of basic type checking rather than testing the full design contract.",
           "suggestions": [
-            "Ensure these specific business rules have dedicated test suites; avoid mixing unrelated logic."
+            "Add a dedicated 'Arrange' phase to explicitly define valid input structures and expected outputs, then add tests that verify these inputs are accepted without errors."
           ]
         },
         "granular": {
           "score": 7,
-          "rationale": "Tests target precise assertions (e.g., `confidence == pytest.approx(0.98)`), but some could be more granular by checking intermediate steps or error messages for deeper insight.",
+          "rationale": "The test isolates specific Pydantic validation behaviors (type coercion for confidence) but is somewhat broad in its assertion of field equality (`assert finding.confidence == pytest.approx(0.98)`), which could be more granular by checking the internal representation or edge cases.",
           "suggestions": [
-            "Add checks to verify the exact Pydantic validation errors raised rather than just model construction success."
+            "Refine assertions to check `finding.confidence` as a float (e.g., `float(finding.confidence)`) rather than relying on Pydantic's string approximation, ensuring precision is verified at the data model level."
           ]
         },
         "fast": {
-          "score": 7,
-          "rationale": "Tests execute quickly without artificial delays. However, `pytest.approx` and nested dict handling can introduce slight overhead compared to direct comparisons.",
+          "score": 9,
+          "rationale": "The tests execute rapidly with no artificial sleeps or heavy I/O operations. They are self-contained and avoid external dependencies.",
           "suggestions": [
-            "Replace `assert finding.confidence == pytest.approx(0.98)` with a simple equality check if precision is not critical."
+            "None required."
           ]
         },
         "first_tdd": {
-          "score": 6,
-          "rationale": "Tests follow an Arrange-Act-Assert pattern but the 'Arrange' phase (creating model instances) mixes business logic and data preparation, which could be separated for better clarity.",
+          "score": 8,
+          "rationale": "While the test structure follows Arrange-Act-Assert implicitly (setup via `model_validate`), it lacks an explicit 'Arrange' phase that defines valid inputs before testing. The behavior is described in comments rather than being explicitly arranged.",
           "suggestions": [
-            "Explicitly separate schema construction from validation assertions to improve test readability."
+            "Explicitly define a setup function or use Pydantic's `__init_subclass__` to create instances with known values, then assert them directly (e.g., `assert finding.confidence == 0.98`) before calling the validation method.",
+            "first_tdd_score_breakdown"
           ]
         },
-        "summary": "The tests are highly focused on specific business rules with clear pass/fail criteria. However, they rely heavily on Pydantic model structures that may shift between runs and lack separation of concerns in the Arrange phase. Minor optimizations could further enhance maintainability and speed without altering core functionality."
+        "summary": "The test is well-structured and fast but lacks a robust 'Arrange' phase to explicitly define valid inputs for testing, making it slightly less maintainable than ideal TDD practices which require explicit setup of expected states. It effectively tests Pydantic validation rules but could benefit from more granular assertions on data model internals."
       }
     },
     {
@@ -2814,69 +2819,115 @@
       }
     },
     {
+      "id": "tests/test_code_review.py::test_code_review_breakdown_still_rejects_irreparable_reviews",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_code_review_breakdown_still_rejects_irreparable_reviews",
+      "class_name": null,
+      "farley_index": 8.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 9,
+          "rationale": "The test name and code clearly define the business rule: a `CodeReviewBreakdown` model rejects inputs where numeric scores are invalid strings. It uses ubiquitous language ('not-a-score', 'Good maintainability') without implementation clutter.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 8,
+          "rationale": "The test is decoupled from system internals; it validates the input format directly. It will not break if `CodeReviewBreakdown` changes its internal validation logic or schema structure.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 10,
+          "rationale": "The test is fully self-contained using only local variables and the model. It has no reliance on external state (DB/network/filesystem) or timing dependencies.",
+          "suggestions": [
+            "Ensure `CodeReviewBreakdown.model_validate` does not trigger side effects like logging, network calls, or file writes that could make it non-repeatable in CI/CD environments."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: the model rejects a specific input type. If validation fails for this case, the cause is instantly obvious (invalid string).",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 7,
+          "rationale": "This test covers only invalid numeric scores in `maintainability`. It does not cover edge cases like empty strings or non-numeric types that might also trigger validation errors.",
+          "suggestions": [
+            "Add a dedicated test for 'empty string' score to ensure the model rejects all non-string inputs, covering more ground than just invalid numbers."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The assertion is specific: it checks that `model_validate` raises a `ValidationError`. It isolates the exact failure mode of the validation logic.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "No artificial sleeps or heavy I/O operations are present. The test executes purely in memory with minimal overhead compared to network calls or file writes.",
+          "suggestions": [
+            "Remove any `time.sleep()` if the evaluator itself performs slow synchronous work; ensure no blocking occurs during validation."
+          ]
+        },
+        "first_tdd": {
+          "score": 10,
+          "rationale": "The test follows TDD principles: it specifies expected behavior (raises ValidationError) before implementation. It demonstrates a clean separation of Arrange-Act-Assert with no hidden dependencies.",
+          "suggestions": []
+        },
+        "summary": "{\"understandable\":9,\"maintainable\":8,\"repeatable\":10,\"atomic\":9,\"necessary\":7,\"granular\":8,\"fast\":9,\"first_tdd\":10}"
+      }
+    },
+    {
       "id": "tests/test_code_review.py::test_strict_type_coercion_regressions",
       "file_path": "tests/test_code_review.py",
       "test_name": "test_strict_type_coercion_regressions",
       "class_name": null,
-      "farley_index": 4.0,
+      "farley_index": 7.875,
       "farley_breakdown": {
         "understandable": {
-          "score": 4,
-          "rationale": "The test logic is understandable but lacks domain-specific language. It uses generic Python types (int/float) and standard library classes instead of the specific 'EngineeringFinding' or 'Evidence' schemas defined in `scripts.finding_schema`. This creates a disconnect between the abstract validation rules and concrete business requirements.",
-          "suggestions": [
-            "Explicitly reference the schema definitions (`from scripts.finding_schema import ...`) to ensure type safety matches domain logic."
-          ]
+          "score": 8,
+          "rationale": "The test clearly defines the business rule: strict type coercion for EngineeringFinding and Evidence models. It avoids low-level implementation clutter by focusing on schema validation logic.",
+          "suggestions": []
         },
         "maintainable": {
-          "score": 3,
-          "rationale": "The test is brittle and tightly coupled. It validates specific Python types (int/float) rather than the schema's expected structure or data contracts. If `PropertyEvaluation` changes its internal type hints without updating this test, it will fail.",
-          "suggestions": [
-            "Refactor to validate against a mock object representing the schema fields (`EngineeringFinding.model_validate({...})`) instead of specific Python literals."
-          ]
+          "score": 9,
+          "rationale": "Tests are decoupled from system internals; they validate data structure constraints (types) rather than specific business rules or workflows that would break with refactoring. They do not rely on external state like databases.",
+          "suggestions": []
         },
         "repeatable": {
-          "score": 2,
-          "rationale": "The test relies heavily on external state: `pytest.approx` for floats and string parsing logic. It also depends on the order of imports or internal class instantiation which can vary between runs.",
+          "score": 7,
+          "rationale": "The test is deterministic and self-contained within the file path provided; however, it relies heavily on `pytest.approx` for floating-point comparisons which can be flaky in CI environments due to precision differences. It avoids external shared state.",
           "suggestions": [
-            "Remove all float comparisons (`approx`) in favor of strict equality checks if possible, or use a dedicated helper function to normalize confidence scores before comparison."
+            "Replace `pytest.approx(5)` with direct equality checks (`assert p1.score == 5`) where possible to ensure strict determinism."
           ]
         },
         "atomic": {
-          "score": 5,
-          "rationale": "The test verifies exactly one behavior: the validation logic for `PropertyEvaluation` and `EngineeringFinding`. It isolates this specific rule from other tests by using a dedicated function (`make_finding_dict`) to construct inputs.",
-          "suggestions": [
-            "Ensure no side effects occur during input construction. The current helper is clean, but verify it doesn't inadvertently trigger external API calls or network requests."
-          ]
+          "score": 9,
+          "rationale": "Each test validates exactly one specific aspect of the schema (e.g., score types, confidence values, field constraints). If a failure occurs, it is instantly obvious which property failed.",
+          "suggestions": []
         },
         "necessary": {
           "score": 6,
-          "rationale": "The test covers specific edge cases for confidence values and string normalization (whitespace). However, it does not cover the full range of `EngineeringFinding` fields like `severity`, `category`, or `recommended_action`. It duplicates coverage from other tests that likely handle these fields.",
+          "rationale": "The tests cover type coercion and basic validation logic. However, they do not test the actual business rules of 'strict_type_coercion_regressions' (e.g., what happens if a finding is created with invalid confidence or evidence data). They validate *how* to create objects rather than *what* valid/invalid scenarios exist in production.",
           "suggestions": [
-            "Add assertions to verify specific field types for all schema properties (`title`, `category`, etc.) rather than just the ones explicitly tested in this function."
+            "Add tests that attempt to instantiate `EngineeringFinding` and `Evidence` directly using the raw schema classes without validation, verifying they raise appropriate errors for specific bad inputs."
           ]
         },
         "granular": {
-          "score": 4,
-          "rationale": "The test is granular enough regarding input validation (rejecting specific types) but lacks granularity on output assertions. It only checks that `confidence` matches the expected value; it doesn't verify other fields like `severity`, `evidence.location_type`, or `path`.",
-          "suggestions": [
-            "Add explicit assertions for all non-optional schema fields (e.g., `f1.severity == 'WARN'`, `ev_none_path.path is None`) to ensure the test covers every aspect of the model."
-          ]
+          "score": 8,
+          "rationale": "The test isolates precise constraints: string vs non-string types for scores, confidence values (float/int/str), and field names. It is targeted at the schema definition.",
+          "suggestions": []
         },
         "fast": {
-          "score": 5,
-          "rationale": "The execution speed depends on Pydantic's validation performance and string parsing. The use of `pytest.approx` adds a slight overhead compared to direct equality checks for floats.",
-          "suggestions": [
-            "Replace float comparisons with strict equality (`assert f1.confidence == 0.7`) where possible, as it removes the need for approximation logic."
-          ]
+          "score": 9,
+          "rationale": "No artificial sleeps or heavy I/O operations are present; all validation happens in memory via Pydantic's fast serialization/deserialization logic.",
+          "suggestions": []
         },
         "first_tdd": {
-          "score": 3,
-          "rationale": "The test demonstrates a basic Arrange-Act-Assert pattern but lacks design properties of TDD. It does not explicitly define expected behavior before writing tests (Arrange), nor is it designed to fail on incorrect assumptions without prior knowledge.",
+          "score": 7,
+          "rationale": "The test demonstrates a clean Arrange-Act-Assert pattern: it sets up the model instances (Arrange), validates them against constraints (Act/Validate), and asserts specific values or errors. However, some assertions are implicit in type checking rather than explicit value checks.",
           "suggestions": [
-            "Adopt the 'specify behavior first' approach: Write an `assert` statement defining what a valid finding should look like, then write code that validates this structure. This ensures the test reflects the intended design from day one."
+            "Explicitly assert `assert p1.score == 5` instead of relying on `pytest.approx`. Ensure every assertion is a direct check to improve clarity."
           ]
         },
-        "summary": "The test is functional but lacks domain specificity and TDD principles. It mixes low-level Python types with high-level schema validation without proper abstraction or explicit behavior specification before testing."
+        "summary": "The test demonstrates strong adherence to TDD principles with clear Arrange-Act-Assert separation and robust type validation. However, it lacks the 'necessary' property by not testing actual business logic scenarios (e.g., creating invalid objects directly) and relies on `pytest.approx` which can introduce flakiness in CI."
       }
     },
     {
@@ -2954,52 +3005,55 @@
       "farley_breakdown": {
         "understandable": {
           "score": 9,
-          "rationale": "The test clearly defines the input data structure (dummy_results) and explicitly asserts specific counts derived from that data. The intent is unambiguous: verify aggregation logic on a known dataset.",
+          "rationale": "The test clearly defines the input data structure (dummy_results) and asserts specific aggregation metrics derived from it. The intent is unambiguous: verify that `build_validation_summary` correctly counts repaired/normalized units based on field status.",
           "suggestions": []
         },
         "maintainable": {
           "score": 8,
-          "rationale": "The test relies entirely on the `build_validation_summary` function's internal state and data structures. It does not depend on external systems (DB, network), making it maintainable regarding system changes.",
-          "suggestions": []
+          "rationale": "The test relies entirely on the internal logic of `build_validation_summary`. While this isolates behavior from implementation details (good), it risks brittleness if that function's aggregation algorithm changes without updating these assertions. It does not explicitly state *why* certain counts are expected.",
+          "suggestions": [
+            "Add comments or docstrings explaining the business rule for `repaired_units`, `normalized_units`, etc., to ensure future maintainers understand the intent beyond just counting fields."
+          ]
         },
         "repeatable": {
           "score": 7,
-          "rationale": "The test is deterministic in its execution flow and assertions. However, the `build_validation_summary` function itself may introduce non-determinism if it relies on external state or timing during aggregation.",
+          "rationale": "The test is deterministic and self-contained. It does not rely on external state (database/filesystem/network) or timing. However, it depends heavily on the internal logic of `build_validation_summary`, which could be considered a shared implementation detail if that function's behavior changes.",
           "suggestions": [
-            "Ensure `build_validation_summary` does not rely on shared mutable global state that could vary between runs."
+            "Ensure `build_validation_summary` is unit-tested in isolation to guarantee its deterministic output regardless of external dependencies."
           ]
         },
         "atomic": {
           "score": 9,
-          "rationale": "The test verifies exactly one behavior: the aggregation counts. If any assertion fails (e.g., `total_units != 2`), it immediately reveals a bug in either the input data or the summary logic.",
+          "rationale": "The test verifies exactly one behavior: the aggregation logic. If it fails (e.g., `summary['total_units'] != 2`), the cause is instantly obvious and isolated to this specific function's output.",
           "suggestions": []
         },
         "necessary": {
           "score": 6,
-          "rationale": "While useful for regression testing specific aggregation counts, this test duplicates coverage of unit tests that would verify `build_validation_summary`'s internal state directly. It adds little value if the function is already well-tested.",
+          "rationale": "The test covers a subset of functionality (aggregation counts). It does not cover edge cases like empty inputs or malformed data structures. While useful for regression testing the core logic, it may be insufficient to fully validate robustness across all possible input scenarios.",
           "suggestions": [
-            "Remove or consolidate this test into existing unit tests covering individual fields within `dummy_results`.",
-            "If external integration testing of aggregation counts is required, ensure it doesn't duplicate logic covered by direct assertions on input data."
+            "Add tests covering edge cases: `dummy_results` with 0 items, missing fields in validation objects, and inconsistent field statuses."
           ]
         },
         "granular": {
           "score": 8,
-          "rationale": "The test isolates the specific behavior of counting 'repaired' and 'normalized' units. It is precise in its assertion targets (counts) rather than vague generalizations.",
-          "suggestions": []
+          "rationale": "The test is granular enough to verify specific aggregation metrics (`repaired_confidence_count`, `dropped_finding_count`). However, it could be more precise by asserting the *reason* for a count (e.g., 'missing_default') rather than just the number.",
+          "suggestions": [
+            "Assert that exactly 1 unit has status 'REPAIRED' with missing default value and explicitly state this in assertions to improve clarity."
+          ]
         },
         "fast": {
           "score": 9,
-          "rationale": "The test executes immediately without artificial delays or heavy I/O operations. The data structure provided allows for instant evaluation of the assertions.",
+          "rationale": "The test executes rapidly. It contains no artificial sleeps, heavy I/O operations (except reading the local file system for `dummy_results`), or complex setup logic.",
           "suggestions": []
         },
         "first_tdd": {
           "score": 7,
-          "rationale": "While it follows an Arrange-Act-Assert pattern (building dummy_data -> calling function -> asserting), it lacks explicit specification of *what* the expected behavior is before running. It assumes knowledge of `build_validation_summary`'s internal logic rather than defining a clear contract.",
+          "rationale": "The test follows a basic Arrange-Act-Assert pattern. However, it lacks explicit 'Arrange' steps that clearly define the expected input state before calling `build_validation_summary`. The intent is implied rather than explicitly stated.",
           "suggestions": [
-            "Explicitly state in the test setup or assertions what specific conditions trigger 'repaired', 'normalized', etc., to ensure clarity and prevent ambiguity about implementation details."
+            "Explicitly document and assert the exact structure of `dummy_results` in an initial Arrange step to ensure future maintainers understand the design contract."
           ]
         },
-        "summary": "The test is highly understandable, fast, atomic, and maintainable regarding system dependencies. However, it risks being redundant if unit tests cover the internal logic of `build_validation_summary`, and its 'first_tdd' status could be improved by explicitly defining expected outcomes rather than assuming implementation knowledge."
+        "summary": "The test demonstrates strong adherence to TDD principles regarding determinism and atomicity. However, it risks becoming brittle if internal aggregation logic changes without updates. It is a solid regression test but lacks explicit documentation of its business rules in Arrange-Act-Assert format."
       }
     },
     {
@@ -4848,32 +4902,32 @@
     "farley_usage_summary": {
       "run_id": "main-baseline",
       "model": "ollama/qwen3.5:2b",
-      "reviewed_test_cases": 70,
+      "reviewed_test_cases": 71,
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 106,
-          "prompt_tokens": 64010,
-          "completion_tokens": 88605,
-          "total_tokens": 152615,
+          "calls": 110,
+          "prompt_tokens": 68097,
+          "completion_tokens": 92397,
+          "total_tokens": 160494,
           "cost_usd": 0.0,
           "missing_usage_calls": 0
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 106,
-            "prompt_tokens": 64010,
-            "completion_tokens": 88605,
-            "total_tokens": 152615,
+            "calls": 110,
+            "prompt_tokens": 68097,
+            "completion_tokens": 92397,
+            "total_tokens": 160494,
             "cost_usd": 0.0
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 106,
-            "prompt_tokens": 64010,
-            "completion_tokens": 88605,
-            "total_tokens": 152615,
+            "calls": 110,
+            "prompt_tokens": 68097,
+            "completion_tokens": 92397,
+            "total_tokens": 160494,
             "cost_usd": 0.0
           }
         },
@@ -5049,18 +5103,6 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
-            "generation_params": {},
-            "prompt_tokens": 484,
-            "completion_tokens": 1024,
-            "total_tokens": 1508,
-            "has_usage": true,
-            "usage_source": "provider",
-            "cost_usd": 0.0
-          },
-          {
-            "stage": "farley_evaluation",
-            "model": "ollama/qwen3.5:2b",
             "source": "cache",
             "generation_params": {},
             "prompt_tokens": 484,
@@ -5085,7 +5127,19 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
+            "generation_params": {},
+            "prompt_tokens": 484,
+            "completion_tokens": 1024,
+            "total_tokens": 1508,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 483,
             "completion_tokens": 660,
@@ -5097,7 +5151,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 557,
             "completion_tokens": 745,
@@ -5109,7 +5163,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 577,
             "completion_tokens": 965,
@@ -5121,7 +5175,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 554,
             "completion_tokens": 881,
@@ -5445,11 +5499,11 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "cache",
+            "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 976,
-            "completion_tokens": 630,
-            "total_tokens": 1606,
+            "prompt_tokens": 1015,
+            "completion_tokens": 857,
+            "total_tokens": 1872,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -5469,11 +5523,59 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 1082,
+            "completion_tokens": 1024,
+            "total_tokens": 2106,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
             "source": "cache",
             "generation_params": {},
-            "prompt_tokens": 1548,
-            "completion_tokens": 985,
-            "total_tokens": 2533,
+            "prompt_tokens": 1082,
+            "completion_tokens": 1024,
+            "total_tokens": 2106,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "cache",
+            "generation_params": {},
+            "prompt_tokens": 1082,
+            "completion_tokens": 1024,
+            "total_tokens": 2106,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 578,
+            "completion_tokens": 683,
+            "total_tokens": 1261,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 1631,
+            "completion_tokens": 689,
+            "total_tokens": 2320,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -5493,11 +5595,11 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "cache",
+            "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 788,
-            "completion_tokens": 759,
-            "total_tokens": 1547,
+            "prompt_tokens": 929,
+            "completion_tokens": 865,
+            "total_tokens": 1794,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -5625,7 +5727,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 459,
             "completion_tokens": 852,
@@ -5637,18 +5739,6 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
-            "generation_params": {},
-            "prompt_tokens": 483,
-            "completion_tokens": 1024,
-            "total_tokens": 1507,
-            "has_usage": true,
-            "usage_source": "provider",
-            "cost_usd": 0.0
-          },
-          {
-            "stage": "farley_evaluation",
-            "model": "ollama/qwen3.5:2b",
             "source": "cache",
             "generation_params": {},
             "prompt_tokens": 483,
@@ -5673,7 +5763,19 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
+            "generation_params": {},
+            "prompt_tokens": 483,
+            "completion_tokens": 1024,
+            "total_tokens": 1507,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 448,
             "completion_tokens": 631,
@@ -5685,7 +5787,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 449,
             "completion_tokens": 686,
@@ -5697,7 +5799,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 501,
             "completion_tokens": 527,
@@ -5709,7 +5811,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 500,
             "completion_tokens": 745,
@@ -5721,7 +5823,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 504,
             "completion_tokens": 856,
@@ -5733,7 +5835,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 850,
             "completion_tokens": 1024,
@@ -5853,7 +5955,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 706,
             "completion_tokens": 975,
@@ -5865,7 +5967,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 701,
             "completion_tokens": 877,
@@ -7946,6 +8048,141 @@
       "completion_tokens": 877,
       "prompt_tokens": 701,
       "total_tokens": 1578,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "e14fcab9bc898aae1845693bd400a0431aed849584a5b385a960594fbd04fdc9": {
+    "id": "chatcmpl-297ff2d2-cf29-4f02-8d46-89a4c22a7ea5",
+    "created": 1783353554,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n\"understandable\": {\"score\": 8, \"rationale\": \"The test clearly demonstrates the business rule: Pydantic validation errors occur for out-of-bounds values (150) and invalid types ('N/A'), while valid numeric strings are accepted. However, it lacks a clear 'arrange' phase that explicitly defines what constitutes an 'out of bounds' case versus just any non-numeric input.\", \"suggestions\": [\"Explicitly define the boundary condition in comments or setup logic (e.g., `assert len('N/A') == 0` to prove type mismatch triggers validation, rather than relying solely on Pydantic's generic behavior which might be implementation-dependent).\"]},\n\"maintainable\": {\"score\": 7, \"rationale\": \"The test is decoupled from system internals; it tests the contract between `PropertyEvaluation.model_validate()` and input data. However, it relies heavily on specific field names (`confidence`, `evidence.path`) which may change if internal schema structures are refactored without updating this test.\", \"suggestions\": [\"Add a unit test for edge cases where fields exist but have default values (empty strings) to ensure the model handles missing or empty data gracefully, independent of external schemas.\"]},\n\"repeatable\": {\"score\": 9, \"rationale\": \"The tests are fully self-contained and deterministic; they do not rely on databases, network calls, file systems, or timing-dependent behavior.\", \"suggestions\": [\"None required.\"]},\n\"atomic\": {\"score\": 8, \"rationale\": \"Each test verifies a distinct rule: validation error handling for out-of-bounds types vs. valid strings, and confidence parsing conversion (98 -> 0.98). The failure cause is immediately obvious if the assertion fails.\", \"suggestions\": [\"None required.\"]},\n\"necessary\": {\"score\": 6, \"rationale\": \"The tests cover specific Pydantic validation scenarios but do not comprehensively test all possible edge cases for `EngineeringFinding` (e.g., empty fields vs. default values). They duplicate coverage of basic type checking rather than testing the full design contract.\", \"suggestions\": [\"Add a dedicated 'Arrange' phase to explicitly define valid input structures and expected outputs, then add tests that verify these inputs are accepted without errors.\"]},\n\"granular\": {\"score\": 7, \"rationale\": \"The test isolates specific Pydantic validation behaviors (type coercion for confidence) but is somewhat broad in its assertion of field equality (`assert finding.confidence == pytest.approx(0.98)`), which could be more granular by checking the internal representation or edge cases.\", \"suggestions\": [\"Refine assertions to check `finding.confidence` as a float (e.g., `float(finding.confidence)`) rather than relying on Pydantic's string approximation, ensuring precision is verified at the data model level.\"]},\n\"fast\": {\"score\": 9, \"rationale\": \"The tests execute rapidly with no artificial sleeps or heavy I/O operations. They are self-contained and avoid external dependencies.\", \"suggestions\": [\"None required.\"]},\"first_tdd\": {\"score\": 8, \"rationale\": \"While the test structure follows Arrange-Act-Assert implicitly (setup via `model_validate`), it lacks an explicit 'Arrange' phase that defines valid inputs before testing. The behavior is described in comments rather than being explicitly arranged.\", \"suggestions\": [\"Explicitly define a setup function or use Pydantic's `__init_subclass__` to create instances with known values, then assert them directly (e.g., `assert finding.confidence == 0.98`) before calling the validation method.\",\"first_tdd_score_breakdown\"\n]\n},\"summary\": \"The test is well-structured and fast but lacks a robust 'Arrange' phase to explicitly define valid inputs for testing, making it slightly less maintainable than ideal TDD practices which require explicit setup of expected states. It effectively tests Pydantic validation rules but could benefit from more granular assertions on data model internals.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 857,
+      "prompt_tokens": 1015,
+      "total_tokens": 1872,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "8f96e07ec7348aa650685e7557d4f294927c657aea9cc180e6d661d09c098eb5": {
+    "id": "chatcmpl-d53feadf-1a30-4e71-9274-a908c1dec49e",
+    "created": 1783353657,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 6,\n    \"rationale\": \"The test name and variable names are verbose but understandable within the specific domain of code review tools. However, it lacks a clear 'business rule' statement (e.g., 'If X is present in raw_dict...') which makes intent slightly ambiguous for new developers.\",\n    \"suggestions\": [\n      \"Replace `raw_dict` with an explicit input parameter like `input_data: dict[str, Any]`. This clarifies the contract immediately. \",\n      \"Add a comment block at the top defining the 'Business Rule': 'A CodeReviewBreakdown must be successfully constructed from raw data and validated against context fields.'\",\n      \"Remove or rename specific keys in assertions (e.g., `breakdown.severity == \\\"WARN\\\"`) to match the business rule's expected state rather than implementation details.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 4,\n    \"rationale\": \"The test is brittle because it relies on specific field names (`readability.score`, `findings[0]`) and assumes a particular structure in the input data. If the schema changes or if multiple fields with similar keys exist (e.g., different severity levels), this test will fail without modification.\",\n    \"suggestions\": [\n      \"Refactor to use Pydantic models for inputs/outputs instead of raw dictionaries, ensuring type safety and decoupling from specific key names. \",\n      \"Add a `@pytest.mark.parametrize` block with multiple valid input scenarios (e.g., different severity levels) rather than hardcoding one case.\",\n      \"Ensure the test validates that *any* field in the schema is handled correctly by using Pydantic's validation logic instead of asserting specific values.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 5,\n    \"rationale\": \"The test relies on `pytest.approx()` for numeric assertions and assumes a deterministic order in the list comprehension or dictionary iteration. While it avoids external state like DB/network, relying on Pydantic's internal ordering can make results non-deterministic across runs if not explicitly sorted.\",\n    \"suggestions\": [\n      \"Explicitly sort fields before assertion: `assert breakdown.readability.score == pytest.approx(8.5)`. \",\n      \"Ensure the test input data is a list of dictionaries (not dicts inside lists), which guarantees consistent iteration order in Python 3.7+. \",\n      \"Remove or replace `pytest.approx` with direct equality checks if precision isn't critical, to avoid floating-point comparison issues.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 8,\n    \"rationale\": \"The test verifies exactly one behavior: the successful construction and validation of a CodeReviewBreakdown object. If it fails, the cause is immediately obvious (e.g., `AssertionError`), making debugging straightforward.\",\n    \"suggestions\": [\n      \"Ensure no side effects occur outside this function; if external calls are needed, wrap them in try/except blocks to isolate failures within this test only.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 7,\n    \"rationale\": \"The test covers the core flow: input parsing -> validation -> context creation. However, it does not verify edge cases (e.g., empty inputs) or specific error handling behaviors for malformed data.\",\n    \"suggestions\": [\n      \"Add a `@pytest.mark.parametrize` block with at least one failing case to ensure robustness and coverage of failure scenarios.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 6,\n    \"rationale\": \"The test is somewhat granular regarding the 'repair' status but lacks granularity in verifying specific business logic rules (e.g., what constitutes a valid repair type).\",\n    \"suggestions\": [\n      \"Assert that `fields[\\\"summary\\\"].status == \\\"REPAIRED\\\"` implies the rule was met, rather than asserting the exact string value. \",\n      \"Add assertions for specific business logic rules (e.g., 'If severity is WARN and missing_default repair type occurs...').\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 7,\n    \"rationale\": \"The test avoids sleeps or heavy I/O but includes `build_validation_context` which may involve network calls if not mocked. The use of Pydantic validation is fast, but the overall flow could be optimized.\",\n    \"suggestions\": [\n      \"Mock external dependencies (e.g., `CodeReviewBreakdown.model_validate`) to ensure deterministic execution speed and avoid flaky tests due to async/network delays.\"\n    ]\n  },\n  \"first_tdd\":",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 1082,
+      "total_tokens": 2106,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "09e8b49faa4550d2afd5202a503e1e61179e97cc3230e2f0a55a5ee83f0e669c": {
+    "id": "chatcmpl-a96af674-876b-418e-abc3-14f94933b439",
+    "created": 1783353721,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 9,\n    \"rationale\": \"The test name and code clearly define the business rule: a `CodeReviewBreakdown` model rejects inputs where numeric scores are invalid strings. It uses ubiquitous language ('not-a-score', 'Good maintainability') without implementation clutter.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 8,\n    \"rationale\": \"The test is decoupled from system internals; it validates the input format directly. It will not break if `CodeReviewBreakdown` changes its internal validation logic or schema structure.\",\n    \"suggestions\": []\n  },\n  \"repeatable\": {\n    \"score\": 10,\n    \"rationale\": \"The test is fully self-contained using only local variables and the model. It has no reliance on external state (DB/network/filesystem) or timing dependencies.\",\n    \"suggestions\": [\n      \"Ensure `CodeReviewBreakdown.model_validate` does not trigger side effects like logging, network calls, or file writes that could make it non-repeatable in CI/CD environments.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: the model rejects a specific input type. If validation fails for this case, the cause is instantly obvious (invalid string).\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 7,\n    \"rationale\": \"This test covers only invalid numeric scores in `maintainability`. It does not cover edge cases like empty strings or non-numeric types that might also trigger validation errors.\",\n    \"suggestions\": [\n      \"Add a dedicated test for 'empty string' score to ensure the model rejects all non-string inputs, covering more ground than just invalid numbers.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The assertion is specific: it checks that `model_validate` raises a `ValidationError`. It isolates the exact failure mode of the validation logic.\",\n    \"suggestions\": []\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"No artificial sleeps or heavy I/O operations are present. The test executes purely in memory with minimal overhead compared to network calls or file writes.\",\n    \"suggestions\": [\n      \"Remove any `time.sleep()` if the evaluator itself performs slow synchronous work; ensure no blocking occurs during validation.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 10,\n    \"rationale\": \"The test follows TDD principles: it specifies expected behavior (raises ValidationError) before implementation. It demonstrates a clean separation of Arrange-Act-Assert with no hidden dependencies.\",\n    \"suggestions\": []\n  },\"summary\":\"{\\\"understandable\\\":9,\\\"maintainable\\\":8,\\\"repeatable\\\":10,\\\"atomic\\\":9,\\\"necessary\\\":7,\\\"granular\\\":8,\\\"fast\\\":9,\\\"first_tdd\\\":10}\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 683,
+      "prompt_tokens": 578,
+      "total_tokens": 1261,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "3af658ceede16cbb630bc79a0dc628a6a7e749374b8c9b4fc71468c1d9c74b25": {
+    "id": "chatcmpl-88e50f90-ff51-40d8-a03f-ab9e83305916",
+    "created": 1783353809,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the business rule: strict type coercion for EngineeringFinding and Evidence models. It avoids low-level implementation clutter by focusing on schema validation logic.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 9, \"rationale\": \"Tests are decoupled from system internals; they validate data structure constraints (types) rather than specific business rules or workflows that would break with refactoring. They do not rely on external state like databases.\", \"suggestions\": []},\n  \"repeatable\": {\"score\": 7, \"rationale\": \"The test is deterministic and self-contained within the file path provided; however, it relies heavily on `pytest.approx` for floating-point comparisons which can be flaky in CI environments due to precision differences. It avoids external shared state.\", \"suggestions\": [\"Replace `pytest.approx(5)` with direct equality checks (`assert p1.score == 5`) where possible to ensure strict determinism.\"]},\n  \"atomic\": {\"score\": 9, \"rationale\": \"Each test validates exactly one specific aspect of the schema (e.g., score types, confidence values, field constraints). If a failure occurs, it is instantly obvious which property failed.\", \"suggestions\": []},\n  \"necessary\": {\"score\": 6, \"rationale\": \"The tests cover type coercion and basic validation logic. However, they do not test the actual business rules of 'strict_type_coercion_regressions' (e.g., what happens if a finding is created with invalid confidence or evidence data). They validate *how* to create objects rather than *what* valid/invalid scenarios exist in production.\", \"suggestions\": [\"Add tests that attempt to instantiate `EngineeringFinding` and `Evidence` directly using the raw schema classes without validation, verifying they raise appropriate errors for specific bad inputs.\"]},\n  \"granular\": {\"score\": 8, \"rationale\": \"The test isolates precise constraints: string vs non-string types for scores, confidence values (float/int/str), and field names. It is targeted at the schema definition.\", \"suggestions\": []},\n  \"fast\": {\"score\": 9, \"rationale\": \"No artificial sleeps or heavy I/O operations are present; all validation happens in memory via Pydantic's fast serialization/deserialization logic.\", \"suggestions\": []},\n  \"first_tdd\": {\"score\": 7, \"rationale\": \"The test demonstrates a clean Arrange-Act-Assert pattern: it sets up the model instances (Arrange), validates them against constraints (Act/Validate), and asserts specific values or errors. However, some assertions are implicit in type checking rather than explicit value checks.\", \"suggestions\": [\"Explicitly assert `assert p1.score == 5` instead of relying on `pytest.approx`. Ensure every assertion is a direct check to improve clarity.\"]},\"summary\":\"The test demonstrates strong adherence to TDD principles with clear Arrange-Act-Assert separation and robust type validation. However, it lacks the 'necessary' property by not testing actual business logic scenarios (e.g., creating invalid objects directly) and relies on `pytest.approx` which can introduce flakiness in CI.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 689,
+      "prompt_tokens": 1631,
+      "total_tokens": 2320,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "406ec23058e6d4f527fbb50782a2db8532409053be80adb9e26c858757207aa1": {
+    "id": "chatcmpl-120df9bd-82d8-42e2-a1b3-f311d8d86845",
+    "created": 1783353893,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 9,\n    \"rationale\": \"The test clearly defines the input data structure (dummy_results) and asserts specific aggregation metrics derived from it. The intent is unambiguous: verify that `build_validation_summary` correctly counts repaired/normalized units based on field status.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 8,\n    \"rationale\": \"The test relies entirely on the internal logic of `build_validation_summary`. While this isolates behavior from implementation details (good), it risks brittleness if that function's aggregation algorithm changes without updating these assertions. It does not explicitly state *why* certain counts are expected.\",\n    \"suggestions\": [\n      \"Add comments or docstrings explaining the business rule for `repaired_units`, `normalized_units`, etc., to ensure future maintainers understand the intent beyond just counting fields.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic and self-contained. It does not rely on external state (database/filesystem/network) or timing. However, it depends heavily on the internal logic of `build_validation_summary`, which could be considered a shared implementation detail if that function's behavior changes.\",\n    \"suggestions\": [\n      \"Ensure `build_validation_summary` is unit-tested in isolation to guarantee its deterministic output regardless of external dependencies.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: the aggregation logic. If it fails (e.g., `summary['total_units'] != 2`), the cause is instantly obvious and isolated to this specific function's output.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"The test covers a subset of functionality (aggregation counts). It does not cover edge cases like empty inputs or malformed data structures. While useful for regression testing the core logic, it may be insufficient to fully validate robustness across all possible input scenarios.\",\n    \"suggestions\": [\n      \"Add tests covering edge cases: `dummy_results` with 0 items, missing fields in validation objects, and inconsistent field statuses.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The test is granular enough to verify specific aggregation metrics (`repaired_confidence_count`, `dropped_finding_count`). However, it could be more precise by asserting the *reason* for a count (e.g., 'missing_default') rather than just the number.\",\n    \"suggestions\": [\n      \"Assert that exactly 1 unit has status 'REPAIRED' with missing default value and explicitly state this in assertions to improve clarity.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes rapidly. It contains no artificial sleeps, heavy I/O operations (except reading the local file system for `dummy_results`), or complex setup logic.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"The test follows a basic Arrange-Act-Assert pattern. However, it lacks explicit 'Arrange' steps that clearly define the expected input state before calling `build_validation_summary`. The intent is implied rather than explicitly stated.\",\n    \"suggestions\": [\n      \"Explicitly document and assert the exact structure of `dummy_results` in an initial Arrange step to ensure future maintainers understand the design contract.\"\n    ]\n  },\n  \"summary\": \"The test demonstrates strong adherence to TDD principles regarding determinism and atomicity. However, it risks becoming brittle if internal aggregation logic changes without updates. It is a solid regression test but lacks explicit documentation of its business rules in Arrange-Act-Assert format.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 865,
+      "prompt_tokens": 929,
+      "total_tokens": 1794,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
