@@ -1,3 +1,4 @@
+import json
 import pytest
 from pathlib import Path
 from scripts import diff_extractor
@@ -18,6 +19,20 @@ class MathOps:
     async def multiply(self, x: int, y: int) -> int:
         return x * y
 """
+
+
+def valid_review_payload(severity="OK"):
+    return {
+        "readability": {"score": 8, "rationale": "ok"},
+        "maintainability": {"score": 8, "rationale": "ok"},
+        "correctness": {"score": 8, "rationale": "ok"},
+        "complexity": {"score": 8, "rationale": "ok"},
+        "security": {"score": 8, "rationale": "ok"},
+        "test_coverage": {"score": 8, "rationale": "ok"},
+        "severity": severity,
+        "summary": "legacy review",
+        "findings": [],
+    }
 
 
 def test_function_visitor():
@@ -208,6 +223,43 @@ def test_code_review_block_requires_structured_block_finding():
     assert block_units == [supported_block]
     assert warn_units == [unsupported_block]
     assert ok_units == []
+
+
+def test_get_reviews_wraps_legacy_review_payload():
+    legacy_review = valid_review_payload()
+
+    reviews = code_review_compare.get_reviews({"reviews": [legacy_review]})
+
+    assert len(reviews) == 1
+    unit = reviews[0]
+    assert unit["file_path"] == "legacy-cassette"
+    assert unit["name"] == "legacy_review_1"
+    assert unit["class_name"] is None
+    assert unit["review"] == legacy_review
+    assert unit["validation"] == {
+        "repaired": False,
+        "normalized": False,
+        "fields": [],
+    }
+    assert json.loads(unit["raw_response"]) == legacy_review
+    assert code_review_compare.calculate_cqi_result(unit["review"]).valid is True
+
+
+def test_get_reviews_preserves_legacy_unit_metadata():
+    legacy_unit = {
+        **valid_review_payload("WARN"),
+        "file_path": "src/legacy.py",
+        "name": "legacy_helper",
+        "class_name": "Legacy",
+    }
+
+    unit = code_review_compare.get_reviews({"reviews": [legacy_unit]})[0]
+
+    assert unit["file_path"] == "src/legacy.py"
+    assert unit["name"] == "legacy_helper"
+    assert unit["class_name"] == "Legacy"
+    assert "file_path" not in unit["review"]
+    assert unit["review"]["severity"] == "WARN"
 
 
 def test_validate_path_escapes(tmp_path):

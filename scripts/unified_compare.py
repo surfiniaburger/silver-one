@@ -25,6 +25,7 @@ from scripts.code_review_compare import (
     collect_cqi_failure_reasons,
     effective_review_severity,
     format_cqi_result,
+    get_reviews,
     group_units_by_severity,
     determine_verdict as cr_determine_verdict,
     format_unit_name,
@@ -501,7 +502,7 @@ def main():
     )
 
     # 1. Process Code Review
-    cr_units = cr_cassette.get("reviews", [])
+    cr_units = get_reviews(cr_cassette)
     block_units, warn_units, _ = group_units_by_severity(cr_units)
     cqi_failure_reasons = collect_cqi_failure_reasons(cr_units)
     cr_verdict, cr_exit, cr_reasons = cr_determine_verdict(

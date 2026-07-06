@@ -6,6 +6,21 @@ from scripts.unified_compare import (
     parse_compatibility_result,
     resolve_farley_baseline,
 )
+from scripts.code_review_compare import get_reviews
+
+
+def valid_review_payload(severity="OK"):
+    return {
+        "readability": {"score": 8, "rationale": "ok"},
+        "maintainability": {"score": 8, "rationale": "ok"},
+        "correctness": {"score": 8, "rationale": "ok"},
+        "complexity": {"score": 8, "rationale": "ok"},
+        "security": {"score": 8, "rationale": "ok"},
+        "test_coverage": {"score": 8, "rationale": "ok"},
+        "severity": severity,
+        "summary": "legacy review",
+        "findings": [],
+    }
 
 
 def test_combine_token_spend_empty():
@@ -415,6 +430,33 @@ def test_write_unified_report_ignores_malformed_cqi_units(tmp_path):
 
     content = out_file.read_text(encoding="utf-8")
     assert "| Code Quality Index (CQI) | N/A (no Python code changes) | **PASS** |" in content
+
+
+def test_write_unified_report_accepts_legacy_review_payload(tmp_path):
+    from scripts.unified_compare import write_unified_report
+    out_file = tmp_path / "report.md"
+    cr_units = get_reviews({"reviews": [valid_review_payload()]})
+
+    write_unified_report(
+        out_path=out_file,
+        unified_verdict="PASS",
+        reasons=[],
+        spend_str="**Token spend**: 100 total tokens\n\n",
+        cr_data={"units": cr_units, "verdict": "PASS"},
+        farley_data={
+            "bsum": {"avg_index": 8.0},
+            "psum": {"avg_index": 8.0},
+            "delta": 0.0,
+            "verdict": "PASS",
+            "regressions": [],
+            "baseline_exists": True,
+        },
+        compat_data={"ok": True, "score": 10.0, "regressions": []},
+    )
+
+    content = out_file.read_text(encoding="utf-8")
+    assert "| Code Quality Index (CQI) | 8.00/10 (average of 1 unit(s)) | **PASS** |" in content
+    assert "| legacy-cassette | legacy_review_1 | 8.00/10 | **OK** | legacy review |" in content
 
 
 def test_write_unified_report_displays_baseline_state(tmp_path):
