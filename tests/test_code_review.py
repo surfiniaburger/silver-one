@@ -297,7 +297,8 @@ def test_cqi_failure_collection_skips_recoverable_review_failures():
         },
     }
 
-    reasons = code_review_compare.collect_cqi_failure_reasons([recoverable_unit])
+    normalized_unit = code_review_compare.normalize_review_unit(recoverable_unit, 0)
+    reasons = code_review_compare.collect_cqi_failure_reasons([normalized_unit])
 
     assert reasons == []
 

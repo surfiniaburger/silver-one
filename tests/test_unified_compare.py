@@ -462,15 +462,19 @@ def test_write_unified_report_accepts_legacy_review_payload(tmp_path):
 def test_write_unified_report_excludes_recoverable_failure_from_cqi(tmp_path):
     from scripts.unified_compare import write_unified_report
     out_file = tmp_path / "report.md"
-    cr_units = get_reviews({"reviews": [valid_review_payload()]})
-    cr_units.append({
-        "file_path": "scripts/code_review_compare.py",
-        "name": "<module>",
-        "review": None,
-        "recoverable_failure": {
-            "type": "structured_output",
-            "message": "Failed to validate structured output",
-        },
+    cr_units = get_reviews({
+        "reviews": [
+            valid_review_payload(),
+            {
+                "file_path": "scripts/code_review_compare.py",
+                "name": "<module>",
+                "review": None,
+                "recoverable_failure": {
+                    "type": "structured_output",
+                    "message": "Failed to validate structured output",
+                },
+            },
+        ],
     })
 
     write_unified_report(

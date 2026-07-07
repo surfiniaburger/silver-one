@@ -153,7 +153,7 @@ def is_recoverable_review_failure(unit: Dict[str, Any]) -> bool:
 
 def normalize_review_unit(unit: Dict[str, Any], index: int) -> Dict[str, Any]:
     """Return a UnitReviewArtifact-shaped dict for current or legacy review entries."""
-    if _is_wrapped_review_unit(unit):
+    if _is_wrapped_review_unit(unit) or is_recoverable_review_failure(unit):
         normalized = dict(unit)
         if normalized.get("validation") is None:
             normalized["validation"] = _default_validation_context()
