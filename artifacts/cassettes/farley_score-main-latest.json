@@ -2754,6 +2754,199 @@
       }
     },
     {
+      "id": "tests/test_code_review.py::test_get_reviews_supplies_defaults_for_null_wrapped_fields",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_get_reviews_supplies_defaults_for_null_wrapped_fields",
+      "class_name": null,
+      "farley_index": 7.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test name and code clearly define the business rule: null wrapping should result in a default validation state with an empty fields list. The logic is straightforward for anyone familiar with the domain.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 7,
+          "rationale": "While understandable, this test relies on `code_review_compare.get_reviews` returning data that might change in implementation details (e.g., if it returns a list instead of an item). It is not fully decoupled from the internal structure of how reviews are returned.",
+          "suggestions": [
+            "Ensure the return type contract for `get_reviews` is stable and documented. Consider mocking or unit-testing this function directly to verify behavior without depending on its implementation details."
+          ]
+        },
+        "repeatable": {
+          "score": 9,
+          "rationale": "The test is fully self-contained; it uses only local variables (`wrapped_unit`, `valid_review_payload`) and standard library functions. No external state (DB, network) or timing dependencies are present.",
+          "suggestions": []
+        },
+        "atomic": {
+          "score": 8,
+          "rationale": "This single assertion verifies exactly one behavior: the validation result when a review is wrapped in null fields. The cause of failure is immediately obvious if this specific check fails.",
+          "suggestions": [
+            "Ensure no other assertions or side effects occur within this test function."
+          ]
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test covers one edge case (null wrapping). It does not duplicate coverage for general validation logic. However, it might be redundant if there are existing tests covering the 'no wrap' scenario and a generic null check.",
+          "suggestions": [
+            "Review other tests to ensure this specific edge case is covered by an appropriate unit or integration test that doesn't rely on complex mocking."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The assertion targets `unit['validation']` specifically. It isolates the validation logic correctly without asserting unrelated fields like 'normalized' unless they are part of this specific rule.",
+          "suggestions": [
+            "Ensure assertions do not mix different aspects (e.g., validating both raw response and normalized output) to avoid confusion."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes immediately without artificial delays, heavy setups, or slow I/O operations. It relies on pure Python logic.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 8,
+          "rationale": "This follows the Arrange-Act-Assert pattern: `wrapped_unit` is arranged (mocked), then `get_reviews` acts to produce output, and assertions assert behavior. The separation of concerns is clear.",
+          "suggestions": [
+            "Ensure 'Arrange' includes mocking external dependencies if any exist in this specific test."
+          ]
+        },
+        "summary": "The test demonstrates strong adherence to TDD principles with a clean Arrange-Act-Assert structure (8/10). It effectively isolates one edge case but could benefit from tighter coupling of the `get_reviews` call and more explicit documentation regarding its return contract for maintainability. Overall, it is a solid example of good unit test design."
+      }
+    },
+    {
+      "id": "tests/test_code_review.py::test_get_reviews_handles_non_dict_cassette_data",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_get_reviews_handles_non_dict_cassette_data",
+      "class_name": null,
+      "farley_index": 7.875,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test name and assertions are clear. However, the function `code_review_compare` is not defined in scope; it appears to be an external module or class that should either be imported with its full signature (e.g., `from silver_one.tests.test_code_review import code_review_compare`) or referenced by a fully qualified path like `'silver_one.tests.test_code_review.code_review_compare'`. Without this, the intent is ambiguous.",
+          "suggestions": [
+            "Import the function explicitly: `def test_get_reviews_handles_non_dict_cassette_data():`",
+            "Or use full qualification if it's a module-level class: `assert code_review_compare.get_reviews(None) == []`"
+          ]
+        },
+        "maintainable": {
+          "score": 7,
+          "rationale": "The test is decoupled from implementation details (it doesn't mock the internal logic of `get_reviews`). However, it relies on an external object (`code_review_compare`) whose behavior might change if that module's internals are refactored. If `code_review_compare` itself changes its API or structure without updating this specific test, maintainability is compromised.",
+          "suggestions": [
+            "Ensure the function signature of `get_reviews` remains stable across all tests."
+          ]
+        },
+        "repeatable": {
+          "score": 9,
+          "rationale": "The assertions are deterministic and self-contained. They do not rely on external shared state (like a database or network), nor does it depend on timing or local filesystem operations.",
+          "suggestions": [
+            "None required."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: that `get_reviews` returns an empty list for both a non-dict input (`None`) and an empty list. The cause of failure is instantly obvious if the assertion fails.",
+          "suggestions": [
+            "None required."
+          ]
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test likely duplicates coverage already provided by other tests (e.g., `test_get_reviews_handles_valid_data`, `test_get_reviews_returns_empty_list`). It does not add unique value unless there is a specific edge case for non-dict inputs that no existing test covers.",
+          "suggestions": [
+            "Review the suite to ensure this test doesn't duplicate coverage of other similar tests."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The assertion is granular enough for a unit-level check. However, it does not isolate specific internal logic (e.g., error handling within `get_reviews`), which could be useful if the function has complex side effects.",
+          "suggestions": [
+            "Consider adding an assert that checks return type or raises expected exceptions to further granularize behavior."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes rapidly. It contains no artificial sleeps, heavy setups, unneeded I/O operations, or network calls.",
+          "suggestions": [
+            "None required."
+          ]
+        },
+        "first_tdd": {
+          "score": 8,
+          "rationale": "The test follows the Arrange-Act-Assert pattern: `Arrange` (implied setup of inputs), `Act` (`get_reviews(None)` and `[]`), `Assert`. However, it lacks a clear 'specification' or expected behavior description in comments before assertions. It should ideally state what is being tested explicitly.",
+          "suggestions": [
+            "Add an inline comment: # Test that get_reviews handles non-dict inputs gracefully."
+          ]
+        },
+        "summary": "The test demonstrates strong adherence to TDD principles (atomic, fast, repeatable) and follows the Arrange-Act-Assert pattern. However, it lacks explicit documentation of its purpose in a comment and relies on an external object's stability without clear import context."
+      }
+    },
+    {
+      "id": "tests/test_code_review.py::test_cqi_failure_collection_skips_recoverable_review_failures",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_cqi_failure_collection_skips_recoverable_review_failures",
+      "class_name": null,
+      "farley_index": 6.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 7,
+          "rationale": "The test name and logic are clear enough for a developer familiar with the codebase to understand that it verifies recoverability. However, 'recoverable_unit' is an opaque data structure definition rather than a business rule or domain concept; its meaning depends entirely on internal implementation details.",
+          "suggestions": [
+            "Replace `recoverable_unit` with a clear description of what constitutes a valid recovery scenario (e.g., 'A unit that has failed validation but can be retried')."
+          ]
+        },
+        "maintainable": {
+          "score": 6,
+          "rationale": "The test is brittle to changes in `code_review_compare.normalize_review_unit` or the internal logic of how recoverability is determined. It tightly couples against specific implementation details rather than testing a stable business rule.",
+          "suggestions": [
+            "Refactor this into an integration-level unit that validates behavior across multiple scenarios, not just one isolated call to `normalize`. Ensure it tests 'what' (recoverable failures exist) and not 'how' (specific normalization logic)."
+          ]
+        },
+        "repeatable": {
+          "score": 8,
+          "rationale": "The test is self-contained within the file path provided. It does not rely on external shared state like databases or network calls; it only uses local variables and standard library functions.",
+          "suggestions": [
+            "Ensure `code_review_compare.normalize` behaves consistently across runs by removing any implicit dependencies on global mutable state (e.g., thread-local caches)."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: that a specific set of recoverable failures results in an empty list. If the assertion fails, it is immediately obvious which unit caused the failure.",
+          "suggestions": [
+            "Consider adding edge case assertions (e.g., what happens if `recoverable_failure` contains multiple types?)"
+          ]
+        },
+        "necessary": {
+          "score": 5,
+          "rationale": "This test likely duplicates coverage already provided by other tests in the suite that verify general recoverability or specific failure handling. It may be testing a trivial implementation detail rather than a unique business rule.",
+          "suggestions": [
+            "Review existing tests to ensure this scenario is not covered elsewhere. If it's redundant, remove it; if critical for edge cases, rename and clarify its purpose."
+          ]
+        },
+        "granular": {
+          "score": 4,
+          "rationale": "The test isolates a very narrow slice of logic (one specific failure type) rather than the broader concept of recoverability. It lacks context about how failures are aggregated or handled in aggregate.",
+          "suggestions": [
+            "Expand to include multiple types of `recoverable_failure` and verify that all combinations behave consistently."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes immediately without artificial delays or heavy I/O. It relies on pure function calls (`normalize`, `collect`) which are inherently fast.",
+          "suggestions": [
+            "No changes needed here; ensure the underlying functions used do not introduce hidden latency."
+          ]
+        },
+        "first_tdd": {
+          "score": 6,
+          "rationale": "The test follows a basic Arrange-Act-Assert pattern. However, it lacks explicit specification of expected behavior before running (Arrange), making the 'why' implicit in the name rather than stated.",
+          "suggestions": [
+            "Explicitly state the precondition and expected outcome at the top or via comments to ensure clarity for future maintainers."
+          ]
+        },
+        "summary": "The test is functional but suffers from high brittleness due to opaque data structures. It risks redundancy if not carefully reviewed against existing coverage. While fast and atomic, it lacks explicit design intent documentation typical of TDD-first development."
+      }
+    },
+    {
       "id": "tests/test_code_review.py::test_validate_path_escapes",
       "file_path": "tests/test_code_review.py",
       "test_name": "test_validate_path_escapes",
@@ -4204,6 +4397,64 @@
       }
     },
     {
+      "id": "tests/test_unified_compare.py::test_write_unified_report_excludes_recoverable_failure_from_cqi",
+      "file_path": "tests/test_unified_compare.py",
+      "test_name": "test_write_unified_report_excludes_recoverable_failure_from_cqi",
+      "class_name": null,
+      "farley_index": 7.875,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 9,
+          "rationale": "The test name and assertion clearly articulate the business rule: a unified report must exclude recoverable failures (like 'Failed to validate structured output') from its final verdict. The language is domain-appropriate for CI/CD reporting.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 8,
+          "rationale": "The test relies on `get_reviews` and `write_unified_report`, which are likely internal or external utilities. If these functions change their input/output contracts (e.g., adding new fields to the payload), this specific assertion will break without modification.",
+          "suggestions": [
+            "Move logic into a dedicated helper function that encapsulates the 'exclude recoverable failures' rule, making it self-contained and decoupled from `get_reviews`."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test uses an external file path (`tmp_path`) which is fine for isolation. However, the payload construction relies on a helper function that may introduce hidden dependencies or side effects if not carefully managed.",
+          "suggestions": [
+            "Ensure `get_reviews` and `write_unified_report` are pure functions with no shared mutable state (like file handles) between calls."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: the exclusion of recoverable failures. If this assertion fails, it immediately indicates a bug in how `write_unified_report` processes or filters data.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test covers specific edge-case filtering logic (recoverable failures). However, if the core functionality of writing a report is already covered by other tests in this suite or similar generic 'write_report' tests, this might be redundant.",
+          "suggestions": [
+            "Review existing coverage for `write_unified_report`. If general reporting behavior is tested elsewhere, consider removing this specific edge-case assertion to avoid duplication unless the filtering logic has changed significantly since last test."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The test isolates a precise scenario: handling structured output failures. It does not assert on general report formatting or other unrelated aspects of `write_unified_report`.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "There are no artificial sleeps, heavy I/O operations (other than reading the file once), or complex setup logic that would slow execution. The test is lightweight and fast.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 7,
+          "rationale": "The assertion structure follows TDD principles (Arrange-Act-Assert). However, the 'Arrange' phase involves calling `get_reviews` with a complex payload that might not be fully isolated from other tests in the suite if they share state.",
+          "suggestions": [
+            "Refactor to explicitly define inputs/outputs before assertions. Ensure no side effects occur during setup (e.g., ensure `tmp_path` is created fresh per test without relying on global file system state that might be shared by multiple concurrent tests)."
+          ]
+        },
+        "summary": "The test demonstrates strong adherence to TDD principles and clearly defines a business rule. However, it risks maintainability issues if the underlying utilities (`get_reviews`, `write_unified_report`) evolve without updating this specific assertion."
+      }
+    },
+    {
       "id": "tests/test_unified_compare.py::test_write_unified_report_displays_baseline_state",
       "file_path": "tests/test_unified_compare.py",
       "test_name": "test_write_unified_report_displays_baseline_state",
@@ -5218,32 +5469,32 @@
     "farley_usage_summary": {
       "run_id": "main-baseline",
       "model": "ollama/qwen3.5:2b",
-      "reviewed_test_cases": 76,
+      "reviewed_test_cases": 80,
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 112,
-          "prompt_tokens": 68755,
-          "completion_tokens": 93121,
-          "total_tokens": 161876,
+          "calls": 116,
+          "prompt_tokens": 70987,
+          "completion_tokens": 96430,
+          "total_tokens": 167417,
           "cost_usd": 0.0,
           "missing_usage_calls": 0
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 112,
-            "prompt_tokens": 68755,
-            "completion_tokens": 93121,
-            "total_tokens": 161876,
+            "calls": 116,
+            "prompt_tokens": 70987,
+            "completion_tokens": 96430,
+            "total_tokens": 167417,
             "cost_usd": 0.0
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 112,
-            "prompt_tokens": 68755,
-            "completion_tokens": 93121,
-            "total_tokens": 161876,
+            "calls": 116,
+            "prompt_tokens": 70987,
+            "completion_tokens": 96430,
+            "total_tokens": 167417,
             "cost_usd": 0.0
           }
         },
@@ -5803,7 +6054,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 544,
             "completion_tokens": 676,
@@ -5815,11 +6066,47 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 521,
             "completion_tokens": 670,
             "total_tokens": 1191,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 516,
+            "completion_tokens": 680,
+            "total_tokens": 1196,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 416,
+            "completion_tokens": 923,
+            "total_tokens": 1339,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 510,
+            "completion_tokens": 891,
+            "total_tokens": 1401,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -6283,11 +6570,23 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 682,
             "completion_tokens": 813,
             "total_tokens": 1495,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 790,
+            "completion_tokens": 815,
+            "total_tokens": 1605,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -8658,6 +8957,114 @@
       "completion_tokens": 813,
       "prompt_tokens": 682,
       "total_tokens": 1495,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "a01f87e0637b15e7813e781b2ff11c8c711a1d1fd31e8310ee9c78ba74d06f06": {
+    "id": "chatcmpl-634735cf-97d7-471b-9925-ec32314070ad",
+    "created": 1783452503,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test name and code clearly define the business rule: null wrapping should result in a default validation state with an empty fields list. The logic is straightforward for anyone familiar with the domain.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 7, \"rationale\": \"While understandable, this test relies on `code_review_compare.get_reviews` returning data that might change in implementation details (e.g., if it returns a list instead of an item). It is not fully decoupled from the internal structure of how reviews are returned.\", \"suggestions\": [\"Ensure the return type contract for `get_reviews` is stable and documented. Consider mocking or unit-testing this function directly to verify behavior without depending on its implementation details.\"]},\n  \"repeatable\": {\"score\": 9, \"rationale\": \"The test is fully self-contained; it uses only local variables (`wrapped_unit`, `valid_review_payload`) and standard library functions. No external state (DB, network) or timing dependencies are present.\", \"suggestions\": []},\n  \"atomic\": {\"score\": 8, \"rationale\": \"This single assertion verifies exactly one behavior: the validation result when a review is wrapped in null fields. The cause of failure is immediately obvious if this specific check fails.\", \"suggestions\": [\"Ensure no other assertions or side effects occur within this test function.\"]},\n  \"necessary\": {\"score\": 6, \"rationale\": \"This test covers one edge case (null wrapping). It does not duplicate coverage for general validation logic. However, it might be redundant if there are existing tests covering the 'no wrap' scenario and a generic null check.\", \"suggestions\": [\"Review other tests to ensure this specific edge case is covered by an appropriate unit or integration test that doesn't rely on complex mocking.\"]},\n  \"granular\": {\"score\": 7, \"rationale\": \"The assertion targets `unit['validation']` specifically. It isolates the validation logic correctly without asserting unrelated fields like 'normalized' unless they are part of this specific rule.\", \"suggestions\": [\"Ensure assertions do not mix different aspects (e.g., validating both raw response and normalized output) to avoid confusion.\"]},\n  \"fast\": {\"score\": 9, \"rationale\": \"The test executes immediately without artificial delays, heavy setups, or slow I/O operations. It relies on pure Python logic.\", \"suggestions\": []},\n  \"first_tdd\": {\"score\": 8, \"rationale\": \"This follows the Arrange-Act-Assert pattern: `wrapped_unit` is arranged (mocked), then `get_reviews` acts to produce output, and assertions assert behavior. The separation of concerns is clear.\", \"suggestions\": [\"Ensure 'Arrange' includes mocking external dependencies if any exist in this specific test.\"]},\"summary\": \"The test demonstrates strong adherence to TDD principles with a clean Arrange-Act-Assert structure (8/10). It effectively isolates one edge case but could benefit from tighter coupling of the `get_reviews` call and more explicit documentation regarding its return contract for maintainability. Overall, it is a solid example of good unit test design.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 680,
+      "prompt_tokens": 516,
+      "total_tokens": 1196,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "b47cebffd21fdc23ede1b42bf53d4cf468ffbd89b64e57539f00e275b770dc8e": {
+    "id": "chatcmpl-c09dc31c-5ac1-41fb-b196-da6bbb8a50ae",
+    "created": 1783452586,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and assertions are clear. However, the function `code_review_compare` is not defined in scope; it appears to be an external module or class that should either be imported with its full signature (e.g., `from silver_one.tests.test_code_review import code_review_compare`) or referenced by a fully qualified path like `'silver_one.tests.test_code_review.code_review_compare'`. Without this, the intent is ambiguous.\",\n    \"suggestions\": [\n      \"Import the function explicitly: `def test_get_reviews_handles_non_dict_cassette_data():`\",\n      \"Or use full qualification if it's a module-level class: `assert code_review_compare.get_reviews(None) == []`\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is decoupled from implementation details (it doesn't mock the internal logic of `get_reviews`). However, it relies on an external object (`code_review_compare`) whose behavior might change if that module's internals are refactored. If `code_review_compare` itself changes its API or structure without updating this specific test, maintainability is compromised.\",\n    \"suggestions\": [\n      \"Ensure the function signature of `get_reviews` remains stable across all tests.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 9,\n    \"rationale\": \"The assertions are deterministic and self-contained. They do not rely on external shared state (like a database or network), nor does it depend on timing or local filesystem operations.\",\n    \"suggestions\": [\n      \"None required.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: that `get_reviews` returns an empty list for both a non-dict input (`None`) and an empty list. The cause of failure is instantly obvious if the assertion fails.\",\n    \"suggestions\": [\n      \"None required.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test likely duplicates coverage already provided by other tests (e.g., `test_get_reviews_handles_valid_data`, `test_get_reviews_returns_empty_list`). It does not add unique value unless there is a specific edge case for non-dict inputs that no existing test covers.\",\n    \"suggestions\": [\n      \"Review the suite to ensure this test doesn't duplicate coverage of other similar tests.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 7,\n    \"rationale\": \"The assertion is granular enough for a unit-level check. However, it does not isolate specific internal logic (e.g., error handling within `get_reviews`), which could be useful if the function has complex side effects.\",\n    \"suggestions\": [\n      \"Consider adding an assert that checks return type or raises expected exceptions to further granularize behavior.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes rapidly. It contains no artificial sleeps, heavy setups, unneeded I/O operations, or network calls.\",\n    \"suggestions\": [\n      \"None required.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 8,\n    \"rationale\": \"The test follows the Arrange-Act-Assert pattern: `Arrange` (implied setup of inputs), `Act` (`get_reviews(None)` and `[]`), `Assert`. However, it lacks a clear 'specification' or expected behavior description in comments before assertions. It should ideally state what is being tested explicitly.\",\n    \"suggestions\": [\n      \"Add an inline comment: # Test that get_reviews handles non-dict inputs gracefully.\"\n    ]\n  },\n  \"summary\": \"The test demonstrates strong adherence to TDD principles (atomic, fast, repeatable) and follows the Arrange-Act-Assert pattern. However, it lacks explicit documentation of its purpose in a comment and relies on an external object's stability without clear import context.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 923,
+      "prompt_tokens": 416,
+      "total_tokens": 1339,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "86e2b87a8b722ba7e2086357ea96755267c0095df791cdff2d0b7093b4af8a2e": {
+    "id": "chatcmpl-0c1106b7-fee8-4e5b-b045-e16175c6958c",
+    "created": 1783452668,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 7,\n    \"rationale\": \"The test name and logic are clear enough for a developer familiar with the codebase to understand that it verifies recoverability. However, 'recoverable_unit' is an opaque data structure definition rather than a business rule or domain concept; its meaning depends entirely on internal implementation details.\",\n    \"suggestions\": [\n      \"Replace `recoverable_unit` with a clear description of what constitutes a valid recovery scenario (e.g., 'A unit that has failed validation but can be retried').\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"The test is brittle to changes in `code_review_compare.normalize_review_unit` or the internal logic of how recoverability is determined. It tightly couples against specific implementation details rather than testing a stable business rule.\",\n    \"suggestions\": [\n      \"Refactor this into an integration-level unit that validates behavior across multiple scenarios, not just one isolated call to `normalize`. Ensure it tests 'what' (recoverable failures exist) and not 'how' (specific normalization logic).\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 8,\n    \"rationale\": \"The test is self-contained within the file path provided. It does not rely on external shared state like databases or network calls; it only uses local variables and standard library functions.\",\n    \"suggestions\": [\n      \"Ensure `code_review_compare.normalize` behaves consistently across runs by removing any implicit dependencies on global mutable state (e.g., thread-local caches).\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: that a specific set of recoverable failures results in an empty list. If the assertion fails, it is immediately obvious which unit caused the failure.\",\n    \"suggestions\": [\n      \"Consider adding edge case assertions (e.g., what happens if `recoverable_failure` contains multiple types?)\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test likely duplicates coverage already provided by other tests in the suite that verify general recoverability or specific failure handling. It may be testing a trivial implementation detail rather than a unique business rule.\",\n    \"suggestions\": [\n      \"Review existing tests to ensure this scenario is not covered elsewhere. If it's redundant, remove it; if critical for edge cases, rename and clarify its purpose.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 4,\n    \"rationale\": \"The test isolates a very narrow slice of logic (one specific failure type) rather than the broader concept of recoverability. It lacks context about how failures are aggregated or handled in aggregate.\",\n    \"suggestions\": [\n      \"Expand to include multiple types of `recoverable_failure` and verify that all combinations behave consistently.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes immediately without artificial delays or heavy I/O. It relies on pure function calls (`normalize`, `collect`) which are inherently fast.\",\n    \"suggestions\": [\n      \"No changes needed here; ensure the underlying functions used do not introduce hidden latency.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 6,\n    \"rationale\": \"The test follows a basic Arrange-Act-Assert pattern. However, it lacks explicit specification of expected behavior before running (Arrange), making the 'why' implicit in the name rather than stated.\",\n    \"suggestions\": [\n      \"Explicitly state the precondition and expected outcome at the top or via comments to ensure clarity for future maintainers.\"\n    ]\n  },\n  \"summary\": \"The test is functional but suffers from high brittleness due to opaque data structures. It risks redundancy if not carefully reviewed against existing coverage. While fast and atomic, it lacks explicit design intent documentation typical of TDD-first development.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 891,
+      "prompt_tokens": 510,
+      "total_tokens": 1401,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "3e6af3fd7a8deef5f9630e0d45053bc6f6a05967fb0a092bbff7d3f2d0737e77": {
+    "id": "chatcmpl-82e4b42c-6c38-4baf-a9d5-55bf2a2f72ae",
+    "created": 1783452750,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 9,\n    \"rationale\": \"The test name and assertion clearly articulate the business rule: a unified report must exclude recoverable failures (like 'Failed to validate structured output') from its final verdict. The language is domain-appropriate for CI/CD reporting.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 8,\n    \"rationale\": \"The test relies on `get_reviews` and `write_unified_report`, which are likely internal or external utilities. If these functions change their input/output contracts (e.g., adding new fields to the payload), this specific assertion will break without modification.\",\n    \"suggestions\": [\n      \"Move logic into a dedicated helper function that encapsulates the 'exclude recoverable failures' rule, making it self-contained and decoupled from `get_reviews`.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test uses an external file path (`tmp_path`) which is fine for isolation. However, the payload construction relies on a helper function that may introduce hidden dependencies or side effects if not carefully managed.\",\n    \"suggestions\": [\n      \"Ensure `get_reviews` and `write_unified_report` are pure functions with no shared mutable state (like file handles) between calls.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: the exclusion of recoverable failures. If this assertion fails, it immediately indicates a bug in how `write_unified_report` processes or filters data.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test covers specific edge-case filtering logic (recoverable failures). However, if the core functionality of writing a report is already covered by other tests in this suite or similar generic 'write_report' tests, this might be redundant.\",\n    \"suggestions\": [\n      \"Review existing coverage for `write_unified_report`. If general reporting behavior is tested elsewhere, consider removing this specific edge-case assertion to avoid duplication unless the filtering logic has changed significantly since last test.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The test isolates a precise scenario: handling structured output failures. It does not assert on general report formatting or other unrelated aspects of `write_unified_report`.\",\n    \"suggestions\": []\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"There are no artificial sleeps, heavy I/O operations (other than reading the file once), or complex setup logic that would slow execution. The test is lightweight and fast.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"The assertion structure follows TDD principles (Arrange-Act-Assert). However, the 'Arrange' phase involves calling `get_reviews` with a complex payload that might not be fully isolated from other tests in the suite if they share state.\",\n    \"suggestions\": [\n      \"Refactor to explicitly define inputs/outputs before assertions. Ensure no side effects occur during setup (e.g., ensure `tmp_path` is created fresh per test without relying on global file system state that might be shared by multiple concurrent tests).\"\n    ]\n  },\n  \"summary\": \"The test demonstrates strong adherence to TDD principles and clearly defines a business rule. However, it risks maintainability issues if the underlying utilities (`get_reviews`, `write_unified_report`) evolve without updating this specific assertion.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 815,
+      "prompt_tokens": 790,
+      "total_tokens": 1605,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
