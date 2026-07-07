@@ -2628,6 +2628,132 @@
       }
     },
     {
+      "id": "tests/test_code_review.py::test_get_reviews_wraps_legacy_review_payload",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_get_reviews_wraps_legacy_review_payload",
+      "class_name": null,
+      "farley_index": 7.375,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly demonstrates the business rule: a `legacy_review` payload must be wrapped by `code_review_compare.get_reviews()` and returned as an object with specific fields. The intent is unambiguous.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 6,
+          "rationale": "While the test logic itself is clean, it relies on a helper function (`valid_review_payload`) that likely contains implementation details of how legacy data should be constructed or validated. If `code_review_compare` changes its internal representation (e.g., adding fields), this assertion will break unless updated.",
+          "suggestions": [
+            "Move validation logic for constructing the payload into an external contract test, not inside a unit test verifying specific field values."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic and self-contained. It does not rely on databases or network calls; it uses mocked `valid_review_payload` which should be stable.",
+          "suggestions": [
+            "Ensure the mock function returns identical results across runs to guarantee repeatability."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: that a legacy payload is correctly wrapped and returned with specific attributes. If it fails, the cause (missing field or wrong value) is instantly obvious.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 5,
+          "rationale": "This test likely duplicates coverage already provided by integration tests verifying `code_review_compare.get_reviews()` behavior in a real environment. It may be testing implementation details rather than the core business rule of 'wrapping' legacy data.",
+          "suggestions": [
+            "Remove this unit-level assertion if it is redundant; instead, verify that existing integration tests cover all edge cases for wrapping."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The test isolates specific fields (`file_path`, `name`, etc.) and validates their exact values. However, the validation logic inside the assertion could be too granular if it depends on internal state not under direct control.",
+          "suggestions": [
+            "Ensure assertions are purely about observable output; avoid asserting against mutable internal states unless they represent stable contract properties."
+          ]
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "The test executes rapidly. There is no artificial delay or heavy I/O operation in the code snippet itself.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "This follows TDD principles: Arrange (mock `valid_review_payload`), Act (`get_reviews` call with specific input), Assert (verify output structure and content). The separation of concerns is clear.",
+          "suggestions": [
+            "Ensure the 'Arrange' phase explicitly mocks or sets up a stable state for the legacy payload to ensure repeatability."
+          ]
+        },
+        "summary": "The test demonstrates strong TDD practices but risks redundancy if integration tests cover similar scenarios. It should be kept as-is only if it verifies specific edge cases not covered elsewhere; otherwise, consider removing assertions about internal field values in favor of verifying high-level contract behavior via external contracts or integration tests."
+      }
+    },
+    {
+      "id": "tests/test_code_review.py::test_get_reviews_preserves_legacy_unit_metadata",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_get_reviews_preserves_legacy_unit_metadata",
+      "class_name": null,
+      "farley_index": 7.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the legacy input structure and asserts specific fields are preserved. However, it lacks a clear 'why' or business rule explanation beyond field equality.",
+          "suggestions": [
+            "Add an assertion that `unit['review']['severity']` is exactly `'WARN'`, not just equal to it (e.g., using strict string comparison)."
+          ]
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "The test isolates the logic of extracting metadata from a legacy payload without relying on external state or system internals. It does not depend on `code_review_compare`'s internal implementation details.",
+          "suggestions": [
+            "Ensure no side effects occur in other parts of the codebase when this specific unit is run."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test relies entirely on a single external function call (`get_reviews`) and its return value. If `code_review_compare` changes internal logic or adds new parameters not listed in the payload, the test will fail unexpectedly.",
+          "suggestions": [
+            "Explicitly mock `code_review_compare.get_reviews()` to ensure deterministic behavior regardless of underlying implementation details."
+          ]
+        },
+        "atomic": {
+          "score": 8,
+          "rationale": "The test verifies exactly one specific rule: that legacy metadata fields are correctly extracted and preserved in the output. The failure mode is immediate (assertion error).",
+          "suggestions": [
+            "Remove any flaky assertions or redundant checks to ensure atomicity of this single behavior."
+          ]
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test covers a specific legacy path but does not verify general correctness for other payload types. It duplicates coverage if similar tests exist for different metadata formats.",
+          "suggestions": [
+            "Add assertions covering edge cases (empty payloads) and multiple distinct input scenarios to ensure comprehensive coverage."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The test is granular enough in its assertion targets but could be more specific about the transformation logic being tested. It asserts equality rather than verifying a derived property.",
+          "suggestions": [
+            "Assert that `unit['review']['severity']` equals `'WARN'`, ensuring strict type and value matching to prevent subtle bugs."
+          ]
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "The test executes quickly with minimal setup. It avoids sleeps or heavy I/O operations typical of integration tests.",
+          "suggestions": [
+            "Ensure the `code_review_compare.get_reviews` call is mocked if it involves network calls; otherwise, verify execution speed remains high."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The test follows a clean Arrange-Act-Assert structure. It explicitly defines input (Arrange), performs extraction logic (Act), and verifies output assertions (Assert).",
+          "suggestions": [
+            "Refine the 'Arrangement' phase to include mocking `code_review_compare` if it's not already done, ensuring true TDD compliance."
+          ]
+        },
+        "summary": "The test is well-structured but lacks robustness against external implementation changes. It should be enhanced with explicit mocks and stricter assertions for full TDD adherence."
+      }
+    },
+    {
       "id": "tests/test_code_review.py::test_validate_path_escapes",
       "file_path": "tests/test_code_review.py",
       "test_name": "test_validate_path_escapes",
@@ -4020,6 +4146,64 @@
       }
     },
     {
+      "id": "tests/test_unified_compare.py::test_write_unified_report_accepts_legacy_review_payload",
+      "file_path": "tests/test_unified_compare.py",
+      "test_name": "test_write_unified_report_accepts_legacy_review_payload",
+      "class_name": null,
+      "farley_index": 7.5,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 9,
+          "rationale": "The test name and body clearly describe the business rule: accepting a specific legacy payload format. The domain language is standard for automated testing.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 8,
+          "rationale": "The function call `write_unified_report` appears to be the primary entry point; however, if this test were added alongside others using different argument structures or internal logic changes in that function, it could become brittle. It relies on a specific payload structure which is good for TDD but risks coupling.",
+          "suggestions": [
+            "Ensure `write_unified_report` has no hidden side effects (e.g., logging to stdout) unless explicitly intended and isolated within the test itself."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is self-contained but relies on `get_reviews`, which likely involves external state or network calls. If that function's internal logic changes (e.g., adding a sleep), this specific assertion will fail without updating the code.",
+          "suggestions": [
+            "Replace any non-deterministic dependencies with mock objects to ensure repeatability regardless of underlying implementation details."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: the acceptance of a specific payload. If this fails, it is immediately obvious that `write_unified_report` does not accept legacy reviews.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test covers one aspect (legacy review acceptance). It likely duplicates coverage of other tests already verifying the same function with different payloads or scenarios. The 'farley_data' and 'compat_data' fields suggest this might be a wrapper for integration testing rather than unit logic.",
+          "suggestions": [
+            "Review if there are existing tests that verify `write_unified_report` accepts various payload types; consolidate these into one comprehensive test to avoid redundancy."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The assertion targets a specific string pattern in the output file. It isolates the exact expected format of the report generation.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 6,
+          "rationale": "There is no explicit `assert` or check for speed; however, reading a text file and checking its content are fast operations. The test does not contain artificial sleeps or heavy I/O that would artificially slow execution.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 7,
+          "rationale": "The structure follows Arrange-Act-Assert: `tmp_path` is set up (`Arrange`), the function call happens with specific data (`Act`), and the content assertion verifies the result (`Assert`). However, it lacks a clear 'specification' of *why* this legacy format exists before writing the test.",
+          "suggestions": [
+            "Add an explicit comment or docstring explaining the business rule for accepting `legacy_review_1`. This clarifies the intent and ensures future maintainers understand the design property being tested."
+          ]
+        },
+        "summary": "The test is well-structured (TDD style) but risks becoming brittle due to external dependencies in helper functions. It effectively tests one atomic behavior with clear expectations, though it could benefit from more explicit documentation of its business rule and potential consolidation if other similar tests exist."
+      }
+    },
+    {
       "id": "tests/test_unified_compare.py::test_write_unified_report_displays_baseline_state",
       "file_path": "tests/test_unified_compare.py",
       "test_name": "test_write_unified_report_displays_baseline_state",
@@ -5034,32 +5218,32 @@
     "farley_usage_summary": {
       "run_id": "main-baseline",
       "model": "ollama/qwen3.5:2b",
-      "reviewed_test_cases": 73,
+      "reviewed_test_cases": 76,
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 109,
-          "prompt_tokens": 67008,
-          "completion_tokens": 90962,
-          "total_tokens": 157970,
+          "calls": 112,
+          "prompt_tokens": 68755,
+          "completion_tokens": 93121,
+          "total_tokens": 161876,
           "cost_usd": 0.0,
           "missing_usage_calls": 0
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 109,
-            "prompt_tokens": 67008,
-            "completion_tokens": 90962,
-            "total_tokens": 157970,
+            "calls": 112,
+            "prompt_tokens": 68755,
+            "completion_tokens": 93121,
+            "total_tokens": 161876,
             "cost_usd": 0.0
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 109,
-            "prompt_tokens": 67008,
-            "completion_tokens": 90962,
-            "total_tokens": 157970,
+            "calls": 112,
+            "prompt_tokens": 68755,
+            "completion_tokens": 93121,
+            "total_tokens": 161876,
             "cost_usd": 0.0
           }
         },
@@ -5619,6 +5803,30 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 544,
+            "completion_tokens": 676,
+            "total_tokens": 1220,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 521,
+            "completion_tokens": 670,
+            "total_tokens": 1191,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
             "source": "cache",
             "generation_params": {},
             "prompt_tokens": 465,
@@ -5655,7 +5863,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 1102,
             "completion_tokens": 903,
@@ -5667,7 +5875,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 1055,
             "completion_tokens": 734,
@@ -6068,6 +6276,18 @@
             "prompt_tokens": 635,
             "completion_tokens": 761,
             "total_tokens": 1396,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 682,
+            "completion_tokens": 813,
+            "total_tokens": 1495,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -8357,6 +8577,87 @@
       "completion_tokens": 734,
       "prompt_tokens": 1055,
       "total_tokens": 1789,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "f19c090eebd63ac1d4af10122858d7f8c63c9d0256718c5d5fd8ad26b6ed56f5": {
+    "id": "chatcmpl-e6eb996d-919e-49c1-9f32-e4cbc1320321",
+    "created": 1783438927,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly demonstrates the business rule: a `legacy_review` payload must be wrapped by `code_review_compare.get_reviews()` and returned as an object with specific fields. The intent is unambiguous.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 6, \"rationale\": \"While the test logic itself is clean, it relies on a helper function (`valid_review_payload`) that likely contains implementation details of how legacy data should be constructed or validated. If `code_review_compare` changes its internal representation (e.g., adding fields), this assertion will break unless updated.\", \"suggestions\": [\"Move validation logic for constructing the payload into an external contract test, not inside a unit test verifying specific field values.\"]},\n  \"repeatable\": {\"score\": 7, \"rationale\": \"The test is deterministic and self-contained. It does not rely on databases or network calls; it uses mocked `valid_review_payload` which should be stable.\", \"suggestions\": [\"Ensure the mock function returns identical results across runs to guarantee repeatability.\"]},\n  \"atomic\": {\"score\": 9, \"rationale\": \"The test verifies exactly one behavior: that a legacy payload is correctly wrapped and returned with specific attributes. If it fails, the cause (missing field or wrong value) is instantly obvious.\", \"suggestions\": []},\n  \"necessary\": {\"score\": 5, \"rationale\": \"This test likely duplicates coverage already provided by integration tests verifying `code_review_compare.get_reviews()` behavior in a real environment. It may be testing implementation details rather than the core business rule of 'wrapping' legacy data.\", \"suggestions\": [\"Remove this unit-level assertion if it is redundant; instead, verify that existing integration tests cover all edge cases for wrapping.\"]},\n  \"granular\": {\"score\": 7, \"rationale\": \"The test isolates specific fields (`file_path`, `name`, etc.) and validates their exact values. However, the validation logic inside the assertion could be too granular if it depends on internal state not under direct control.\", \"suggestions\": [\"Ensure assertions are purely about observable output; avoid asserting against mutable internal states unless they represent stable contract properties.\"]},\n  \"fast\": {\"score\": 8, \"rationale\": \"The test executes rapidly. There is no artificial delay or heavy I/O operation in the code snippet itself.\", \"suggestions\": []},\n  \"first_tdd\": {\"score\": 9, \"rationale\": \"This follows TDD principles: Arrange (mock `valid_review_payload`), Act (`get_reviews` call with specific input), Assert (verify output structure and content). The separation of concerns is clear.\", \"suggestions\": [\"Ensure the 'Arrange' phase explicitly mocks or sets up a stable state for the legacy payload to ensure repeatability.\"]},\n  \"summary\": \"The test demonstrates strong TDD practices but risks redundancy if integration tests cover similar scenarios. It should be kept as-is only if it verifies specific edge cases not covered elsewhere; otherwise, consider removing assertions about internal field values in favor of verifying high-level contract behavior via external contracts or integration tests.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 676,
+      "prompt_tokens": 544,
+      "total_tokens": 1220,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "abf1458c85a798f15eab5e14610e6fc40e9fe60b319fbfa87baa809a58f40e96": {
+    "id": "chatcmpl-3b1b8dd1-3db0-4396-a79b-9949387dd928",
+    "created": 1783438984,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the legacy input structure and asserts specific fields are preserved. However, it lacks a clear 'why' or business rule explanation beyond field equality.\", \"suggestions\": [\"Add an assertion that `unit['review']['severity']` is exactly `'WARN'`, not just equal to it (e.g., using strict string comparison).\"]\n},\"maintainable\": {\"score\": 9, \"rationale\": \"The test isolates the logic of extracting metadata from a legacy payload without relying on external state or system internals. It does not depend on `code_review_compare`'s internal implementation details.\", \"suggestions\": [\"Ensure no side effects occur in other parts of the codebase when this specific unit is run.\"]\n},\"repeatable\": {\"score\": 7, \"rationale\": \"The test relies entirely on a single external function call (`get_reviews`) and its return value. If `code_review_compare` changes internal logic or adds new parameters not listed in the payload, the test will fail unexpectedly.\", \"suggestions\": [\"Explicitly mock `code_review_compare.get_reviews()` to ensure deterministic behavior regardless of underlying implementation details.\"]\n},\"atomic\": {\"score\": 8, \"rationale\": \"The test verifies exactly one specific rule: that legacy metadata fields are correctly extracted and preserved in the output. The failure mode is immediate (assertion error).\", \"suggestions\": [\"Remove any flaky assertions or redundant checks to ensure atomicity of this single behavior.\"]\n},\"necessary\": {\"score\": 6, \"rationale\": \"This test covers a specific legacy path but does not verify general correctness for other payload types. It duplicates coverage if similar tests exist for different metadata formats.\", \"suggestions\": [\"Add assertions covering edge cases (empty payloads) and multiple distinct input scenarios to ensure comprehensive coverage.\"]\n},\"granular\": {\"score\": 7, \"rationale\": \"The test is granular enough in its assertion targets but could be more specific about the transformation logic being tested. It asserts equality rather than verifying a derived property.\", \"suggestions\": [\"Assert that `unit['review']['severity']` equals `'WARN'`, ensuring strict type and value matching to prevent subtle bugs.\"]\n},\"fast\": {\"score\": 8, \"rationale\": \"The test executes quickly with minimal setup. It avoids sleeps or heavy I/O operations typical of integration tests.\", \"suggestions\": [\"Ensure the `code_review_compare.get_reviews` call is mocked if it involves network calls; otherwise, verify execution speed remains high.\"]\n},\"first_tdd\": {\"score\": 9, \"rationale\": \"The test follows a clean Arrange-Act-Assert structure. It explicitly defines input (Arrange), performs extraction logic (Act), and verifies output assertions (Assert).\", \"suggestions\": [\"Refine the 'Arrangement' phase to include mocking `code_review_compare` if it's not already done, ensuring true TDD compliance.\"]\n},\"summary\": \"The test is well-structured but lacks robustness against external implementation changes. It should be enhanced with explicit mocks and stricter assertions for full TDD adherence.\"\n\n  }",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 670,
+      "prompt_tokens": 521,
+      "total_tokens": 1191,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "3753a677b95670aa095b21dc1ad982a14e6f2a07c32764b47c735ea6c438c39d": {
+    "id": "chatcmpl-347462c7-e300-464d-bb4c-8eca055c6ca8",
+    "created": 1783439055,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 9,\n    \"rationale\": \"The test name and body clearly describe the business rule: accepting a specific legacy payload format. The domain language is standard for automated testing.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 8,\n    \"rationale\": \"The function call `write_unified_report` appears to be the primary entry point; however, if this test were added alongside others using different argument structures or internal logic changes in that function, it could become brittle. It relies on a specific payload structure which is good for TDD but risks coupling.\",\n    \"suggestions\": [\n      \"Ensure `write_unified_report` has no hidden side effects (e.g., logging to stdout) unless explicitly intended and isolated within the test itself.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is self-contained but relies on `get_reviews`, which likely involves external state or network calls. If that function's internal logic changes (e.g., adding a sleep), this specific assertion will fail without updating the code.\",\n    \"suggestions\": [\n      \"Replace any non-deterministic dependencies with mock objects to ensure repeatability regardless of underlying implementation details.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: the acceptance of a specific payload. If this fails, it is immediately obvious that `write_unified_report` does not accept legacy reviews.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test covers one aspect (legacy review acceptance). It likely duplicates coverage of other tests already verifying the same function with different payloads or scenarios. The 'farley_data' and 'compat_data' fields suggest this might be a wrapper for integration testing rather than unit logic.\",\n    \"suggestions\": [\n      \"Review if there are existing tests that verify `write_unified_report` accepts various payload types; consolidate these into one comprehensive test to avoid redundancy.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The assertion targets a specific string pattern in the output file. It isolates the exact expected format of the report generation.\",\n    \"suggestions\": []\n  },\n  \"fast\": {\n    \"score\": 6,\n    \"rationale\": \"There is no explicit `assert` or check for speed; however, reading a text file and checking its content are fast operations. The test does not contain artificial sleeps or heavy I/O that would artificially slow execution.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"The structure follows Arrange-Act-Assert: `tmp_path` is set up (`Arrange`), the function call happens with specific data (`Act`), and the content assertion verifies the result (`Assert`). However, it lacks a clear 'specification' of *why* this legacy format exists before writing the test.\",\n    \"suggestions\": [\n      \"Add an explicit comment or docstring explaining the business rule for accepting `legacy_review_1`. This clarifies the intent and ensures future maintainers understand the design property being tested.\"\n    ]\n  },\n  \"summary\": \"The test is well-structured (TDD style) but risks becoming brittle due to external dependencies in helper functions. It effectively tests one atomic behavior with clear expectations, though it could benefit from more explicit documentation of its business rule and potential consolidation if other similar tests exist.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 813,
+      "prompt_tokens": 682,
+      "total_tokens": 1495,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
