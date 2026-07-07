@@ -262,6 +262,46 @@ def test_get_reviews_preserves_legacy_unit_metadata():
     assert unit["review"]["severity"] == "WARN"
 
 
+def test_get_reviews_supplies_defaults_for_null_wrapped_fields():
+    wrapped_unit = {
+        "file_path": "src/current.py",
+        "name": "current_helper",
+        "review": valid_review_payload(),
+        "validation": None,
+        "raw_response": None,
+    }
+
+    unit = code_review_compare.get_reviews({"reviews": [wrapped_unit]})[0]
+
+    assert unit["validation"] == {
+        "repaired": False,
+        "normalized": False,
+        "fields": [],
+    }
+    assert json.loads(unit["raw_response"]) == wrapped_unit["review"]
+
+
+def test_get_reviews_handles_non_dict_cassette_data():
+    assert code_review_compare.get_reviews(None) == []
+    assert code_review_compare.get_reviews([]) == []
+
+
+def test_cqi_failure_collection_skips_recoverable_review_failures():
+    recoverable_unit = {
+        "file_path": "scripts/code_review_compare.py",
+        "name": "<module>",
+        "review": None,
+        "recoverable_failure": {
+            "type": "structured_output",
+            "message": "Failed to validate structured output",
+        },
+    }
+
+    reasons = code_review_compare.collect_cqi_failure_reasons([recoverable_unit])
+
+    assert reasons == []
+
+
 def test_validate_path_escapes(tmp_path):
     root = tmp_path / "workspace"
     root.mkdir()

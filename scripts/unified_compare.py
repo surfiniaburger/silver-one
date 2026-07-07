@@ -27,6 +27,7 @@ from scripts.code_review_compare import (
     format_cqi_result,
     get_reviews,
     group_units_by_severity,
+    is_recoverable_review_failure,
     determine_verdict as cr_determine_verdict,
     format_unit_name,
     write_dimension_rows,
@@ -245,13 +246,26 @@ def _get_cqi_metric(cr_data: Dict[str, Any]) -> Tuple[str, str]:
     if not cr_units:
         return "N/A (no Python code changes)", "PASS"
 
-    cqi_results = [calculate_cqi_result(u.get("review") or {}) for u in cr_units]
+    cqi_units = [
+        unit for unit in cr_units
+        if not is_recoverable_review_failure(unit)
+    ]
+    recoverable_count = len(cr_units) - len(cqi_units)
+    if not cqi_units:
+        return f"N/A ({recoverable_count} recoverable evaluation failure(s))", "PASS"
+
+    cqi_results = [calculate_cqi_result(u.get("review") or {}) for u in cqi_units]
     invalid_count = sum(1 for result in cqi_results if not result.valid)
     if invalid_count:
-        return f"INVALID ({invalid_count}/{len(cr_units)} unit(s))", "FAIL"
+        return f"INVALID ({invalid_count}/{len(cqi_units)} unit(s))", "FAIL"
 
     scores = [result.value for result in cqi_results if result.value is not None]
     avg_cqi = mean(scores) if scores else 10.0
+    if recoverable_count:
+        return (
+            f"{avg_cqi:.2f}/10 (average of {len(cqi_units)} unit(s); "
+            f"{recoverable_count} recoverable failure(s) excluded)"
+        ), cr_verdict
     return f"{avg_cqi:.2f}/10 (average of {len(cr_units)} unit(s))", cr_verdict
 
 
@@ -317,11 +331,25 @@ def _esc(value: Any) -> str:
     return text.replace("|", "\\|").replace("\r", " ").replace("\n", "<br>")
 
 
+def _recoverable_failure_summary(unit: Dict[str, Any]) -> str:
+    failure = unit.get("recoverable_failure") or {}
+    return failure.get("message") or failure.get("type") or "Recoverable evaluation failure"
+
+
 def _write_cr_units_overview(f, cr_units: List[Dict[str, Any]]) -> None:
     f.write("### Code Units Overview\n\n")
     f.write("| File | Unit | CQI | Severity | Summary |\n")
     f.write("|---|---|---:|---|---|\n")
     for unit in cr_units:
+        if is_recoverable_review_failure(unit):
+            f.write(
+                f"| {_esc(unit.get('file_path'))} "
+                f"| {_esc(format_unit_name(unit))} "
+                f"| N/A (recoverable failure) "
+                f"| **N/A** "
+                f"| {_esc(_recoverable_failure_summary(unit))} |\n"
+            )
+            continue
         review = unit.get("review") or {}
         severity = effective_review_severity(review)
         f.write(

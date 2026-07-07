@@ -139,26 +139,26 @@ def _is_wrapped_review_unit(unit: Dict[str, Any]) -> bool:
     return isinstance(unit.get("review"), dict)
 
 
-def _is_legacy_review_payload(unit: Dict[str, Any]) -> bool:
-    return any(dim in unit for dim in CQI_WEIGHTS)
-
-
 def _legacy_review_payload(unit: Dict[str, Any]) -> Dict[str, Any]:
-    if _is_legacy_review_payload(unit):
-        return {
-            key: value
-            for key, value in unit.items()
-            if key not in LEGACY_REVIEW_WRAPPER_KEYS
-        }
-    return unit
+    return {
+        key: value
+        for key, value in unit.items()
+        if key not in LEGACY_REVIEW_WRAPPER_KEYS
+    }
+
+
+def is_recoverable_review_failure(unit: Dict[str, Any]) -> bool:
+    return isinstance(unit.get("recoverable_failure"), dict) and unit.get("review") is None
 
 
 def normalize_review_unit(unit: Dict[str, Any], index: int) -> Dict[str, Any]:
     """Return a UnitReviewArtifact-shaped dict for current or legacy review entries."""
     if _is_wrapped_review_unit(unit):
         normalized = dict(unit)
-        normalized.setdefault("validation", _default_validation_context())
-        normalized.setdefault("raw_response", json.dumps(normalized.get("review") or {}, sort_keys=True))
+        if normalized.get("validation") is None:
+            normalized["validation"] = _default_validation_context()
+        if normalized.get("raw_response") is None:
+            normalized["raw_response"] = json.dumps(normalized.get("review") or {}, sort_keys=True)
         return normalized
 
     review = _legacy_review_payload(unit)
@@ -173,6 +173,8 @@ def normalize_review_unit(unit: Dict[str, Any], index: int) -> Dict[str, Any]:
 
 
 def get_reviews(cassette_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    if not isinstance(cassette_data, dict):
+        return []
     reviews = cassette_data.get("reviews", [])
     if not isinstance(reviews, list):
         return []
@@ -225,6 +227,8 @@ def collect_cqi_failure_reasons(reviews: List[Dict[str, Any]]) -> List[str]:
     reasons = []
     for unit in reviews:
         if not isinstance(unit, dict):
+            continue
+        if is_recoverable_review_failure(unit):
             continue
         review = unit.get("review") or {}
         result = calculate_cqi_result(review)
