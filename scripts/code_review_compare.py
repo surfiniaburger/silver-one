@@ -22,6 +22,16 @@ CQI_WEIGHTS = {
     "test_coverage": 1.0,
 }
 
+LEGACY_REVIEW_WRAPPER_KEYS = frozenset({
+    "file_path",
+    "name",
+    "class_name",
+    "validation",
+    "raw_response",
+    "structured_output",
+    "recoverable_failure",
+})
+
 
 def _invalid_cqi(error_code: str, reason: str) -> CQIResult:
     return CQIResult(valid=False, error_code=error_code, reason=reason)
@@ -117,11 +127,60 @@ def load_cassette(path: Path) -> Dict[str, Any]:
     return cassette_data
 
 
+def _default_validation_context() -> Dict[str, Any]:
+    return {
+        "repaired": False,
+        "normalized": False,
+        "fields": [],
+    }
+
+
+def _is_wrapped_review_unit(unit: Dict[str, Any]) -> bool:
+    return isinstance(unit.get("review"), dict)
+
+
+def _is_legacy_review_payload(unit: Dict[str, Any]) -> bool:
+    return any(dim in unit for dim in CQI_WEIGHTS)
+
+
+def _legacy_review_payload(unit: Dict[str, Any]) -> Dict[str, Any]:
+    if _is_legacy_review_payload(unit):
+        return {
+            key: value
+            for key, value in unit.items()
+            if key not in LEGACY_REVIEW_WRAPPER_KEYS
+        }
+    return unit
+
+
+def normalize_review_unit(unit: Dict[str, Any], index: int) -> Dict[str, Any]:
+    """Return a UnitReviewArtifact-shaped dict for current or legacy review entries."""
+    if _is_wrapped_review_unit(unit):
+        normalized = dict(unit)
+        normalized.setdefault("validation", _default_validation_context())
+        normalized.setdefault("raw_response", json.dumps(normalized.get("review") or {}, sort_keys=True))
+        return normalized
+
+    review = _legacy_review_payload(unit)
+    return {
+        "file_path": unit.get("file_path") or "legacy-cassette",
+        "name": unit.get("name") or f"legacy_review_{index + 1}",
+        "class_name": unit.get("class_name"),
+        "review": review,
+        "validation": _default_validation_context(),
+        "raw_response": json.dumps(review, sort_keys=True),
+    }
+
+
 def get_reviews(cassette_data: Dict[str, Any]) -> List[Dict[str, Any]]:
     reviews = cassette_data.get("reviews", [])
     if not isinstance(reviews, list):
         return []
-    return [unit for unit in reviews if isinstance(unit, dict)]
+    return [
+        normalize_review_unit(unit, index)
+        for index, unit in enumerate(reviews)
+        if isinstance(unit, dict)
+    ]
 
 
 def _has_structured_block_finding(review: Dict[str, Any]) -> bool:
