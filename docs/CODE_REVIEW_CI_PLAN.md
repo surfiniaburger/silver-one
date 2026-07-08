@@ -84,6 +84,9 @@ CQI = (1.5·readability + 1.5·maintainability + 2.0·correctness
        + 1.0·complexity + 2.0·security + 1.0·test_coverage) / 9.0
 ```
 
+The cassette, validation, legacy compatibility, recoverable failure, and CQI
+reporting rules are defined in `STRUCTURED_REVIEW_CONTRACT.md`.
+
 ---
 
 ## Architecture: `scripts/code_review_evaluator.py`
@@ -448,3 +451,5 @@ WEEKLY_BUDGET_USD = float(os.getenv("CR_WEEKLY_BUDGET_USD", "5.00"))
 - [`FARLEY_CI_PLAN.md`](./FARLEY_CI_PLAN.md) — test quality CI architecture
 - [`CODE_TEST_QUALITY_PLAN.md`](./CODE_TEST_QUALITY_PLAN.md) — north star,
   CQI formula, rollout phases, KPIs
+- [`STRUCTURED_REVIEW_CONTRACT.md`](./STRUCTURED_REVIEW_CONTRACT.md) —
+  cassette, validation, recoverable failure, and CQI reporting semantics

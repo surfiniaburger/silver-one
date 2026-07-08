@@ -55,6 +55,33 @@ Increase review precision and reduce generic feedback.
 
 ---
 
+# Phase 2.5 — Harden Structured Review Reliability
+
+## Goal
+
+Make the local-LLM reviewer reliable enough for CI before adding specialist
+reviewers or swapping model backends.
+
+### Objectives
+
+- Treat structured output as a versioned workflow contract
+- Preserve compatibility with legacy review cassettes
+- Repair malformed JSON when safe
+- Retry bounded structured-output failures
+- Record recoverable failures without aborting the workflow
+- Separate reviewer-quality metrics from harness-reliability metrics
+
+### Success Criteria
+
+- Malformed or truncated model responses do not abort the PR workflow
+- Recoverable evaluation failures are visible but excluded from CQI averages
+- Validation telemetry explains repair, retry, and final-failure behavior
+- CI reports distinguish invalid reviews from missing reviews
+
+Contract details live in `STRUCTURED_REVIEW_CONTRACT.md`.
+
+---
+
 # Phase 3 — Introduce Specialist Reviewers
 
 ## Goal

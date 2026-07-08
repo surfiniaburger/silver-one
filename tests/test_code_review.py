@@ -21,20 +21,6 @@ class MathOps:
 """
 
 
-def valid_review_payload(severity="OK"):
-    return {
-        "readability": {"score": 8, "rationale": "ok"},
-        "maintainability": {"score": 8, "rationale": "ok"},
-        "correctness": {"score": 8, "rationale": "ok"},
-        "complexity": {"score": 8, "rationale": "ok"},
-        "security": {"score": 8, "rationale": "ok"},
-        "test_coverage": {"score": 8, "rationale": "ok"},
-        "severity": severity,
-        "summary": "legacy review",
-        "findings": [],
-    }
-
-
 def test_function_visitor():
     visitor = diff_extractor.FunctionVisitor(SAMPLE_CODE)
     import ast
@@ -225,7 +211,7 @@ def test_code_review_block_requires_structured_block_finding():
     assert ok_units == []
 
 
-def test_get_reviews_wraps_legacy_review_payload():
+def test_get_reviews_wraps_legacy_review_payload(valid_review_payload):
     legacy_review = valid_review_payload()
 
     reviews = code_review_compare.get_reviews({"reviews": [legacy_review]})
@@ -245,7 +231,7 @@ def test_get_reviews_wraps_legacy_review_payload():
     assert code_review_compare.calculate_cqi_result(unit["review"]).valid is True
 
 
-def test_get_reviews_preserves_legacy_unit_metadata():
+def test_get_reviews_preserves_legacy_unit_metadata(valid_review_payload):
     legacy_unit = {
         **valid_review_payload("WARN"),
         "file_path": "src/legacy.py",
@@ -262,7 +248,7 @@ def test_get_reviews_preserves_legacy_unit_metadata():
     assert unit["review"]["severity"] == "WARN"
 
 
-def test_get_reviews_supplies_defaults_for_null_wrapped_fields():
+def test_get_reviews_supplies_defaults_for_null_wrapped_fields(valid_review_payload):
     wrapped_unit = {
         "file_path": "src/current.py",
         "name": "current_helper",
