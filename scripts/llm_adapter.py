@@ -644,6 +644,10 @@ def _messages_with_schema_retry_feedback(
     return [
         *messages,
         {
+            "role": "assistant",
+            "content": exc.raw_response,
+        },
+        {
             "role": "user",
             "content": _schema_retry_feedback(exc, schema_name, schema_model),
         },
@@ -694,7 +698,7 @@ async def _call_replay_manager_with_retries(
             )
             if attempt < max_retries:
                 attempt_messages = _messages_with_schema_retry_feedback(
-                    messages,
+                    attempt_messages,
                     exc,
                     schema_name,
                     schema_model,
@@ -750,7 +754,7 @@ async def _call_provider_with_retries(
             )
             if attempt < max_retries:
                 attempt_messages = _messages_with_schema_retry_feedback(
-                    messages,
+                    attempt_messages,
                     exc,
                     schema_name,
                     schema_model,
