@@ -855,66 +855,6 @@
       }
     },
     {
-      "id": "tests/test_compatibility.py::test_compare_signatures_renamed_parameter",
-      "file_path": "tests/test_compatibility.py",
-      "test_name": "test_compare_signatures_renamed_parameter",
-      "class_name": null,
-      "farley_index": 7.75,
-      "farley_breakdown": {
-        "understandable": {
-          "score": 8,
-          "rationale": "The test name and logic are clear: it verifies that comparing signatures of renamed parameters correctly identifies the removed parameter.",
-          "suggestions": []
-        },
-        "maintainable": {
-          "score": 7,
-          "rationale": "It is maintainable as long as `extract_api_signatures` and `compare_signatures` remain stable; however, it relies on these internal functions which may change.",
-          "suggestions": [
-            "Ensure the helper functions are unit-tested or documented to prevent breaking changes."
-          ]
-        },
-        "repeatable": {
-          "score": 9,
-          "rationale": "The test is fully self-contained with no external dependencies like databases, networks, file systems, or timing.",
-          "suggestions": []
-        },
-        "atomic": {
-          "score": 8,
-          "rationale": "It verifies exactly one behavior: the presence of a specific removed parameter in the comparison result. If it fails, the cause is immediately obvious (missing assertion).",
-          "suggestions": [
-            "Consider adding an explicit `assert False` if no such removal was detected to make failure modes more visible."
-          ]
-        },
-        "necessary": {
-          "score": 6,
-          "rationale": "It likely duplicates coverage of existing tests for signature comparison or parameter renaming. It should be removed unless it fills a specific gap not covered elsewhere.",
-          "suggestions": [
-            "Review the test suite to ensure this specific case is uniquely tested and remove redundancy."
-          ]
-        },
-        "granular": {
-          "score": 7,
-          "rationale": "It targets one aspect of signature comparison (renamed parameters), but could be more granular by checking for other edge cases like missing parameters or order mismatches.",
-          "suggestions": [
-            "Add assertions to check that the removed parameter is actually in `base` and not just renamed, ensuring a deeper understanding of the logic."
-          ]
-        },
-        "fast": {
-          "score": 9,
-          "rationale": "The test executes instantly with no artificial delays or heavy I/O operations.",
-          "suggestions": []
-        },
-        "first_tdd": {
-          "score": 8,
-          "rationale": "It follows the Arrange-Act-Assert pattern: `base` and `pr` are arranged (defined), then compared via a function call (`act`), and assertions verify behavior. However, it lacks explicit setup for mocking external dependencies if any existed.",
-          "suggestions": [
-            "Ensure all inputs to helper functions are mocked or isolated in the Arrange phase to prevent side effects."
-          ]
-        },
-        "summary": "The test is well-structured and fast but risks redundancy. It should be evaluated against existing signature tests for necessity, while maintaining its atomicity through explicit failure assertions if not already present."
-      }
-    },
-    {
       "id": "tests/test_compatibility.py::test_compare_signatures_added_parameter_no_default",
       "file_path": "tests/test_compatibility.py",
       "test_name": "test_compare_signatures_added_parameter_no_default",
@@ -1254,76 +1194,6 @@
       }
     },
     {
-      "id": "tests/test_compatibility.py::test_run_compatibility_check_not_executed",
-      "file_path": "tests/test_compatibility.py",
-      "test_name": "test_run_compatibility_check_not_executed",
-      "class_name": null,
-      "farley_index": 4.5,
-      "farley_breakdown": {
-        "understandable": {
-          "score": 6,
-          "rationale": "The test name is vague and does not clearly state the business rule being tested (e.g., 'Verify that running a compatibility check when no changes exist returns NOT_EXECUTED').",
-          "suggestions": [
-            "Rename to `test_run_compatibility_check_not_executed_when_no_changes` or similar.",
-            "Explicitly describe in comments: 'Verifies the system correctly identifies an unchanged repository as not requiring execution.'",
-            "Ensure all assertions clearly map to a specific business rule rather than just checking variable values."
-          ]
-        },
-        "maintainable": {
-          "score": 4,
-          "rationale": "The test relies on `monkeypatch` and mocks the internal implementation (`scripts.compatibility_check.get_changed_lines`). This makes it brittle; if that function is refactored or removed in production code, the test will fail.",
-          "suggestions": [
-            "Remove all mocking. The test should verify behavior directly against a real (or mocked) external dependency without altering internal implementation details."
-          ]
-        },
-        "repeatable": {
-          "score": 5,
-          "rationale": "The test relies on `pytest.approx(10.0)` which is non-deterministic due to floating-point precision and potential environment variations (e.g., different Python versions). It also lacks a clear self-contained setup.",
-          "suggestions": [
-            "Replace `pytest.approx` with an integer comparison like `assert result.score == 10`.",
-            "Ensure the test is fully deterministic by removing any reliance on external state or environment variables."
-          ]
-        },
-        "atomic": {
-          "score": 7,
-          "rationale": "The test verifies exactly one behavior: that `result.state` equals 'NOT_EXECUTED'. However, it also checks unrelated attributes (`compatible`, `score`) which might be side effects of the logic flow rather than direct assertions about the specific rule.",
-          "suggestions": [
-            "Isolate the assertion to only check what is necessary for the business rule: e.g., `assert result.state == 'NOT_EXECUTED'`."
-          ]
-        },
-        "necessary": {
-          "score": 3,
-          "rationale": "The test checks multiple attributes (`state`, `compatible`, `score`) which likely cover different aspects of the system. This duplicates coverage or tests trivial details (like a hardcoded score) rather than isolating one specific behavior.",
-          "suggestions": [
-            "Remove assertions for unrelated fields like `result.compatible` and `result.score`.",
-            "Ensure every assertion is strictly necessary to verify the unique purpose of this test."
-          ]
-        },
-        "granular": {
-          "score": 4,
-          "rationale": "The test does not isolate a specific behavior. It checks multiple unrelated properties simultaneously without clearly defining what 'NOT_EXECUTED' implies in terms of logic flow.",
-          "suggestions": [
-            "Focus on one clear assertion: `assert result.state == 'NOT_EXECUTED'`."
-          ]
-        },
-        "fast": {
-          "score": 5,
-          "rationale": "The test uses a lambda function to mock an external dependency (`scripts.compatibility_check.get_changed_lines`). This adds overhead compared to direct mocking or real execution if the mocked value is complex.",
-          "suggestions": [
-            "Use `patch` with string literals for simple mocks, avoiding lambdas unless necessary."
-          ]
-        },
-        "first_tdd": {
-          "score": 2,
-          "rationale": "The test does not demonstrate the Arrange-Act-Assert pattern. It directly asserts values without first setting up a clean state or acting on it in isolation.",
-          "suggestions": [
-            "Adopt TDD: Act (run check), Assert (check result). Do not assert before arranging."
-          ]
-        },
-        "summary": "The test is poorly written, brittle due to mocking and non-deterministic assertions. It fails the 'atomic' property by checking multiple unrelated fields and lacks clarity in intent or TDD structure. Immediate refactoring of mocks and assertion logic is required."
-      }
-    },
-    {
       "id": "tests/test_compatibility.py::test_run_compatibility_check_failed_diff",
       "file_path": "tests/test_compatibility.py",
       "test_name": "test_run_compatibility_check_failed_diff",
@@ -1659,55 +1529,70 @@
       "file_path": "tests/test_call_structured_json_wrapper.py",
       "test_name": "test_call_structured_handles_markdown_wrapped_json",
       "class_name": null,
-      "farley_index": 7.375,
+      "farley_index": 5.75,
       "farley_breakdown": {
         "understandable": {
-          "score": 8,
-          "rationale": "The test name and assertion clearly define the business rule: verifying that a structured call returns an object with a 'summary' field.",
-          "suggestions": []
+          "score": 4,
+          "rationale": "The test name is verbose and opaque; the assertion `assert isinstance(validated, DummyModel)` fails to verify core business logic (markdown handling) or even that a call occurred.",
+          "suggestions": [
+            "Rename: `test_call_structured_handles_markdown_wrapped_json` -> `test_handle_markdown_wrapper_returns_valid_summary`.",
+            "Remove flaky assertions about specific class instances; assert on data fields directly (`assert validated.data['summary'] == 'ok'`).",
+            "Ensure the test name describes *what* was tested, not just that it ran.",
+            "Avoid low-level implementation details like mocking internal adapters unless necessary."
+          ]
         },
         "maintainable": {
-          "score": 7,
-          "rationale": "It is maintainable because it does not depend on internal implementation details like specific model classes or external libraries; however, the test relies heavily on mocking `llm_adapter` which can be brittle if that adapter changes.",
+          "score": 3,
+          "rationale": "The test mocks `llm_adapter` directly. If the underlying library changes its signature or behavior (refactoring), this brittle test will fail immediately without revealing a bug in your logic.",
           "suggestions": [
-            "Remove direct dependency on a specific mock class type (`DummyModel`) in assertions to ensure tests pass regardless of underlying implementations."
+            "Do not mock internal adapters (`_call_litellm_async`) unless testing that specific function's implementation; instead, use `pytest-asyncio` fixtures to inject the adapter or rely on dependency injection patterns if available.",
+            "Ensure the test does not depend on external state (like a running database) and is self-contained within its own scope.",
+            "Refactor dependencies: move mock setup into an async fixture rather than inline function calls."
           ]
         },
         "repeatable": {
           "score": 9,
-          "rationale": "The test is fully self-contained and deterministic. It uses only the provided `monkeypatch` fixture and standard library objects without relying on external state or timing.",
-          "suggestions": []
+          "rationale": "The test is fully deterministic. It uses a single `fake_litellm` helper defined inside the scope and mocks only one specific dependency (`_call_litellm_async`). No external state or timing dependencies exist.",
+          "suggestions": [
+            "Keep this structure; it meets all criteria for repeatability."
+          ]
         },
         "atomic": {
           "score": 8,
-          "rationale": "It verifies exactly one behavior: that a specific call returns an object with a 'summary' key equal to 'ok'. The failure cause is instantly obvious if the assertion fails.",
-          "suggestions": []
+          "rationale": "The test verifies exactly one behavior: that the structured call returns a `DummyModel` with a specific summary. The failure mode is clear (assertion fails), and there are no hidden side effects.",
+          "suggestions": [
+            "Ensure the mock helper does not have any other side effects outside of returning data; if it modifies global state, isolate that behavior in separate tests."
+          ]
         },
         "necessary": {
-          "score": 6,
-          "rationale": "The test appears necessary for validating the return type and summary field. However, it may duplicate coverage of other tests that already verify basic structure or specific fields like 'summary' in isolation.",
+          "score": 5,
+          "rationale": "The test verifies a specific output format. However, this is likely covered by existing unit tests for the `call_structured` function itself or integration tests with real data; it may be duplicating coverage rather than adding unique value.",
           "suggestions": [
-            "Review if this specific wrapper check is redundant given existing unit tests covering individual properties."
+            "Review if there are already tests verifying that markdown-wrapped JSON results in a valid summary. If so, refactor this test to focus on edge cases (e.g., empty input) or specific error handling scenarios not covered elsewhere."
           ]
         },
         "granular": {
-          "score": 7,
-          "rationale": "The test targets a very granular aspect: the presence and value of the `summary` field within the returned object. It isolates exactly one attribute.",
-          "suggestions": []
+          "score": 6,
+          "rationale": "The test is somewhat granular in asserting the summary field exists and has a value. However, it lacks isolation from other potential behaviors (e.g., what happens if `messages` are empty or invalid), making assertions slightly less precise than ideal.",
+          "suggestions": [
+            "Add specific boundary conditions: assert behavior when input is missing/empty vs. valid markdown JSON."
+          ]
         },
         "fast": {
           "score": 9,
-          "rationale": "There are no artificial sleeps or heavy I/O operations; it executes purely synchronously (or asynchronously without blocking) using standard async/await patterns efficiently.",
-          "suggestions": []
-        },
-        "first_tdd": {
-          "score": 5,
-          "rationale": "The test does not demonstrate the 'Arrange-Act-Assert' pattern clearly. It performs an action (`call_structured`) and immediately asserts a result without explicitly setting up distinct Arrange steps or Act phases that isolate behavior.",
+          "rationale": "The test executes rapidly with no artificial delays or heavy I/O operations. The mock function returns data immediately.",
           "suggestions": [
-            "Explicitly structure this as: `await setup()`, then `act = call_structured(...)`, then `assert act.data['summary'] == 'ok'` to clearly separate concerns."
+            "No changes needed here; the current implementation is fast."
           ]
         },
-        "summary": "The test is functional and passes the basic assertion, but it lacks explicit Arrange/Act assertions for clarity. It also relies on a specific mock class type which risks breaking if that implementation changes without updating this test. The summary field itself was correctly identified as passing in your previous attempt (likely due to how Pydantic handles missing keys or defaults), so ensure the schema validation logic is robust against empty objects."
+        "first_tdd": {
+          "score": 2,
+          "rationale": "This test violates core TDD principles. It does not specify behavior first (specifying what to assert); it assumes a specific return type (`DummyModel`) and checks for its existence rather than verifying the logic of handling markdown wrappers.",
+          "suggestions": [
+            "Adopt Arrange-Act-Assert: First write an assertion that fails, then implement code to make it pass. The test should verify `validated.data['summary'] == 'ok'` directly without pre-defining a mock class type."
+          ]
+        },
+        "summary": ""
       }
     },
     {
@@ -2555,56 +2440,6 @@
           ]
         },
         "summary": "The test is mostly functional but suffers from brittle inputs, potential non-purity in dependencies, and redundancy. It should be refactored into smaller, more granular tests with pre-computed expectations for true first-TDD compliance."
-      }
-    },
-    {
-      "id": "tests/test_code_review.py::test_calculate_cqi_result_rejects_missing_dimension",
-      "file_path": "tests/test_code_review.py",
-      "test_name": "test_calculate_cqi_result_rejects_missing_dimension",
-      "class_name": null,
-      "farley_index": 7.75,
-      "farley_breakdown": {
-        "understandable": {
-          "score": 8,
-          "rationale": "The test name and assertions clearly define the business rule: a missing dimension causes validation failure with an error code.",
-          "suggestions": []
-        },
-        "maintainable": {
-          "score": 7,
-          "rationale": "While decoupled from implementation details (no database/network), it relies on `code_review_compare.calculate_cqi_result` which may be brittle if that function changes logic without updating this test. The assertion 'assert result.reason' is syntactically incorrect and likely a placeholder.",
-          "suggestions": []
-        },
-        "repeatable": {
-          "score": 9,
-          "rationale": "The test is self-contained; it does not rely on external state or timing, making results deterministic across runs.",
-          "suggestions": []
-        },
-        "atomic": {
-          "score": 8,
-          "rationale": "It verifies exactly one behavior: the rejection of a missing dimension. The failure cause (missing key) and effect (error code set to 'MISSING_DIMENSION') are instantly obvious from the assertions.",
-          "suggestions": []
-        },
-        "necessary": {
-          "score": 6,
-          "rationale": "This test likely duplicates coverage already provided by other tests in this file that check for specific error codes or missing dimensions. It does not add unique value unless it covers a previously untested edge case of 'missing dimension' specifically.",
-          "suggestions": []
-        },
-        "granular": {
-          "score": 7,
-          "rationale": "The assertion is granular enough to isolate the exact failure mode (error code vs message), but could be more specific by checking for an empty string or None value in `result.reason` if that's a known attribute of this function.",
-          "suggestions": []
-        },
-        "fast": {
-          "score": 9,
-          "rationale": "There are no artificial sleeps, heavy setups, or slow I/O operations. The test executes purely on the logic flow defined by the assertions and data structure.",
-          "suggestions": []
-        },
-        "first_tdd": {
-          "score": 8,
-          "rationale": "The code follows a clean Arrange-Act-Assert pattern: `review` is set up (Arrange), `calculate_cqi_result` is called (Act), and assertions verify expected behavior (Assert). The logic flow mirrors the specification.",
-          "suggestions": []
-        },
-        "summary": "This test demonstrates strong adherence to TDD principles with clear intent, fast execution, and correct Arrange-Act-Assert structure. However, it scores lower on maintainability due to a likely syntax error in an assertion (`result.reason`) which risks breaking if `calculate_cqi_result` changes logic without updating this specific check."
       }
     },
     {
@@ -3989,68 +3824,66 @@
       "file_path": "tests/test_unified_compare.py",
       "test_name": "test_combine_token_spend_with_values",
       "class_name": null,
-      "farley_index": 7.5,
+      "farley_index": 5.625,
       "farley_breakdown": {
         "understandable": {
-          "score": 8,
-          "rationale": "The test name and assertions are clear enough for a developer familiar with the domain (LLM token costs), but could be more explicit about business rules regarding rounding or specific string formats.",
+          "score": 4,
+          "rationale": "The test lacks a clear business rule; it asserts specific string substrings without explaining the aggregation logic (e.g., why '1800 total tokens' is expected).",
           "suggestions": [
-            "Rename `test_combine_token_spend_with_values` to something like `verify_combined_cost_calculation_accuracy`.",
-            "Add comments defining the exact expected output format for 'total tokens' and cost precision (e.g., 2 decimal places)."
+            "Add an explicit description: 'Verify that token counts are correctly aggregated from two input summaries.'",
+            "Replace substring assertions with direct equality checks on computed values."
           ]
         },
         "maintainable": {
-          "score": 9,
-          "rationale": "The test is decoupled from system implementation details; it only relies on the `combine_token_spend` function's contract. It will not break if that internal logic changes.",
+          "score": 5,
+          "rationale": "The test is brittle to changes in `combine_token_spend`'s output format or internal logic; it assumes a specific string representation which may change during refactoring.",
           "suggestions": [
-            "Ensure `combine_token_spend` itself follows TDD principles and has clear input/output contracts defined in its own tests."
+            "Refactor assertions into helper functions that validate intermediate values before final aggregation, making them easier to update when the function changes."
           ]
         },
         "repeatable": {
-          "score": 7,
-          "rationale": "The test is deterministic but relies on the external function's behavior. If `combine_token_spend` uses non-deterministic logic (e.g., random seeds), this test will fail intermittently.",
+          "score": 3,
+          "rationale": "The test relies on string matching for specific output formats; if `combine_token_spend` returns a dictionary with keys like 'total_tokens' instead of plain strings (e.g., `'1800 total tokens'`), this assertion will fail.",
           "suggestions": [
-            "Verify that `combine_token_spend` has its own unit tests covering edge cases and determinism."
+            "Ensure the function returns a consistent structure regardless of input order; add assertions to verify return types and key names explicitly."
           ]
         },
         "atomic": {
-          "score": 9,
-          "rationale": "The test verifies exactly one behavior: the correctness of a specific calculation. If it fails, the cause is immediately obvious (the math or data mismatch).",
+          "score": 6,
+          "rationale": "The test verifies multiple independent behaviors (token counts, call count, cost) within one function call. While good for coverage of the combined logic, it does not isolate a single rule as strictly as an atomic unit would.",
           "suggestions": [
-            "Ensure no side effects occur during execution."
+            "Split into separate tests: one verifying token aggregation only, another calling `combine_token_spend` with different inputs to verify cost calculation independently."
           ]
         },
         "necessary": {
-          "score": 6,
-          "rationale": "This test likely duplicates coverage of other tests already verifying the `combine_token_spend` function's correctness. It should focus on edge cases or specific formatting rather than general functionality.",
+          "score": 7,
+          "rationale": "This test covers the core logic of combining two usage summaries but lacks coverage for edge cases (negative costs, zero tokens), input validation, or error handling.",
           "suggestions": [
-            "Review existing unit tests for this function to identify redundant assertions."
+            "Add tests for invalid/empty inputs to ensure graceful error handling without crashing."
           ]
         },
         "granular": {
-          "score": 7,
-          "rationale": "The test is somewhat granular in checking specific string values but could be more precise by asserting the exact numeric precision and structure of the output.",
+          "score": 5,
+          "rationale": "The test is somewhat granular regarding token counts but less so regarding cost calculation and call counting; it asserts specific values rather than validating intermediate steps like `total_tokens == calls * prompt_tokens`.",
           "suggestions": [
-            "Assert that `total_tokens` equals exactly 1800. Assert cost has exactly 6 decimal places (e.g., '0.012').",
-            "Check if there are other tests verifying these specific string formats."
+            "Assert intermediate steps: assert total_tokens equals the sum of individual costs, etc., to ensure logic is sound before final aggregation."
           ]
         },
         "fast": {
           "score": 9,
-          "rationale": "The test executes instantly without artificial delays or heavy I/O operations.",
+          "rationale": "The test executes instantly with no artificial delays or heavy I/O; it only performs dictionary lookups and arithmetic operations.",
           "suggestions": [
-            "Remove any `time.sleep()` calls if present in the function being tested."
+            "No changes needed; this is already fast."
           ]
         },
         "first_tdd": {
-          "score": 5,
-          "rationale": "The test does not demonstrate design properties; it assumes a pre-existing implementation. It lacks an 'Arrange' phase (setup) that isolates inputs and verifies expected outputs before the 'Act'.",
+          "score": 6,
+          "rationale": "The test follows a basic Arrange-Act-Assert pattern but lacks explicit separation of concerns. The 'Arrange' phase (defining inputs) is implicit in the function call rather than explicitly structured as separate setup steps.",
           "suggestions": [
-            "Implement TDD by writing tests for edge cases first, then implementing logic to pass them.",
-            "Ensure `combine_token_spend` is designed with clear separation of concerns."
+            "Explicitly structure tests with clear sections: 1) Arrange (setup inputs), 2) Act (call combine_token_spend), 3) Assert specific values."
           ]
         },
-        "summary": "The test demonstrates good isolation and speed but lacks the rigorous design verification required by First-Tested Development. It should be rewritten using TDD principles (Arrange -> Act -> Assert) to ensure it truly validates a specific behavior rather than just checking an implementation artifact."
+        "summary": ""
       }
     },
     {
@@ -4182,51 +4015,63 @@
       "file_path": "tests/test_unified_compare.py",
       "test_name": "test_parse_compatibility_result_check_failed",
       "class_name": null,
-      "farley_index": 8.75,
+      "farley_index": 6.75,
       "farley_breakdown": {
         "understandable": {
           "score": 8,
-          "rationale": "The test clearly defines the input structure and expected output values using standard Python data structures (dict/list). The intent is explicit: verifying that a specific dictionary passed to `parse_compatibility_result` yields correct attributes.",
+          "rationale": "The test clearly defines the input data structure and expected output fields without ambiguity.",
           "suggestions": []
         },
         "maintainable": {
           "score": 9,
-          "rationale": "The test relies on the internal representation of the result object rather than external state or side effects. It is decoupled from system implementation details and will not break if `parse_compatibility_result` changes its return format.",
-          "suggestions": []
+          "rationale": "The test is decoupled from system implementation details; it does not rely on external shared state or database operations.",
+          "suggestions": [
+            "Ensure that if `result` is ever modified in a different way (e.g., via side effects), these assertions would break. Consider adding an assertion like: `assert result.state == 'CHECK_FAILED' and not result.compatible`, which covers both properties simultaneously."
+          ]
         },
         "repeatable": {
-          "score": 10,
-          "rationale": "The test is fully self-contained. It uses no external shared state (like a database or network), has no timing dependencies, and produces deterministic results on every run.",
-          "suggestions": []
+          "score": 7,
+          "rationale": "The test is deterministic in execution order but relies on the external function's internal state. If `parse_compatibility_result` itself has side effects or non-deterministic behavior (e.g., random seed usage), this test will fail to reproduce consistently across runs.",
+          "suggestions": [
+            "Verify that `result.compatible`, `reason`, and `details` are purely derived from the input dictionary without any external dependencies. If possible, mock or stub these attributes in a unit test before calling `parse_compatibility_result`. Alternatively, ensure no side effects occur during execution."
+          ]
         },
         "atomic": {
-          "score": 9,
-          "rationale": "The test verifies exactly one behavior: the correctness of specific attributes within `result`. If any assertion fails (e.g., wrong value), it immediately reveals a bug in that single attribute.",
-          "suggestions": []
+          "score": 6,
+          "rationale": "The test verifies multiple assertions within one function. While the cause is obvious (all conditions must hold), if any single assertion fails due to a bug in `parse_compatibility_result`, it's harder to pinpoint which specific attribute caused the failure compared to testing them individually.",
+          "suggestions": [
+            "Split this test into two smaller, atomic tests: one verifying state and reason (`test_parse_state_and_reason`), another for compatibility index and details. This isolates failures more precisely."
+          ]
         },
         "necessary": {
-          "score": 7,
-          "rationale": "While useful for edge cases or specific error paths, this test does not cover the primary business rule of parsing compatibility results. It duplicates coverage already provided by other tests in a suite that likely handle successful and failed parses.",
+          "score": 5,
+          "rationale": "This test duplicates coverage of other similar unit tests (e.g., `parse_compatibility_result_check_passed`). It does not add unique value; it simply re-verifies the same logic in a different context. The business rule is already covered by passing cases.",
           "suggestions": [
-            "Remove assertions on `compatible` if it is derived from state rather than an explicit input parameter to avoid redundancy."
+            "Remove this specific failing case test if there are existing unit tests that cover similar scenarios (e.g., `test_parse_compatibility_result_check_passed`). Focus on edge-case or boundary-condition testing instead."
           ]
         },
         "granular": {
-          "score": 8,
-          "rationale": "The test isolates specific attributes (`state`, `reason`) and their equality checks. It does not mix unrelated logic (like parsing or error handling) into a single assertion.",
-          "suggestions": []
+          "score": 4,
+          "rationale": "The assertion logic is not granular enough. It checks multiple attributes in a single block without isolating the specific failure mode (e.g., syntax error vs. missing field). This makes debugging difficult if one attribute fails while others pass.",
+          "suggestions": [
+            "Refactor to check each attribute independently: `assert result.state == 'CHECK_FAILED'` and then separate assertions for other fields, or use a single assertion like `assert not (result.compatible is False)`."
+          ]
         },
         "fast": {
-          "score": 10,
-          "rationale": "The test executes instantly without artificial delays, heavy setup code, or unneeded I/O operations. It is purely logic-driven and efficient to run in CI/CD pipelines.",
-          "suggestions": []
+          "score": 9,
+          "rationale": "The test executes rapidly with no artificial sleeps, heavy setups, or unneeded I/O operations. It relies solely on the function call and attribute access.",
+          "suggestions": [
+            "No changes needed here; this is already fast."
+          ]
         },
         "first_tdd": {
-          "score": 9,
-          "rationale": "The test follows the Arrange-Act-Assert pattern: it defines a specific input (Arrange), calls `parse_compatibility_result` to trigger behavior (Act), and asserts expected outputs (Assert). It demonstrates that tests are designed first by focusing on contract verification.",
-          "suggestions": []
+          "score": 6,
+          "rationale": "The test follows a basic Arrange-Act-Assert pattern but lacks the 'specification' phase. It does not explicitly state what behavior should be expected before running it (e.g., `assert result.state == 'CHECK_FAILED'` is an assertion of fact rather than a specification).",
+          "suggestions": [
+            "Add a comment or inline spec: '# Expected Behavior: Parser returns CHECK_FAILED when syntax error occurs'. This clarifies the design intent and ensures future developers understand why this test exists."
+          ]
         },
-        "summary": "The test is well-structured but lacks coverage for the primary business rule. Ensure it does not duplicate existing successful parse tests."
+        "summary": "The test is understandable, maintainable, repeatable (mostly), atomic but could be split for better isolation, necessary as it covers a specific edge case not covered by passing tests, granular enough to debug individual failures quickly, fast with no overhead. However, the 'necessary' score reflects that this specific failing unit might duplicate coverage of similar scenarios if existing tests exist; removing redundant cases would improve necessity."
       }
     },
     {
@@ -4522,136 +4367,69 @@
       }
     },
     {
-      "id": "tests/test_unified_compare.py::test_write_unified_report_full",
-      "file_path": "tests/test_unified_compare.py",
-      "test_name": "test_write_unified_report_full",
-      "class_name": null,
-      "farley_index": 3.25,
-      "farley_breakdown": {
-        "understandable": {
-          "score": 3,
-          "rationale": "The test lacks a clear business rule description; it relies on external context (scripts.unified_compare) and vague assertions like 'Code review quality warning' without defining what constitutes the correct output.",
-          "suggestions": [
-            "Explicitly define the expected content of `report.md` in an assertion or comment block, not just text strings."
-          ]
-        },
-        "maintainable": {
-          "score": 2,
-          "rationale": "The test is brittle and tightly coupled to specific implementation details (e.g., hardcoded file paths like 'src/utils.py', fixed verdicts). It will fail if the code structure changes or if `write_unified_report` logic evolves.",
-          "suggestions": [
-            "Remove all hard-coded values. Use mocking for external dependencies and parameterize test data to ensure tests pass regardless of implementation details."
-          ]
-        },
-        "repeatable": {
-          "score": 4,
-          "rationale": "The test is deterministic but relies on shared state (`tmp_path`), which can be flaky across runs or environments. It also depends heavily on the specific `farley_regressions` list provided in the function arguments.",
-          "suggestions": [
-            "Ensure all external dependencies (files, paths) are mocked within the test itself to guarantee repeatability without relying on shared state."
-          ]
-        },
-        "atomic": {
-          "score": 5,
-          "rationale": "The test verifies multiple unrelated behaviors: file existence, content strings, and verdicts. If any of these assertions fail (e.g., a string mismatch), the cause is obscured by noise.",
-          "suggestions": [
-            "Isolate each assertion to verify exactly one specific behavior or rule at a time."
-          ]
-        },
-        "necessary": {
-          "score": 2,
-          "rationale": "The test duplicates coverage of other tests (e.g., checking for 'test_one' and 'Removed method foo') that likely exist elsewhere in the suite. It also verifies trivial strings rather than actual functionality.",
-          "suggestions": [
-            "Remove redundant assertions about specific string literals unless they are critical to verifying a new feature."
-          ]
-        },
-        "granular": {
-          "score": 3,
-          "rationale": "The test is not granular; it mixes file system checks with content verification and verdicts. It does not isolate the specific logic of `write_unified_report`.",
-          "suggestions": [
-            "Split this into smaller unit tests: one for writing the report, one for reading/verifying its contents."
-          ]
-        },
-        "fast": {
-          "score": 5,
-          "rationale": "The test is reasonably fast as it uses `tmp_path` and standard file operations. However, if mocked calls are not implemented correctly or external dependencies (like network) were involved in the original implementation logic, performance could degrade.",
-          "suggestions": [
-            "Ensure all mock contexts are properly configured to avoid artificial delays."
-          ]
-        },
-        "first_tdd": {
-          "score": 2,
-          "rationale": "The test does not demonstrate the 'Arrange-Act-Assert' pattern clearly. The `farley_regressions` and other data structures are passed as arguments rather than being set up within the test logic itself.",
-          "suggestions": [
-            "Implement a proper Arrange phase (setup mocks, fixtures) before Act (calling write_unified_report), followed by Asserting only what is necessary."
-          ]
-        },
-        "summary": "The test fails to meet core TDD principles due to lack of clear business rules and brittle coupling. It should be refactored into a proper Arrange-Act-Assert structure with mocked dependencies, focusing on one behavior at a time without redundant string checks or reliance on external state."
-      }
-    },
-    {
       "id": "tests/test_unified_compare.py::test_write_unified_report_null_values",
       "file_path": "tests/test_unified_compare.py",
       "test_name": "test_write_unified_report_null_values",
       "class_name": null,
-      "farley_index": 3.625,
+      "farley_index": 4.25,
       "farley_breakdown": {
         "understandable": {
-          "score": 3,
-          "rationale": "The test name and arguments are technical jargon-heavy (e.g., 'unified_verdict', 'spend_str'), making the intent unclear to a non-technical stakeholder. The business rule is obscured by implementation details like specific file paths and method names.",
+          "score": 6,
+          "rationale": "The test name and arguments are verbose but technically clear enough for a developer familiar with the project's internal jargon.",
           "suggestions": [
-            "Rewrite test name: `test_write_unified_report_with_null_values`",
-            "Remove technical jargon from arguments; describe the input data structure instead of internal methods."
+            "Explicitly state: `test_write_unified_report_null_values`: Verify that the unified comparison script correctly generates a Markdown report with no errors when input units are empty or null."
           ]
         },
         "maintainable": {
-          "score": 2,
-          "rationale": "The test is brittle to system changes. It explicitly hardcodes `src/utils.py` and specific method names (`helper`, `write_unified_report`). Any refactor of the underlying library will break this test.",
+          "score": 4,
+          "rationale": "The test is brittle to changes in `scripts.unified_compare`. If `write_unified_report` refactors its internal logic (e.g., changing how it handles missing data), this specific assertion will likely break without modification.",
           "suggestions": [
-            "Remove hardcoded file paths and internal function calls from assertions or data structures."
+            "Isolate the test by mocking `write_unified_report`'s return value or using fixtures to ensure deterministic behavior regardless of external system changes."
           ]
         },
         "repeatable": {
-          "score": 4,
-          "rationale": "The test is deterministic in execution but relies on external state (`tmp_path` directory) which can vary between runs if the filesystem isn't clean. It also depends on `spend_str`, a slow I/O operation that makes it non-repeatable for timing-sensitive metrics.",
+          "score": 3,
+          "rationale": "The test relies on a global state (`farley_regressions`, `compat_data`) that is shared across the entire application. If other tests modify these dictionaries or if external services are involved in generating them, this test will fail intermittently.",
           "suggestions": [
-            "Remove reliance on `tmp_path`; use in-memory data structures or mock external dependencies."
+            "Remove reliance on mutable global state like `farley_regressions`. Instead, use a dedicated fixture class to initialize and clean up the regression data for each run."
           ]
         },
         "atomic": {
           "score": 5,
-          "rationale": "The test verifies a single behavior (report generation with null values), which is atomic. However, the assertion checks for specific text strings (`# MSEC Unified Quality Report`, `Score: 10.0/10`) rather than verifying the *logic* of those outputs against expected business rules.",
+          "rationale": "The test verifies one specific behavior (handling null values), but it mixes two distinct concerns: checking file content (`assert # MSEC...`) and verifying a global state variable. This makes the cause of failure ambiguous if both checks fail.",
           "suggestions": [
-            "Assert that the generated report contains null values where inputs were null, not just check for specific text strings."
+            "Split this into two atomic tests or combine them with clear assertions that isolate each concern (e.g., one for 'Report Content', another for 'Global State Integrity')."
           ]
         },
         "necessary": {
-          "score": 6,
-          "rationale": "The test has a unique purpose: verifying edge case handling (nulls) in `write_unified_report`. However, it duplicates coverage of general report generation tests and does not verify the core logic flow or other regression areas.",
+          "score": 2,
+          "rationale": "This test duplicates the coverage of other existing unit tests in `test_unified_compare.py` that likely already verify report generation logic. It does not add new value to the codebase's testing suite.",
           "suggestions": [
-            "Remove this specific null-value assertion if there is already a test for normal operation; focus on edge cases only."
+            "Remove this specific assertion if it is redundant with existing tests, or refactor it into a dedicated test for 'Report Generation Edge Cases'."
           ]
         },
         "granular": {
-          "score": 2,
-          "rationale": "The test is not granular. It asserts the presence of two static strings in the output file rather than verifying specific data transformations or business logic rules related to null inputs.",
+          "score": 3,
+          "rationale": "The test asserts the presence of text strings in an output file. It does not isolate specific logic paths (e.g., handling `None` inputs vs empty lists), making it less granular than a unit test for that function.",
           "suggestions": [
-            "Assert that `report.md` contains a list with an empty string at index 0 (representing null values) instead of checking for literal text."
+            "Refactor to assert specific conditions: e.g., 'Verify report header is present AND verify no exceptions are raised when units list contains None values.'"
           ]
         },
         "fast": {
-          "score": 3,
-          "rationale": "The test is slow due to the explicit `spend_str` argument which forces a network or I/O operation. This artificial delay makes it non-repeatable and inefficient.",
+          "score": 7,
+          "rationale": "The test performs a single file read and text search. It avoids heavy setup (like database connections) or artificial delays.",
           "suggestions": [
-            "Remove the `spend_str` parameter; do not include unnecessary text in assertions."
+            "Ensure no unnecessary I/O operations are performed inside assertions; if reading large files for comparison, consider streaming instead of full read."
           ]
         },
         "first_tdd": {
           "score": 4,
-          "rationale": "The test follows a basic Arrange-Act-Assert pattern but lacks design properties. It does not clearly specify the expected behavior of `write_unified_report` before running it; instead, it assumes specific output strings.",
+          "rationale": "The test follows the Arrange-Act-Pattern (Arrange: `tmp_path`, Act: call function with data, Assert: check content). However, it lacks a clear 'specification' of *what* null values are expected to do. It is an implementation detail rather than a design property verification.",
           "suggestions": [
-            "Refactor to explicitly define input data structures and expected outputs (e.g., using a mock or fixture) rather than hardcoding text assertions."
+            "Refactor the Arrange phase to explicitly define input scenarios (e.g., `units = []`, `units = None`). Ensure the Act phase verifies both 'no crash' and 'correct output format', aligning with TDD principles of designing behavior before writing tests."
           ]
         },
-        "summary": "The test is technically functional but fails the 'Good Test' criteria due to high brittleness, lack of business rule clarity, reliance on external state, and unnecessary I/O overhead. It should be rewritten as a unit test for `write_unified_report` with mocked inputs/outputs."
+        "summary": "The test is functional but suffers from high brittleness due to global state dependencies. It mixes concerns (content vs. data integrity) which reduces atomicity, making it difficult to isolate failures and maintainable changes without breaking the entire report generation logic."
       }
     },
     {
@@ -5274,72 +5052,6 @@
       }
     },
     {
-      "id": "tests/test_llm_adapter.py::test_call_structured_nebius",
-      "file_path": "tests/test_llm_adapter.py",
-      "test_name": "test_call_structured_nebius",
-      "class_name": null,
-      "farley_index": 6.0,
-      "farley_breakdown": {
-        "understandable": {
-          "score": 6,
-          "rationale": "The test name is descriptive but the implementation details (async function definition inside a helper) obscure the business rule being tested.",
-          "suggestions": [
-            "Remove the inner `fake_nebius` async function and inline its logic directly in the main test or use a fixture to define behavior once, making it clear what inputs produce 'Good test' output."
-          ]
-        },
-        "maintainable": {
-          "score": 4,
-          "rationale": "The code is brittle because `fake_nebius` relies on monkeypatching the entire module's attribute. If `_call_nebius_async` changes signature or location in future refactors, this test will fail without updating it.",
-          "suggestions": [
-            "Extract logic into a dedicated fixture class that mocks specific behavior rather than patching arbitrary attributes of an external adapter."
-          ]
-        },
-        "repeatable": {
-          "score": 5,
-          "rationale": "The test relies on `asyncio.sleep(0)` and the global state of `llm_adapter`. While deterministic in execution order, it is not truly self-contained as external dependencies (the adapter) are involved.",
-          "suggestions": [
-            "Ensure all mocks used within this specific test do not rely on shared mutable state or slow I/O. If using a real async operation, ensure the mock returns immediately without sleep."
-          ]
-        },
-        "atomic": {
-          "score": 7,
-          "rationale": "The test verifies exactly one behavior: that `call_structured` produces 'Good test' when mocked to return specific JSON. The failure cause is immediate and unambiguous.",
-          "suggestions": [
-            "Keep the assertion simple as it currently is; no refactoring needed here."
-          ]
-        },
-        "necessary": {
-          "score": 8,
-          "rationale": "This test has a unique purpose: validating that `call_structured` works correctly with specific inputs and an expected output format. It does not duplicate coverage of other tests.",
-          "suggestions": [
-            "Ensure this is the only place in your suite testing 'nebius' model behavior to avoid redundancy."
-          ]
-        },
-        "granular": {
-          "score": 6,
-          "rationale": "The test isolates specific inputs and outputs but mixes high-level logic (mocking) with low-level implementation details in the helper function.",
-          "suggestions": [
-            "Isolate only the input/output contract. Move any mocking of side effects into a separate fixture or use `pytest.mark.asyncio` to keep assertions pure."
-          ]
-        },
-        "fast": {
-          "score": 5,
-          "rationale": "The test includes an artificial delay (`asyncio.sleep(0)`) which is technically fast but adds unnecessary overhead and potential flakiness if timing varies.",
-          "suggestions": [
-            "Replace `sleep` with a direct return value or remove it entirely since the mock already returns immediately. Remove any unneeded I/O operations."
-          ]
-        },
-        "first_tdd": {
-          "score": 7,
-          "rationale": "The test follows Arrange-Act-Pattern (Arrange: setup mocks; Act: call function with inputs; Assert: check result), but the internal helper obscures this separation.",
-          "suggestions": [
-            "Refactor to explicitly show `Arrange` (mocking) before `Act` (calling). Ensure no hidden side effects occur during 'Arrangement'."
-          ]
-        },
-        "summary": "Good test"
-      }
-    },
-    {
       "id": "tests/test_llm_adapter.py::test_select_provider_env_override",
       "file_path": "tests/test_llm_adapter.py",
       "test_name": "test_select_provider_env_override",
@@ -5396,72 +5108,6 @@
           ]
         },
         "summary": "The test is well-structured for its purpose but suffers from a lack of explicit separation between setup logic and assertions due to inline `monkeypatch` usage. While it passes the basic criteria for being 'good', moving away from runtime configuration hacks in favor of fixtures or config files would significantly improve maintainability."
-      }
-    },
-    {
-      "id": "tests/test_llm_adapter.py::test_replay_saved",
-      "file_path": "tests/test_llm_adapter.py",
-      "test_name": "test_replay_saved",
-      "class_name": null,
-      "farley_index": 4.625,
-      "farley_breakdown": {
-        "understandable": {
-          "score": 6,
-          "rationale": "The test name and logic are understandable but the business rule is obscured by a complex async wrapper function that hides what `call_structured` actually does.",
-          "suggestions": [
-            "Remove or simplify the internal `fake_litellm` helper to expose only the necessary behavior directly in the test, making it impossible for anyone else (or you) to misinterpret how inputs are processed."
-          ]
-        },
-        "maintainable": {
-          "score": 4,
-          "rationale": "The test is brittle because it relies on a specific implementation detail (`_call_litellm_async`) and mocks the entire adapter's behavior. Refactoring `llm_adapter` to use different async methods will break this test.",
-          "suggestions": [
-            "Extract the logic that validates input handling into its own unit tests instead of embedding it in a high-level integration test like `test_replay_saved`. This ensures maintainability and decoupling from implementation details."
-          ]
-        },
-        "repeatable": {
-          "score": 5,
-          "rationale": "The test is repeatable but relies on the global state of `replay.store` which persists across runs. It also depends heavily on external shared state (the replay object) rather than being self-contained.",
-          "suggestions": [
-            "Ensure all assertions are isolated to specific, single-line logic blocks without relying on mutable class attributes or persistent storage between test invocations."
-          ]
-        },
-        "atomic": {
-          "score": 7,
-          "rationale": "The test verifies exactly one behavior: that the input string is present in `replay.store`. The failure cause (missing key) is instantly obvious.",
-          "suggestions": [
-            "Keep this atomicity. However, ensure no side effects occur outside of this specific assertion block to prevent accidental state leakage."
-          ]
-        },
-        "necessary": {
-          "score": 3,
-          "rationale": "This test duplicates coverage already provided by `test_replay_saved` (which likely tests the replay mechanism) and adds no unique value. It is redundant.",
-          "suggestions": [
-            "Remove this specific assertion if it does not verify a distinct failure mode or edge case that other tests do not cover."
-          ]
-        },
-        "granular": {
-          "score": 6,
-          "rationale": "The test is somewhat granular regarding the input string but lacks granularity in verifying the correctness of `call_structured`'s internal logic.",
-          "suggestions": [
-            "Assert specific return values or detailed error messages from `call_structured` to verify its behavior, not just that data exists."
-          ]
-        },
-        "fast": {
-          "score": 2,
-          "rationale": "The test is extremely slow due to the artificial sleep (`asyncio.sleep(0)`) and heavy setup involving a full async adapter call.",
-          "suggestions": [
-            "Remove `await asyncio.sleep(0)` as it adds no value. Replace with direct assertions or use pytest-timeout if necessary, but prioritize removing unnecessary delays."
-          ]
-        },
-        "first_tdd": {
-          "score": 4,
-          "rationale": "The test follows a basic Arrange-Act-Assert pattern (mocking -> calling function -> asserting), which is the foundation of TDD. However, it lacks explicit specification of expected behavior before execution.",
-          "suggestions": [
-            "Explicitly state in the `if` block or assertion what specific condition must be met to pass, ensuring the test was designed first with a clear spec."
-          ]
-        },
-        "summary": "The provided code snippet is fundamentally flawed for production use. It violates core TDD principles by relying on external shared state (replay store), introducing artificial delays (`sleep`), and embedding implementation details that make it brittle to refactoring. The test name `test_replay_saved` suggests a focus on persistence, but the logic checks if an arbitrary string exists in a global dictionary without verifying the correctness of the LLM call itself or ensuring idempotency."
       }
     },
     {
@@ -5779,136 +5425,69 @@
       }
     },
     {
-      "id": "tests/test_llm_adapter.py::test_call_structured_retries_after_unrepairable_json",
-      "file_path": "tests/test_llm_adapter.py",
-      "test_name": "test_call_structured_retries_after_unrepairable_json",
-      "class_name": null,
-      "farley_index": 6.75,
-      "farley_breakdown": {
-        "understandable": {
-          "score": 6,
-          "rationale": "The test name is verbose and technical ('structured_retries_after_unrepairable_json'), which obscures the core business rule (retrying until valid JSON). The code lacks clear comments explaining *why* retries happen.",
-          "suggestions": [
-            "Rename to `test_retry_until_valid_json` or similar for clarity. Remove 'unrepairable' from naming if it's not a critical detail."
-          ]
-        },
-        "maintainable": {
-          "score": 7,
-          "rationale": "The test is decoupled; mocking `llm_adapter._call_litellm_async` and setting an env var are standard patterns. However, the mock function itself (`fake_litellm`) relies on a global variable `responses`, which could be brittle if that list changes in production code.",
-          "suggestions": [
-            "Ensure `responses` is defined at module level or passed as a parameter to avoid side effects from refactoring internal state."
-          ]
-        },
-        "repeatable": {
-          "score": 8,
-          "rationale": "The test is self-contained and deterministic. It does not rely on external databases, network calls (except the mocked one), or timing variations.",
-          "suggestions": [
-            "None needed."
-          ]
-        },
-        "atomic": {
-          "score": 9,
-          "rationale": "The test verifies exactly one behavior: that `call_structured_with_raw_and_diagnostics` returns a valid summary after the retry loop. The assertion chain is clear and isolated.",
-          "suggestions": [
-            "None needed."
-          ]
-        },
-        "necessary": {
-          "score": 5,
-          "rationale": "This test duplicates coverage of other tests likely testing `call_structured_with_raw_and_diagnostics` in general. It doesn't add unique value unless it specifically targets the 'retry logic' aspect not covered elsewhere.",
-          "suggestions": [
-            "Review if this specific retry scenario is already tested by existing unit/integration tests for that function."
-          ]
-        },
-        "granular": {
-          "score": 7,
-          "rationale": "It isolates the 'retry' behavior and validates a specific state change (summary becomes valid). However, it mixes retry logic with validation assertions in one block.",
-          "suggestions": [
-            "Consider separating `test_retry_logic` from `test_validation_after_retry`. This makes each test's purpose more distinct."
-          ]
-        },
-        "fast": {
-          "score": 8,
-          "rationale": "The async function uses a mocked sleep (`await asyncio.sleep(0)`), which is extremely fast. There are no artificial sleeps or heavy I/O operations in the test itself.",
-          "suggestions": [
-            "None needed."
-          ]
-        },
-        "first_tdd": {
-          "score": 4,
-          "rationale": "The code structure is not strictly TDD. The `responses` list and mock function are defined *before* the test runs (in a module-level scope or fixture), which violates the 'Arrange-Act-Assert' principle where setup should be part of the test definition.",
-          "suggestions": [
-            "Move the creation of `responses`, the mock function, and environment variables into the test itself using fixtures. Do not define them outside the async function scope."
-          ]
-        },
-        "summary": "The test is mostly good but suffers from poor naming (obscuring intent), potential brittleness due to global state in mocks, and a lack of strict TDD adherence regarding setup location. It tests specific retry logic rather than general behavior duplication or granular isolation."
-      }
-    },
-    {
       "id": "tests/test_llm_adapter.py::test_call_structured_retries_with_schema_feedback",
       "file_path": "tests/test_llm_adapter.py",
       "test_name": "test_call_structured_retries_with_schema_feedback",
       "class_name": null,
-      "farley_index": 6.875,
+      "farley_index": 7.0,
       "farley_breakdown": {
         "understandable": {
           "score": 6,
-          "rationale": "The test name is verbose and technical ('call_structured_retries_with_schema_feedback'), making it difficult for a non-LLM developer to immediately grasp the business rule without reading the code. The assertion `assert json.loads(raw)['body'] == 'ok'` mixes data access with logic, obscuring what was actually validated.",
+          "rationale": "The test name is descriptive but the implementation details (e.g., `fake_litellm`, specific message strings) are cluttered with low-level artifacts rather than business logic. The intent to verify retry behavior and schema feedback is clear enough for a developer familiar with LLM testing patterns.",
           "suggestions": [
-            "Rename test name: `test_call_structured_retries_with_schema_feedback`.",
-            "Simplify assertions to focus on business outcomes (e.g., `assert raw['body'] == 'ok'`)."
+            "Remove all mock function definitions (`fake_litellm`) from the test file; they pollute the codebase and make it harder to read what the actual integration tests are verifying."
           ]
         },
         "maintainable": {
           "score": 7,
-          "rationale": "The test is decoupled from the implementation details of `_call_litellm_async`, which adheres to TDD principles. However, it relies on `json.loads` and specific environment variable names (`LLM_STRUCTURED_MAX_RETRIES`) that could be brittle if those internal implementations change.",
+          "rationale": "The test is decoupled from system implementation details (e.g., `llm_adapter`, specific retry logic). It does not rely on brittle side effects like shared state or external services.",
           "suggestions": [
-            "Ensure mocks are robust against future changes in the underlying library's return formats."
+            "Ensure the mock function signature matches exactly what `_call_litellm_async` expects in production to prevent subtle bugs during refactoring."
           ]
         },
         "repeatable": {
           "score": 8,
-          "rationale": "The test is self-contained and deterministic. It does not rely on external shared state (like a database or network) except for the mocked `llm_adapter`. The use of an iterator ensures predictable behavior.",
+          "rationale": "The test is deterministic and self-contained. It uses a fixed sequence of responses without relying on external state or timing variations.",
           "suggestions": [
-            "None needed."
+            "Remove the `async def fake_litellm` wrapper entirely; it adds unnecessary complexity to the repeatable nature of this specific unit test."
           ]
         },
         "atomic": {
           "score": 9,
-          "rationale": "The test verifies exactly one business rule: that the retry mechanism successfully validates a schema and returns the correct response. If it fails, the cause is immediately obvious (the assertion error).",
+          "rationale": "The test verifies exactly one behavior: that a retry mechanism successfully converges on valid schema feedback after multiple attempts. The assertion `assert calls[1][-2] == ...` is precise and isolates the logic cleanly.",
           "suggestions": [
-            "None needed."
+            "Consider adding an explicit check for `diagnostics['validation_retries'] > 0` to ensure the retry loop actually executed, rather than just checking if it succeeded."
           ]
         },
         "necessary": {
           "score": 5,
-          "rationale": "This test duplicates coverage of other tests likely testing `call_structured_with_raw_and_diagnostics` in isolation. It does not add unique value; it simply re-asserts the same logic under a different name.",
+          "rationale": "This test duplicates coverage of other tests likely verifying schema validation or specific message formats. It may be testing implementation details (retry count) instead of the core business rule.",
           "suggestions": [
-            "Remove this specific assertion if covered by existing unit tests for that function."
+            "Review if this retry-specific assertion is necessary for regression testing; consider merging with a general 'schema feedback' test."
           ]
         },
         "granular": {
-          "score": 4,
-          "rationale": "The test is not granular enough. It mixes high-level assertions (`assert validated.title == 'complete'`) with low-level data access and logic (`json.loads(raw)['body']`). A better approach would isolate the retry behavior or validate specific fields directly.",
+          "score": 7,
+          "rationale": "The test targets specific aspects of the retry flow (content structure) but mixes high-level assertions (`assert calls[1][-2]`) with low-level implementation details. It could be more granular by isolating just the 'retry logic' or 'schema convergence' aspect.",
           "suggestions": [
-            "Refactor to separate validation logic from raw response parsing. Focus on testing the schema feedback mechanism specifically."
+            "Refactor to explicitly check `diagnostics['validation_retries']` and ensure it equals 3 (initial + retries) rather than inferring retry count from call history."
           ]
         },
         "fast": {
-          "score": 9,
-          "rationale": "The test executes rapidly because it uses `asyncio.sleep(0)` for mocking and avoids heavy I/O or artificial delays in assertions.",
+          "score": 8,
+          "rationale": "The test avoids artificial sleeps/delays in the assertion logic itself. However, `async def fake_litellm` introduces a synchronous sleep (`await asyncio.sleep(0)`), which is technically fast but adds overhead compared to pure unit tests.",
           "suggestions": [
-            "None needed."
+            "Remove all async/await wrappers and use standard Python functions for assertions; remove the artificial 1ms delay in `fake_litellm`. This will make execution significantly faster."
           ]
         },
         "first_tdd": {
-          "score": 7,
-          "rationale": "The test demonstrates a clean Arrange-Act-Assert structure. However, the 'Arrange' phase is weak because it mocks `llm_adapter` directly rather than setting up an isolated contract for testing.",
+          "score": 6,
+          "rationale": "The test follows a basic Arrange-Act-Assert pattern but lacks explicit separation of concerns. The 'Arrange' phase mixes setup (mocking) with data preparation in an awkward way.",
           "suggestions": [
-            "Refactor to use dependency injection or setup fixtures that isolate the adapter from other system components during the Arrange phase."
+            "Explicitly separate the mock configuration from the call logic using fixtures or context managers to demonstrate cleaner design principles."
           ]
         },
-        "summary": "The test is understandable (6) and maintainable (7), but lacks necessary uniqueness, granularity, and first-TDD structure. It repeats logic without adding value and mixes data access with business rules in assertions that could be brittle to future changes."
+        "summary": "The test is functional and decoupled but suffers from excessive implementation clutter (mock functions) that violates TDD best practices for unit tests. It should be refactored to remove mocks entirely, use synchronous assertions where possible, and explicitly verify the retry count logic rather than inferring it."
       }
     },
     {
@@ -6297,32 +5876,32 @@
     "farley_usage_summary": {
       "run_id": "main-baseline",
       "model": "ollama/qwen3.5:2b",
-      "reviewed_test_cases": 93,
+      "reviewed_test_cases": 86,
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 105,
-          "prompt_tokens": 66561,
-          "completion_tokens": 82424,
-          "total_tokens": 148985,
+          "calls": 111,
+          "prompt_tokens": 98213,
+          "completion_tokens": 90492,
+          "total_tokens": 188705,
           "cost_usd": 0.0,
           "missing_usage_calls": 0
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 105,
-            "prompt_tokens": 66561,
-            "completion_tokens": 82424,
-            "total_tokens": 148985,
+            "calls": 111,
+            "prompt_tokens": 98213,
+            "completion_tokens": 90492,
+            "total_tokens": 188705,
             "cost_usd": 0.0
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 105,
-            "prompt_tokens": 66561,
-            "completion_tokens": 82424,
-            "total_tokens": 148985,
+            "calls": 111,
+            "prompt_tokens": 98213,
+            "completion_tokens": 90492,
+            "total_tokens": 188705,
             "cost_usd": 0.0
           }
         },
@@ -6404,9 +5983,21 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 656,
-            "completion_tokens": 672,
-            "total_tokens": 1328,
+            "prompt_tokens": 1688,
+            "completion_tokens": 1024,
+            "total_tokens": 2712,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 2915,
+            "completion_tokens": 1024,
+            "total_tokens": 3939,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -6500,9 +6091,21 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 625,
-            "completion_tokens": 946,
-            "total_tokens": 1571,
+            "prompt_tokens": 1658,
+            "completion_tokens": 1024,
+            "total_tokens": 2682,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 2833,
+            "completion_tokens": 1024,
+            "total_tokens": 3857,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -6584,9 +6187,9 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 898,
-            "completion_tokens": 627,
-            "total_tokens": 1525,
+            "prompt_tokens": 1924,
+            "completion_tokens": 979,
+            "total_tokens": 2903,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -6776,9 +6379,21 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 715,
-            "completion_tokens": 527,
-            "total_tokens": 1242,
+            "prompt_tokens": 1749,
+            "completion_tokens": 1024,
+            "total_tokens": 2773,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 2982,
+            "completion_tokens": 1024,
+            "total_tokens": 4006,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -7064,9 +6679,9 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 869,
-            "completion_tokens": 838,
-            "total_tokens": 1707,
+            "prompt_tokens": 1894,
+            "completion_tokens": 806,
+            "total_tokens": 2700,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -7112,9 +6727,9 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 624,
-            "completion_tokens": 650,
-            "total_tokens": 1274,
+            "prompt_tokens": 1649,
+            "completion_tokens": 992,
+            "total_tokens": 2641,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -7196,9 +6811,21 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 1101,
-            "completion_tokens": 878,
-            "total_tokens": 1979,
+            "prompt_tokens": 2135,
+            "completion_tokens": 1024,
+            "total_tokens": 3159,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 3420,
+            "completion_tokens": 676,
+            "total_tokens": 4096,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -7220,9 +6847,9 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 877,
-            "completion_tokens": 930,
-            "total_tokens": 1807,
+            "prompt_tokens": 1910,
+            "completion_tokens": 963,
+            "total_tokens": 2873,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -7364,9 +6991,21 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 653,
-            "completion_tokens": 824,
-            "total_tokens": 1477,
+            "prompt_tokens": 1678,
+            "completion_tokens": 1024,
+            "total_tokens": 2702,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 2852,
+            "completion_tokens": 1024,
+            "total_tokens": 3876,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -7400,9 +7039,21 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 793,
-            "completion_tokens": 930,
-            "total_tokens": 1723,
+            "prompt_tokens": 1812,
+            "completion_tokens": 1024,
+            "total_tokens": 2836,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 3033,
+            "completion_tokens": 1024,
+            "total_tokens": 4057,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -7484,21 +7135,9 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 822,
-            "completion_tokens": 843,
-            "total_tokens": 1665,
-            "has_usage": true,
-            "usage_source": "provider",
-            "cost_usd": 0.0
-          },
-          {
-            "stage": "farley_evaluation",
-            "model": "ollama/qwen3.5:2b",
-            "source": "provider",
-            "generation_params": {},
-            "prompt_tokens": 666,
+            "prompt_tokens": 1851,
             "completion_tokens": 1024,
-            "total_tokens": 1690,
+            "total_tokens": 2875,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -7508,9 +7147,21 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 920,
-            "completion_tokens": 858,
-            "total_tokens": 1778,
+            "prompt_tokens": 3133,
+            "completion_tokens": 963,
+            "total_tokens": 4096,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 755,
+            "completion_tokens": 948,
+            "total_tokens": 1703,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -10301,6 +9952,519 @@
       "completion_tokens": 858,
       "prompt_tokens": 920,
       "total_tokens": 1778,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "fffda43f51f15aa3fad2a854bfc565b95a16956f6aa14685c10b8ce3e1f5c026": {
+    "id": "chatcmpl-9bbb328c-a313-493d-a316-9f8f5f2e9292",
+    "created": 1783550985,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and logic are clear enough to infer intent: comparing signatures of two functions. However, the use of `extract_api_signatures` suggests a lower-level implementation detail that obscures the business rule (signature comparison).\",\n    \"suggestions\": [\n      \"Replace internal helper function names with domain concepts like 'compare_function_signatures' or 'verify_signature_equivalence'.\",\n      \"Document what `extract_api_signatures` does in comments if it's not standard library, to ensure maintainability.\",\n      \"Avoid relying on implementation-specific helpers; prefer assertions that directly check the logic (e.g., comparing ASTs).\",\n      \"Ensure the test is self-contained and doesn't depend on external state or slow I/O.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 7,\n    \"rationale\": \"The test does not directly implement logic; it delegates to `extract_api_signatures`. This decoupling is good. However, if the implementation of this helper changes or becomes brittle (e.g., due to refactoring), the test will break unless updated manually.\",\n    \"suggestions\": [\n      \"Ensure that any internal helpers used in tests are unit-tested themselves with similar TDD principles before integration testing occurs.\",\n      \"Consider using a library like `ast` from Python's standard library if available, which provides robust signature comparison without custom wrappers.\",\n      \"Document the expected behavior of this helper function to prevent future maintenance issues during refactoring.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 9,\n    \"rationale\": \"The test is fully self-contained. It does not rely on external databases, network calls, local filesystems, or timing-dependent operations (like `time.sleep`). The logic can be reproduced exactly by running the script.\",\n    \"suggestions\": [\n      \"Remove any implicit dependencies on system time if used elsewhere in your codebase; ensure this test is deterministic regardless of environment variations.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: that the signature comparison logic correctly identifies renamed parameters. If it fails, the cause (e.g., a bug in `compare_signatures`) is instantly obvious.\",\n    \"suggestions\": [\n      \"Ensure no side effects occur during execution; this test has none.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This specific test checks a single edge case (renamed parameters). It does not duplicate coverage of other tests. However, it might be redundant if there are existing unit tests for general signature comparison logic.\",\n    \"suggestions\": [\n      \"Review the suite to ensure this test doesn't cover scenarios already tested by broader integration or regression suites.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The assertion is specific: it checks for a substring in each result string. This isolates the exact condition of 'removed or renamed parameter'. It's precise enough to catch this failure mode.\",\n    \"suggestions\": [\n      \"Consider adding an explicit check that `len(regs) == 2` alongside the substring check, as currently it relies on a side effect (the list being populated).\",\n      \"Ensure no other assertions in the test file are too broad and could mask this specific failure.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The code is pure Python with minimal overhead. There are no artificial sleeps, heavy setups, or unneeded I/O operations (like `open()`). It executes rapidly.\",\n    \"suggestions\": [\n      \"Verify that the underlying library (`extract_api_signatures`) does not introduce significant runtime delays.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"The test follows a basic Arrange-Act-Assert pattern. However, it lacks explicit setup (Arrange) that isolates the behavior from external state before acting on `extract_api_signatures`. It feels more like an integration check than a pure TDD spec.\",\n    \"suggestions\": [\n      \"Explicitly isolate inputs: create fresh instances of base and pr functions without relying on global or shared mutable state (e.g., no file paths passed as arguments).\",\n      \"Refactor to explicitly define the input contract in Arrange phase before calling `extract_api_signatures`.\",\n      \"Ensure the test is designed first by defining behavior, then implementing it with TDD loops.\"\n    ]",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 1688,
+      "total_tokens": 2712,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "cd3bc45e14759fe07f755c40c664d9dcf2117535380081b6f8ba464ec18de51d": {
+    "id": "chatcmpl-4482a771-4766-4281-aeb0-f44e0b1fcdb0",
+    "created": 1783551098,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and logic are clear enough to infer intent: comparing signatures of two functions. However, the use of `extract_api_signatures` suggests a lower-level implementation detail that obscures the business rule (signature comparison).\",\n    \"suggestions\": [\n      \"Replace internal helper function names with domain concepts like 'compare_function_signatures' or 'verify_signature_equivalence'.\",\n      \"Document what `extract_api_signatures` does in comments if it's not standard library, to ensure maintainability.\",\n      \"Avoid relying on implementation-specific helpers; prefer assertions that directly check the logic (e.g., comparing ASTs).\",\n      \"Ensure the test is self-contained and doesn't depend on external state or slow I/O.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 7,\n    \"rationale\": \"The test does not directly implement logic; it delegates to `extract_api_signatures`. This decoupling is good. However, if the implementation of this helper changes or becomes brittle (e.g., due to refactoring), the test will break unless updated manually.\",\n    \"suggestions\": [\n      \"Ensure that any internal helpers used in tests are unit-tested themselves with similar TDD principles before integration testing occurs.\",\n      \"Consider using a library like `ast` from Python's standard library if available, which provides robust signature comparison without custom wrappers.\",\n      \"Document the expected behavior of this helper function to prevent future maintenance issues during refactoring.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 9,\n    \"rationale\": \"The test is fully self-contained. It does not rely on external databases, network calls, local filesystems, or timing-dependent operations (like `time.sleep`). The logic can be reproduced exactly by running the script.\",\n    \"suggestions\": [\n      \"Remove any implicit dependencies on system time if used elsewhere in your codebase; ensure this test is deterministic regardless of environment variations.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: that the signature comparison logic correctly identifies renamed parameters. If it fails, the cause (e.g., a bug in `compare_signatures`) is instantly obvious.\",\n    \"suggestions\": [\n      \"Ensure no side effects occur during execution; this test has none.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This specific test checks a single edge case (renamed parameters). It does not duplicate coverage of other tests. However, it might be redundant if there are existing unit tests for general signature comparison logic.\",\n    \"suggestions\": [\n      \"Review the suite to ensure this test doesn't cover scenarios already tested by broader integration or regression suites.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The assertion is specific: it checks for a substring in each result string. This isolates the exact condition of 'removed or renamed parameter'. It's precise enough to catch this failure mode.\",\n    \"suggestions\": [\n      \"Consider adding an explicit check that `len(regs) == 2` alongside the substring check, as currently it relies on a side effect (the list being populated).\",\n      \"Ensure no other assertions in the test file are too broad and could mask this specific failure.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The code is pure Python with minimal overhead. There are no artificial sleeps, heavy setups, or unneeded I/O operations (like `open()`). It executes rapidly.\",\n    \"suggestions\": [\n      \"Verify that the underlying library (`extract_api_signatures`) does not introduce significant runtime delays.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"The test follows a basic Arrange-Act-Assert pattern. However, it lacks explicit setup (Arrange) that isolates the behavior from external state before acting on `extract_api_signatures`. It feels more like an integration check than a pure TDD spec.\",\n    \"suggestions\": [\n      \"Explicitly isolate inputs: create fresh instances of base and pr functions without relying on global or shared mutable state (e.g., no file paths passed as arguments).\",\n      \"Refactor to explicitly define the input contract in Arrange phase before calling `extract_api_signatures`.\",\n      \"Ensure the test is designed first by defining behavior, then implementing it with TDD loops.\"\n    ]",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 2915,
+      "total_tokens": 3939,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "86212260e14402a59d91d219c94290f8632b8c72e9cd6faf60474ae19d308bf9": {
+    "id": "chatcmpl-36f5a86e-4072-4dda-b339-348a408afdac",
+    "created": 1783551207,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 4,\n    \"rationale\": \"The test name and logic are understandable but slightly obscured by the use of `monkeypatch` to simulate a specific state change rather than describing the business rule directly. The intent is clear (verify compatibility check behavior), but it relies on mocking external implementation details (`scripts.compatibility_check.get_changed_lines`) which obscures the 'what' from the user.\",\n    \"suggestions\": [\n      \"Remove `monkeypatch` and explicitly define what data should be returned if no changes are detected. For example: `assert scripts.compatibility_check.get_changed_lines(...) == []`. This makes the test self-contained regarding its inputs/outputs without relying on external state manipulation.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 3,\n    \"rationale\": \"The test is brittle because it relies entirely on `monkeypatch` to inject a specific side effect. If the underlying implementation of `scripts.compatibility_check.get_changed_lines` changes or if external dependencies are refactored without updating this mock setup, the test will fail unexpectedly.\",\n    \"suggestions\": [\n      \"Decouple from system internals by asserting against expected return values directly (e.g., empty list for no changes) rather than mocking them. This ensures the test remains valid regardless of how `scripts.compatibility_check` is implemented in production.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 2,\n    \"rationale\": \"The test relies on external shared state (`monkeypatch`) and potentially non-deterministic behavior if the underlying script logic varies. It cannot be fully reproduced without setting up a specific mock environment.\",\n    \"suggestions\": [\n      \"Remove `monkeypatch` to ensure determinism. The test should verify expected return values directly, making it self-contained and repeatable across different environments or runs.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 5,\n    \"rationale\": \"The test verifies multiple assertions in a single block: state, `compatible` flag, and score. While this is atomic execution of the logic within one function call, it mixes verification of different properties (state vs compatibility) which can make debugging complex if they fail independently.\",\n    \"suggestions\": [\n      \"Refactor into separate test methods or assertions to isolate each property clearly: `test_run_compatibility_check_not_executed_returns_correct_state()`, etc. This improves atomicity and clarity.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"The test verifies the state of a specific check (`NOT_EXECUTED`) which is likely covered by other tests (e.g., `test_run_compatibility_check_executed`). However, it does verify two additional properties: `compatible` and `score`. If these are not critical for distinguishing this scenario from others, they may be redundant.\",\n    \"suggestions\": [\n      \"Review if verifying the score is necessary. Often, a simple state check suffices unless specific scoring logic needs validation in isolation.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 3,\n    \"rationale\": \"The test targets one behavior (the result of `run_compatibility_check_result`), but it mixes assertions about the overall state with properties (`compatible`, `score`) that might be tested elsewhere. It is not granular enough to isolate a single design decision or edge case effectively.\",\n    \"suggestions\": [\n      \"Isolate specific behaviors: one test for 'not executed' (state only), another for 'executed but compatible', and another if score logic needs verification separately.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 5,\n    \"rationale\": \"The `monkeypatch` setup is relatively fast compared to network calls or heavy I/O. However, the lack of explicit assertions on return values could lead to slower execution if the mock logic involves complex side effects.\",\n    \"suggestions\": [\n      \"Ensure all mocked functions are pure and deterministic without hidden side effects that might slow down test isolation.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 4,\n    \"rationale\": \"The code demonstrates a basic Arrange-Act-Assert pattern but lacks the explicit separation of concerns. The 'Arrange' phase (mocking) is mixed with Act and Assert in one function, making it harder to follow how the test was designed initially.\",\n    \"suggestions\": [\n      \"Explicitly separate `setup` logic from assertions: use a helper or context manager for mocking if needed. Clearly define what behavior should be 'arranged' before running the check.\"\n    ]\n  },\n  \"summary",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 1658,
+      "total_tokens": 2682,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "e97494075553577e42bff53d724c6bd22bbae2366f272dd07f6d5cc85d221b92": {
+    "id": "chatcmpl-39a410fb-8401-407a-9f64-8913c8792de8",
+    "created": 1783551319,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 4,\n    \"rationale\": \"The test name and logic are understandable but slightly obscured by the use of `monkeypatch` to simulate a specific state change rather than describing the business rule directly. The intent is clear (verify compatibility check behavior), but it relies on mocking external implementation details (`scripts.compatibility_check.get_changed_lines`) which obscures the 'what' from the user.\",\n    \"suggestions\": [\n      \"Remove `monkeypatch` and explicitly define what data should be returned if no changes are detected. For example: `assert scripts.compatibility_check.get_changed_lines(...) == []`. This makes the test self-contained regarding its inputs/outputs without relying on external state manipulation.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 3,\n    \"rationale\": \"The test is brittle because it relies entirely on `monkeypatch` to inject a specific side effect. If the underlying implementation of `scripts.compatibility_check.get_changed_lines` changes or if external dependencies are refactored without updating this mock setup, the test will fail unexpectedly.\",\n    \"suggestions\": [\n      \"Decouple from system internals by asserting against expected return values directly (e.g., empty list for no changes) rather than mocking them. This ensures the test remains valid regardless of how `scripts.compatibility_check` is implemented in production.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 2,\n    \"rationale\": \"The test relies on external shared state (`monkeypatch`) and potentially non-deterministic behavior if the underlying script logic varies. It cannot be fully reproduced without setting up a specific mock environment.\",\n    \"suggestions\": [\n      \"Remove `monkeypatch` to ensure determinism. The test should verify expected return values directly, making it self-contained and repeatable across different environments or runs.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 5,\n    \"rationale\": \"The test verifies multiple assertions in a single block: state, `compatible` flag, and score. While this is atomic execution of the logic within one function call, it mixes verification of different properties (state vs compatibility) which can make debugging complex if they fail independently.\",\n    \"suggestions\": [\n      \"Refactor into separate test methods or assertions to isolate each property clearly: `test_run_compatibility_check_not_executed_returns_correct_state()`, etc. This improves atomicity and clarity.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"The test verifies the state of a specific check (`NOT_EXECUTED`) which is likely covered by other tests (e.g., `test_run_compatibility_check_executed`). However, it does verify two additional properties: `compatible` and `score`. If these are not critical for distinguishing this scenario from others, they may be redundant.\",\n    \"suggestions\": [\n      \"Review if verifying the score is necessary. Often, a simple state check suffices unless specific scoring logic needs validation in isolation.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 3,\n    \"rationale\": \"The test targets one behavior (the result of `run_compatibility_check_result`), but it mixes assertions about the overall state with properties (`compatible`, `score`) that might be tested elsewhere. It is not granular enough to isolate a single design decision or edge case effectively.\",\n    \"suggestions\": [\n      \"Isolate specific behaviors: one test for 'not executed' (state only), another for 'executed but compatible', and another if score logic needs verification separately.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 5,\n    \"rationale\": \"The `monkeypatch` setup is relatively fast compared to network calls or heavy I/O. However, the lack of explicit assertions on return values could lead to slower execution if the mock logic involves complex side effects.\",\n    \"suggestions\": [\n      \"Ensure all mocked functions are pure and deterministic without hidden side effects that might slow down test isolation.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 4,\n    \"rationale\": \"The code demonstrates a basic Arrange-Act-Assert pattern but lacks the explicit separation of concerns. The 'Arrange' phase (mocking) is mixed with Act and Assert in one function, making it harder to follow how the test was designed initially.\",\n    \"suggestions\": [\n      \"Explicitly separate `setup` logic from assertions: use a helper or context manager for mocking if needed. Clearly define what behavior should be 'arranged' before running the check.\"\n    ]\n  },\n  \"summary",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 2833,
+      "total_tokens": 3857,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "10b6c41a8fb7ba38f400ae06367b6c4e80f8331bc18a3f8ec9f23b515141eae7": {
+    "id": "chatcmpl-21fe7df2-cd4e-4d04-a649-1f0f92f0d062",
+    "created": 1783551433,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 4,\n    \"rationale\": \"The test name is verbose and opaque; the assertion `assert isinstance(validated, DummyModel)` fails to verify core business logic (markdown handling) or even that a call occurred.\",\n    \"suggestions\": [\n      \"Rename: `test_call_structured_handles_markdown_wrapped_json` -> `test_handle_markdown_wrapper_returns_valid_summary`.\",\n      \"Remove flaky assertions about specific class instances; assert on data fields directly (`assert validated.data['summary'] == 'ok'`).\",\n      \"Ensure the test name describes *what* was tested, not just that it ran.\",\n      \"Avoid low-level implementation details like mocking internal adapters unless necessary.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 3,\n    \"rationale\": \"The test mocks `llm_adapter` directly. If the underlying library changes its signature or behavior (refactoring), this brittle test will fail immediately without revealing a bug in your logic.\",\n    \"suggestions\": [\n      \"Do not mock internal adapters (`_call_litellm_async`) unless testing that specific function's implementation; instead, use `pytest-asyncio` fixtures to inject the adapter or rely on dependency injection patterns if available.\",\n      \"Ensure the test does not depend on external state (like a running database) and is self-contained within its own scope.\",\n      \"Refactor dependencies: move mock setup into an async fixture rather than inline function calls.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 9,\n    \"rationale\": \"The test is fully deterministic. It uses a single `fake_litellm` helper defined inside the scope and mocks only one specific dependency (`_call_litellm_async`). No external state or timing dependencies exist.\",\n    \"suggestions\": [\n      \"Keep this structure; it meets all criteria for repeatability.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 8,\n    \"rationale\": \"The test verifies exactly one behavior: that the structured call returns a `DummyModel` with a specific summary. The failure mode is clear (assertion fails), and there are no hidden side effects.\",\n    \"suggestions\": [\n      \"Ensure the mock helper does not have any other side effects outside of returning data; if it modifies global state, isolate that behavior in separate tests.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"The test verifies a specific output format. However, this is likely covered by existing unit tests for the `call_structured` function itself or integration tests with real data; it may be duplicating coverage rather than adding unique value.\",\n    \"suggestions\": [\n      \"Review if there are already tests verifying that markdown-wrapped JSON results in a valid summary. If so, refactor this test to focus on edge cases (e.g., empty input) or specific error handling scenarios not covered elsewhere.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 6,\n    \"rationale\": \"The test is somewhat granular in asserting the summary field exists and has a value. However, it lacks isolation from other potential behaviors (e.g., what happens if `messages` are empty or invalid), making assertions slightly less precise than ideal.\",\n    \"suggestions\": [\n      \"Add specific boundary conditions: assert behavior when input is missing/empty vs. valid markdown JSON.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes rapidly with no artificial delays or heavy I/O operations. The mock function returns data immediately.\",\n    \"suggestions\": [\n      \"No changes needed here; the current implementation is fast.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 2,\n    \"rationale\": \"This test violates core TDD principles. It does not specify behavior first (specifying what to assert); it assumes a specific return type (`DummyModel`) and checks for its existence rather than verifying the logic of handling markdown wrappers.\",\n    \"suggestions\": [\n      \"Adopt Arrange-Act-Assert: First write an assertion that fails, then implement code to make it pass. The test should verify `validated.data['summary'] == 'ok'` directly without pre-defining a mock class type.\"\n    ]\n  },\n  \"summary\": \"\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 979,
+      "prompt_tokens": 1924,
+      "total_tokens": 2903,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "654d7bcca377c12dfc2da991783a7c4096a5ef9a92e85cc410b9da0539f5daa4": {
+    "id": "chatcmpl-86935f5a-8647-4d6e-9d01-9a587d6c0297",
+    "created": 1783551546,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 6,\n    \"rationale\": \"The test name is clear but the variable `review` lacks semantic meaning (e.g., 'missing_data'). The assertion chain mixes high-level status checks with low-level implementation details (`error_code`, `reason`).\",\n    \"suggestions\": [\n      \"Rename variables to reflect domain intent, e.g., `test_calculate_cqi_result_rejects_missing_dimension`. Use descriptive variable names like `missing_data` instead of implicit dictionary keys.\",\n      \"Remove or rename internal attributes from assertions. Focus on business rules: 'Is the result valid?', 'What is the calculated value?' (if applicable), and 'Which error occurred?'.\",\n      \"Ensure all test logic relies solely on external inputs; do not hardcode specific attribute names unless they are part of a public API contract.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 4,\n    \"rationale\": \"The test is brittle to changes in the `calculate_cqi_result` implementation. It asserts internal attributes (`error_code`, `reason`) which will change if the underlying logic refactors or adds new error codes without updating this specific unit.\",\n    \"suggestions\": [\n      \"Refactor assertions to depend only on external inputs and expected outputs, not internal state of functions being tested (DRY principle).\",\n      \"Ensure that any changes in `calculate_cqi_result` do not break the test unless they change its behavior. Ideally, use a mock or stub for side effects if necessary.\",\n      \"Avoid asserting implementation details like specific error codes (`MISSING_DIMENSION`) directly; instead, verify against expected strings defined by business logic.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 5,\n    \"rationale\": \"The test is repeatable in execution but relies on the internal state of `code_review_compare`. If that function refactors or adds side effects, this specific assertion will fail without modification.\",\n    \"suggestions\": [\n      \"Remove reliance on internal implementation details. Assert only what can be verified externally: input data and expected output values/errors.\",\n      \"Ensure the test is self-contained; it should not depend on external state (database, network) or timing-sensitive operations that could cause flakiness.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 7,\n    \"rationale\": \"The test verifies exactly one behavior: rejecting a missing dimension. However, the assertion chain mixes multiple checks in sequence, which can obscure if *any* check fails versus all failing.\",\n    \"suggestions\": [\n      \"Isolate assertions to single atomic behaviors per line or block (e.g., `if not review['missing_dim'] ...`).\",\n      \"Ensure that a failure on one assertion does not mask failures in others, making debugging harder if the test suite reports mixed results.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"The test covers specific edge case handling (missing dimension). However, it may duplicate coverage of other tests already verifying similar scenarios or trivial checks that don't add unique value.\",\n    \"suggestions\": [\n      \"Review the existing test suite to ensure this specific scenario isn't covered by more general 'validity' or 'error reporting' tests. If not, clarify why this edge case is critical enough for a dedicated unit test.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 5,\n    \"rationale\": \"The test targets the input validation logic but mixes high-level assertions (`valid`, `value`) with low-level implementation details (`error_code`). It isolates 'missing dimension' well but could be more granular by separating data structure checks from business rule validations.\",\n    \"suggestions\": [\n      \"Refactor to separate concerns: one test for input validation (e.g., checking if required keys exist), another for result calculation logic, and a third for error reporting format. This ensures the 'missing dimension' check is isolated precisely.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 8,\n    \"rationale\": \"The test executes rapidly as it contains no artificial delays, heavy setups, or slow I/O operations. It relies on dictionary lookups and simple assertions.\",\n    \"suggestions\": [\n      \"Ensure the `calculate_cqi_result` function being tested is efficient; if it involves complex loops or external calls that could introduce latency in\",\n      \"Avoid relying solely on internal attributes for validation logic to ensure speed.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 6,\n    \"rationale\": \"The test demonstrates a basic Arrange-Act-Assert",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 1749,
+      "total_tokens": 2773,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "2800f9a428629bedc1694bd787f9c68f49b4f8dfa6a27634c455c9fcc453c93e": {
+    "id": "chatcmpl-7d790e00-de70-4d6d-8c0f-26ebb3e040bf",
+    "created": 1783551661,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 6,\n    \"rationale\": \"The test name is clear but the variable `review` lacks semantic meaning (e.g., 'missing_data'). The assertion chain mixes high-level status checks with low-level implementation details (`error_code`, `reason`).\",\n    \"suggestions\": [\n      \"Rename variables to reflect domain intent, e.g., `test_calculate_cqi_result_rejects_missing_dimension`. Use descriptive variable names like `missing_data` instead of implicit dictionary keys.\",\n      \"Remove or rename internal attributes from assertions. Focus on business rules: 'Is the result valid?', 'What is the calculated value?' (if applicable), and 'Which error occurred?'.\",\n      \"Ensure all test logic relies solely on external inputs; do not hardcode specific attribute names unless they are part of a public API contract.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 4,\n    \"rationale\": \"The test is brittle to changes in the `calculate_cqi_result` implementation. It asserts internal attributes (`error_code`, `reason`) which will change if the underlying logic refactors or adds new error codes without updating this specific unit.\",\n    \"suggestions\": [\n      \"Refactor assertions to depend only on external inputs and expected outputs, not internal state of functions being tested (DRY principle).\",\n      \"Ensure that any changes in `calculate_cqi_result` do not break the test unless they change its behavior. Ideally, use a mock or stub for side effects if necessary.\",\n      \"Avoid asserting implementation details like specific error codes (`MISSING_DIMENSION`) directly; instead, verify against expected strings defined by business logic.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 5,\n    \"rationale\": \"The test is repeatable in execution but relies on the internal state of `code_review_compare`. If that function refactors or adds side effects, this specific assertion will fail without modification.\",\n    \"suggestions\": [\n      \"Remove reliance on internal implementation details. Assert only what can be verified externally: input data and expected output values/errors.\",\n      \"Ensure the test is self-contained; it should not depend on external state (database, network) or timing-sensitive operations that could cause flakiness.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 7,\n    \"rationale\": \"The test verifies exactly one behavior: rejecting a missing dimension. However, the assertion chain mixes multiple checks in sequence, which can obscure if *any* check fails versus all failing.\",\n    \"suggestions\": [\n      \"Isolate assertions to single atomic behaviors per line or block (e.g., `if not review['missing_dim'] ...`).\",\n      \"Ensure that a failure on one assertion does not mask failures in others, making debugging harder if the test suite reports mixed results.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"The test covers specific edge case handling (missing dimension). However, it may duplicate coverage of other tests already verifying similar scenarios or trivial checks that don't add unique value.\",\n    \"suggestions\": [\n      \"Review the existing test suite to ensure this specific scenario isn't covered by more general 'validity' or 'error reporting' tests. If not, clarify why this edge case is critical enough for a dedicated unit test.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 5,\n    \"rationale\": \"The test targets the input validation logic but mixes high-level assertions (`valid`, `value`) with low-level implementation details (`error_code`). It isolates 'missing dimension' well but could be more granular by separating data structure checks from business rule validations.\",\n    \"suggestions\": [\n      \"Refactor to separate concerns: one test for input validation (e.g., checking if required keys exist), another for result calculation logic, and a third for error reporting format. This ensures the 'missing dimension' check is isolated precisely.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 8,\n    \"rationale\": \"The test executes rapidly as it contains no artificial delays, heavy setups, or slow I/O operations. It relies on dictionary lookups and simple assertions.\",\n    \"suggestions\": [\n      \"Ensure the `calculate_cqi_result` function being tested is efficient; if it involves complex loops or external calls that could introduce latency in\",\n      \"Avoid relying solely on internal attributes for validation logic to ensure speed.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 6,\n    \"rationale\": \"The test demonstrates a basic Arrange-Act-Assert",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 2982,
+      "total_tokens": 4006,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "b94618927dfc5718daf9db418f43f86e7903b1dd54d7eaacc5675d6ae3f4c407": {
+    "id": "chatcmpl-60e9346e-066c-485f-815a-ab119988b8ac",
+    "created": 1783551764,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 4,\n    \"rationale\": \"The test lacks a clear business rule; it asserts specific string substrings without explaining the aggregation logic (e.g., why '1800 total tokens' is expected).\",\n    \"suggestions\": [\n      \"Add an explicit description: 'Verify that token counts are correctly aggregated from two input summaries.'\",\n      \"Replace substring assertions with direct equality checks on computed values.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 5,\n    \"rationale\": \"The test is brittle to changes in `combine_token_spend`'s output format or internal logic; it assumes a specific string representation which may change during refactoring.\",\n    \"suggestions\": [\n      \"Refactor assertions into helper functions that validate intermediate values before final aggregation, making them easier to update when the function changes.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 3,\n    \"rationale\": \"The test relies on string matching for specific output formats; if `combine_token_spend` returns a dictionary with keys like 'total_tokens' instead of plain strings (e.g., `'1800 total tokens'`), this assertion will fail.\",\n    \"suggestions\": [\n      \"Ensure the function returns a consistent structure regardless of input order; add assertions to verify return types and key names explicitly.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 6,\n    \"rationale\": \"The test verifies multiple independent behaviors (token counts, call count, cost) within one function call. While good for coverage of the combined logic, it does not isolate a single rule as strictly as an atomic unit would.\",\n    \"suggestions\": [\n      \"Split into separate tests: one verifying token aggregation only, another calling `combine_token_spend` with different inputs to verify cost calculation independently.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 7,\n    \"rationale\": \"This test covers the core logic of combining two usage summaries but lacks coverage for edge cases (negative costs, zero tokens), input validation, or error handling.\",\n    \"suggestions\": [\n      \"Add tests for invalid/empty inputs to ensure graceful error handling without crashing.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 5,\n    \"rationale\": \"The test is somewhat granular regarding token counts but less so regarding cost calculation and call counting; it asserts specific values rather than validating intermediate steps like `total_tokens == calls * prompt_tokens`.\",\n    \"suggestions\": [\n      \"Assert intermediate steps: assert total_tokens equals the sum of individual costs, etc., to ensure logic is sound before final aggregation.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes instantly with no artificial delays or heavy I/O; it only performs dictionary lookups and arithmetic operations.\",\n    \"suggestions\": [\n      \"No changes needed; this is already fast.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 6,\n    \"rationale\": \"The test follows a basic Arrange-Act-Assert pattern but lacks explicit separation of concerns. The 'Arrange' phase (defining inputs) is implicit in the function call rather than explicitly structured as separate setup steps.\",\n    \"suggestions\": [\n      \"Explicitly structure tests with clear sections: 1) Arrange (setup inputs), 2) Act (call combine_token_spend), 3) Assert specific values.\"\n    ]\n  },\n  \"summary\": \"\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 806,
+      "prompt_tokens": 1894,
+      "total_tokens": 2700,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "8a37514920c8859e43fe3f539dca5a97583ef60bc06713e476bbe025c3b94a28": {
+    "id": "chatcmpl-cfc1b200-d0d1-4240-b682-d5be12329ee8",
+    "created": 1783551873,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test clearly defines the input data structure and expected output fields without ambiguity.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"The test is decoupled from system implementation details; it does not rely on external shared state or database operations.\",\n    \"suggestions\": [\n      \"Ensure that if `result` is ever modified in a different way (e.g., via side effects), these assertions would break. Consider adding an assertion like: `assert result.state == 'CHECK_FAILED' and not result.compatible`, which covers both properties simultaneously.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic in execution order but relies on the external function's internal state. If `parse_compatibility_result` itself has side effects or non-deterministic behavior (e.g., random seed usage), this test will fail to reproduce consistently across runs.\",\n    \"suggestions\": [\n      \"Verify that `result.compatible`, `reason`, and `details` are purely derived from the input dictionary without any external dependencies. If possible, mock or stub these attributes in a unit test before calling `parse_compatibility_result`. Alternatively, ensure no side effects occur during execution.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 6,\n    \"rationale\": \"The test verifies multiple assertions within one function. While the cause is obvious (all conditions must hold), if any single assertion fails due to a bug in `parse_compatibility_result`, it's harder to pinpoint which specific attribute caused the failure compared to testing them individually.\",\n    \"suggestions\": [\n      \"Split this test into two smaller, atomic tests: one verifying state and reason (`test_parse_state_and_reason`), another for compatibility index and details. This isolates failures more precisely.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test duplicates coverage of other similar unit tests (e.g., `parse_compatibility_result_check_passed`). It does not add unique value; it simply re-verifies the same logic in a different context. The business rule is already covered by passing cases.\",\n    \"suggestions\": [\n      \"Remove this specific failing case test if there are existing unit tests that cover similar scenarios (e.g., `test_parse_compatibility_result_check_passed`). Focus on edge-case or boundary-condition testing instead.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 4,\n    \"rationale\": \"The assertion logic is not granular enough. It checks multiple attributes in a single block without isolating the specific failure mode (e.g., syntax error vs. missing field). This makes debugging difficult if one attribute fails while others pass.\",\n    \"suggestions\": [\n      \"Refactor to check each attribute independently: `assert result.state == 'CHECK_FAILED'` and then separate assertions for other fields, or use a single assertion like `assert not (result.compatible is False)`.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes rapidly with no artificial sleeps, heavy setups, or unneeded I/O operations. It relies solely on the function call and attribute access.\",\n    \"suggestions\": [\n      \"No changes needed here; this is already fast.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 6,\n    \"rationale\": \"The test follows a basic Arrange-Act-Assert pattern but lacks the 'specification' phase. It does not explicitly state what behavior should be expected before running it (e.g., `assert result.state == 'CHECK_FAILED'` is an assertion of fact rather than a specification).\",\n    \"suggestions\": [\n      \"Add a comment or inline spec: '# Expected Behavior: Parser returns CHECK_FAILED when syntax error occurs'. This clarifies the design intent and ensures future developers understand why this test exists.\"\n    ]\n  },\n  \"summary\": \"The test is understandable, maintainable, repeatable (mostly), atomic but could be split for better isolation, necessary as it covers a specific edge case not covered by passing tests, granular enough to debug individual failures quickly, fast with no overhead. However, the 'necessary' score reflects that this specific failing unit might duplicate coverage of similar scenarios if existing tests exist; removing redundant cases would improve necessity.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 992,
+      "prompt_tokens": 1649,
+      "total_tokens": 2641,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "72d6f50faff84a9d7ffb0f0f17eab4ebf9a711ee834568132f65ac760debe349": {
+    "id": "chatcmpl-ac395eac-89b6-454d-8ff4-f61fa3641a9b",
+    "created": 1783552001,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 4,\n    \"rationale\": \"The test name and arguments are technical jargon-heavy ('tmp_path', 'farley_regressions'), obscuring the core intent: verifying a report generation function. The business rule is buried in nested dictionaries rather than clear assertions.\",\n    \"suggestions\": [\n      \"Rename `test_write_unified_report_full` to something descriptive like `verify_quality_report_generation`.\",\n      \"Extract the logic for parsing 'farley_data' and 'compat_data' into helper functions or inline variables. The test should assert on specific strings ('FAIL', '**Token spend**') rather than reconstructing complex data structures.\",\n      \"Remove all references to internal implementation details like `tmp_path` (unless it's a fixture) and abstract the report generation logic if possible.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 3,\n    \"rationale\": \"The test is brittle because it relies on specific string literals in its arguments (`'Fix this function'`, `'test_one'`). If these strings change or are removed from the source code during refactoring, the test will fail immediately without revealing a deeper issue.\",\n    \"suggestions\": [\n      \"Remove hardcoded text assertions. Instead of `assert \\\"Fix this function\\\" in content`, assert that specific error messages appear when the logic fails (e.g., via mocking or exception handling).\",\n      \"Avoid passing arbitrary data structures as arguments to test functions if they are meant for internal reporting; instead, mock these inputs and verify only the output format.\",\n      \"Ensure no external state is modified. The current code modifies `out_file` directly without cleanup logic (e.g., using a context manager or explicit deletion), which violates maintainability.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 2,\n    \"rationale\": \"The test relies on external shared state: the file system (`tmp_path`) and potentially network/external services if `write_unified_report` makes calls. It is not self-contained; it depends on an arbitrary directory structure that may change between runs.\",\n    \"suggestions\": [\n      \"Use a deterministic temporary directory (e.g., `/dev/null` or a fixed path) to ensure the test can be run multiple times with identical results without relying on filesystem state.\",\n      \"Remove all I/O operations. The function should return its output directly, and assertions should verify that specific content exists in memory/output rather than reading from disk.\",\n      \"Ensure no external dependencies (network calls, database queries) are invoked within the test scope.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 5,\n    \"rationale\": \"The test verifies multiple unrelated behaviors: report generation format and specific content strings. If a failure occurs in `write_unified_report`, it is unclear which part of that function failed (e.g., formatting vs. logic), making debugging difficult.\",\n    \"suggestions\": [\n      \"Isolate the assertion to verify only one behavior at a time, such as verifying the report header or verdict string specifically.\",\n      \"Use exception-based testing: assert `AssertionError` is raised if specific conditions are not met within the function's logic flow.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"The test covers a significant portion of functionality (report generation and content verification). However, it does not verify edge cases or alternative paths. It also duplicates coverage if other tests already cover the 'FAIL' verdict logic.\",\n    \"suggestions\": [\n      \"Add assertions for error handling: what happens when `write_unified_report` receives invalid input? What about missing files?\",\n      \"Verify that the test does not duplicate existing unit tests; ensure it specifically targets a regression or an edge case previously untested.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 3,\n    \"rationale\": \"The test is too coarse-grained. It asserts on high-level strings and data structures rather than specific lines of code within the `write_unified_report` function.\",\n    \"suggestions\": [\n      \"Refactor to assert granularly: e.g., verify that line 45 contains 'FAIL' or check a specific variable's value inside the mocked call context.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 2,\n    \"rationale\": \"The test is slow due to `tmp_path` initialization and file system operations. It also includes artificial delays if any exist (none here but setup overhead counts).\",\n    \"suggestions\": [\n      \"Use a deterministic temporary directory or in-memory mock for the report generation function.\",\n      \"Remove all I",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 2135,
+      "total_tokens": 3159,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "091a75d9e768785b1656d190e6d080cfd41f4c8467cc8134365151fa2347bcfb": {
+    "id": "chatcmpl-b8216909-286f-4555-ac40-32924b027748",
+    "created": 1783552096,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 4,\n    \"rationale\": \"The test name and arguments are technical jargon-heavy ('tmp_path', 'farley_regressions'), obscuring the core intent: verifying a report generation function. The business rule is buried in nested dictionaries rather than clear assertions.\",\n    \"suggestions\": [\n      \"Rename `test_write_unified_report_full` to something descriptive like `verify_quality_report_generation`.\",\n      \"Extract the logic for parsing 'farley_data' and 'compat_data' into helper functions or inline variables. The test should assert on specific strings ('FAIL', '**Token spend**') rather than reconstructing complex data structures.\",\n      \"Remove all references to internal implementation details like `tmp_path` (unless it's a fixture) and abstract the report generation logic if possible.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 3,\n    \"rationale\": \"The test is brittle because it relies on specific string literals in its arguments (`'Fix this function'`, `'test_one'`). If these strings change or are removed from the source code during refactoring, the test will fail immediately without revealing a deeper issue.\",\n    \"suggestions\": [\n      \"Remove hardcoded text assertions. Instead of `assert \\\"Fix this function\\\" in content`, assert that specific error messages appear when the logic fails (e.g., via mocking or exception handling).\",\n      \"Avoid passing arbitrary data structures as arguments to test functions if they are meant for internal reporting; instead, mock these inputs and verify only the output format.\",\n      \"Ensure no external state is modified. The current code modifies `out_file` directly without cleanup logic (e.g., using a context manager or explicit deletion), which violates maintainability.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 2,\n    \"rationale\": \"The test relies on external shared state: the file system (`tmp_path`) and potentially network/external services if `write_unified_report` makes calls. It is not self-contained; it depends on an arbitrary directory structure that may change between runs.\",\n    \"suggestions\": [\n      \"Use a deterministic temporary directory (e.g., `/dev/null` or a fixed path) to ensure the test can be run multiple times with identical results without relying on filesystem state.\",\n      \"Remove all I/O operations. The function should return its output directly, and assertions should verify that specific content exists in memory/output rather than reading from disk.\",\n      \"Ensure no external dependencies (network calls, database queries) are invoked within the test scope.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 5,\n    \"rationale\": \"The test verifies multiple unrelated behaviors: report generation format and specific content strings. If a failure occurs in `write_unified_report`, it is unclear which part of that function failed (e.g., formatting vs. logic), making debugging difficult.\",\n    \"suggestions\": [\n      \"Isolate the assertion to verify only one behavior at a time, such as verifying the report header or verdict string specifically.\",\n      \"Use exception-based testing:",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 676,
+      "prompt_tokens": 3420,
+      "total_tokens": 4096,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "bb870bd8277e6b8ea51cb53d2c0ef59aa849ab44d5743fec252e2ddc479e97a4": {
+    "id": "chatcmpl-7224dbca-0c8a-4c39-8ddc-315b101b6cb0",
+    "created": 1783552213,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 6,\n    \"rationale\": \"The test name and arguments are verbose but technically clear enough for a developer familiar with the project's internal jargon.\",\n    \"suggestions\": [\n      \"Explicitly state: `test_write_unified_report_null_values`: Verify that the unified comparison script correctly generates a Markdown report with no errors when input units are empty or null.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 4,\n    \"rationale\": \"The test is brittle to changes in `scripts.unified_compare`. If `write_unified_report` refactors its internal logic (e.g., changing how it handles missing data), this specific assertion will likely break without modification.\",\n    \"suggestions\": [\n      \"Isolate the test by mocking `write_unified_report`'s return value or using fixtures to ensure deterministic behavior regardless of external system changes.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 3,\n    \"rationale\": \"The test relies on a global state (`farley_regressions`, `compat_data`) that is shared across the entire application. If other tests modify these dictionaries or if external services are involved in generating them, this test will fail intermittently.\",\n    \"suggestions\": [\n      \"Remove reliance on mutable global state like `farley_regressions`. Instead, use a dedicated fixture class to initialize and clean up the regression data for each run.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 5,\n    \"rationale\": \"The test verifies one specific behavior (handling null values), but it mixes two distinct concerns: checking file content (`assert # MSEC...`) and verifying a global state variable. This makes the cause of failure ambiguous if both checks fail.\",\n    \"suggestions\": [\n      \"Split this into two atomic tests or combine them with clear assertions that isolate each concern (e.g., one for 'Report Content', another for 'Global State Integrity').\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 2,\n    \"rationale\": \"This test duplicates the coverage of other existing unit tests in `test_unified_compare.py` that likely already verify report generation logic. It does not add new value to the codebase's testing suite.\",\n    \"suggestions\": [\n      \"Remove this specific assertion if it is redundant with existing tests, or refactor it into a dedicated test for 'Report Generation Edge Cases'.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 3,\n    \"rationale\": \"The test asserts the presence of text strings in an output file. It does not isolate specific logic paths (e.g., handling `None` inputs vs empty lists), making it less granular than a unit test for that function.\",\n    \"suggestions\": [\n      \"Refactor to assert specific conditions: e.g., 'Verify report header is present AND verify no exceptions are raised when units list contains None values.'\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 7,\n    \"rationale\": \"The test performs a single file read and text search. It avoids heavy setup (like database connections) or artificial delays.\",\n    \"suggestions\": [\n      \"Ensure no unnecessary I/O operations are performed inside assertions; if reading large files for comparison, consider streaming instead of full read.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 4,\n    \"rationale\": \"The test follows the Arrange-Act-Pattern (Arrange: `tmp_path`, Act: call function with data, Assert: check content). However, it lacks a clear 'specification' of *what* null values are expected to do. It is an implementation detail rather than a design property verification.\",\n    \"suggestions\": [\n      \"Refactor the Arrange phase to explicitly define input scenarios (e.g., `units = []`, `units = None`). Ensure the Act phase verifies both 'no crash' and 'correct output format', aligning with TDD principles of designing behavior before writing tests.\"\n    ]\n  },\n  \"summary\": \"The test is functional but suffers from high brittleness due to global state dependencies. It mixes concerns (content vs. data integrity) which reduces atomicity, making it difficult to isolate failures and maintainable changes without breaking the entire report generation logic.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 963,
+      "prompt_tokens": 1910,
+      "total_tokens": 2873,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "011bee3b8697354b56c60fdb47609146a11727f39ea1e9564d2cdaa5228b4b54": {
+    "id": "chatcmpl-2475819e-2771-45e6-9581-bc594f916d5f",
+    "created": 1783552327,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 4,\n    \"rationale\": \"The function name `test_call_structured_nebius` is vague and lacks a clear business rule. It does not specify what 'structured' means or how the test should behave.\",\n    \"suggestions\": [\n      \"Rename to something descriptive like `test_call_structured_llm_adapter`.\",\n      \"Add an explicit description of expected behavior in comments (e.g., 'Verify that a structured LLM call returns valid JSON').\",\n      \"Remove unnecessary context ('nebius', 'FarleyScoreBreakdown') from the function name to focus on the core logic.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 3,\n    \"rationale\": \"The test is brittle because it mocks a specific internal method (`_call_nebius_async`) and relies entirely on that mock. If `llm_adapter` refactors its implementation to use a different async mechanism or removes this hook, the test will fail.\",\n    \"suggestions\": [\n      \"Remove all monkeypatching of `_call_nebius_async`. The test should verify behavior directly against the public API (`call_structured`).\",\n      \"Ensure `fake_nebius` is a pure function that returns deterministic results without side effects or external dependencies.\",\n      \"Refactor to use TDD principles: Arrange (setup mocks), Act (run call), Assert. Do not rely on internal implementation details.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 2,\n    \"rationale\": \"The test relies heavily on `asyncio.sleep(0)` and the global state of a monkeypatched function. This makes it non-deterministic in execution time (due to sleep) and fragile if other parts of the system share that specific attribute.\",\n    \"suggestions\": [\n      \"Remove all artificial delays (`sleep`).\",\n      \"Ensure `fake_nebius` is self-contained with no reliance on external shared state or global attributes like `_call_nebius_async`. Use a dedicated fixture class if necessary.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 5,\n    \"rationale\": \"The test verifies one specific behavior: that the adapter returns valid JSON when called with structured input. However, it does not verify edge cases (e.g., empty models) or error handling for invalid inputs.\",\n    \"suggestions\": [\n      \"Add assertions to cover multiple scenarios: success case, failure on missing parameters, and return value validation.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"The test covers the core contract of `call_structured`. However, it might be redundant if there is a general integration test for LLM calls that already validates this behavior.\",\n    \"suggestions\": [\n      \"Review existing tests to ensure no other test duplicates coverage here. If not, consider removing or consolidating.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 3,\n    \"rationale\": \"The assertion `result.summary == \\\"Good test\\\"` is too coarse-grained and does not verify the actual correctness of the LLM call logic. It only checks a hardcoded string.\",\n    \"suggestions\": [\n      \"Assert specific JSON structure or content returned by the function (e.g., check keys, types).\",\n      \"Verify that `result` is an instance containing valid data rather than just checking a summary label.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 4,\n    \"rationale\": \"The test contains an artificial delay (`asyncio.sleep(0)`), which slows down execution and makes it harder to run in CI/CD pipelines compared to pure Python tests.\",\n    \"suggestions\": [\n      \"Remove `await asyncio.sleep(0)`.\",\n      \"Ensure the function body is as lightweight as possible without sacrificing correctness.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 2,\n    \"rationale\": \"The test does not demonstrate a clean separation of Arrange-Act-Assert. The 'Arrange' phase (monkeypatching) happens inside the function definition itself rather than as an explicit setup step before `act`.\",\n    \"suggestions\": [\n      \"Move all mocking/setup logic into a dedicated fixture or class outside this test method to clearly separate arrangement from action.\"\n    ]\n  },\n  \"summary\": \"The test is partially functional but fails on critical TDD principles: it mocks internal implementation details (maintainability), relies on artificial delays and global state (repeatability, fast), uses a coarse-grained assertion that lacks",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 1678,
+      "total_tokens": 2702,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "4feb333d9a64ead1b942fff28b6cf99f009b446a04073a90bc2ad85a44ed230a": {
+    "id": "chatcmpl-e14459fb-504d-49ee-b5e9-fee84c42ae17",
+    "created": 1783552447,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 4,\n    \"rationale\": \"The function name `test_call_structured_nebius` is vague and lacks a clear business rule.\",\n    \"suggestions\": [\n      \"Rename to something descriptive like `test_call_structured_llm_adapter`.\",\n      \"Add an explicit description of expected behavior in comments (e.g., 'Verify that a structured LLM call returns valid JSON').\",\n      \"Remove unnecessary context ('nebius', 'FarleyScoreBreakdown') from the function name to focus on the core logic.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 3,\n    \"rationale\": \"The test is brittle because it mocks a specific internal method (`_call_nebius_async`) and relies entirely on that mock. If `llm_adapter` refactors its implementation to use a different async mechanism or removes this hook, the test will fail.\",\n    \"suggestions\": [\n      \"Remove all monkeypatching of `_call_nebius_async`. The test should verify behavior directly against the public API (`call_structured`).\",\n      \"Ensure `fake_nebius` is a pure function that returns deterministic results without side effects or external dependencies.\",\n      \"Refactor to use TDD principles: Arrange (setup mocks), Act (run call), Assert. Do not rely on internal implementation details.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 2,\n    \"rationale\": \"The test relies heavily on `asyncio.sleep(0)` and the global state of a monkeypatched function. This makes it non-deterministic in execution time (due to sleep) and fragile if other parts of the system share that specific attribute.\",\n    \"suggestions\": [\n      \"Remove all artificial delays (`sleep`).\",\n      \"Ensure `fake_nebius` is self-contained with no reliance on external shared state or global attributes like `_call_nebius_async`. Use a dedicated fixture class if necessary.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 5,\n    \"rationale\": \"The test verifies one specific behavior: that the adapter returns valid JSON when called with structured input. However, it does not verify edge cases (e.g., empty models) or error handling for invalid inputs.\",\n    \"suggestions\": [\n      \"Add assertions to cover multiple scenarios: success case, failure on missing parameters, and return value validation.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"The test covers the core contract of `call_structured`. However, it might be redundant if there is a general integration test for LLM calls that already validates this behavior.\",\n    \"suggestions\": [\n      \"Review existing tests to ensure no other test duplicates coverage here. If not, consider removing or consolidating.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 3,\n    \"rationale\": \"The assertion `result.summary == \\\"Good test\\\"` is too coarse-grained and does not verify the actual correctness of the LLM call logic. It only checks a hardcoded string.\",\n    \"suggestions\": [\n      \"Assert specific JSON structure or content returned by the function (e.g., check keys, types).\",\n      \"Verify that `result` is an instance containing valid data rather than just checking a summary label.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 4,\n    \"rationale\": \"The test contains an artificial delay (`asyncio.sleep(0)`), which slows down execution and makes it harder to run in CI/CD pipelines compared to pure Python tests.\",\n    \"suggestions\": [\n      \"Remove `await asyncio.sleep(0)`.\",\n      \"Ensure the function body is as lightweight as possible without sacrificing correctness.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 2,\n    \"rationale\": \"The test does not demonstrate a clean separation of Arrange-Act-Assert. The 'Arrange' phase (monkeypatching) happens inside the function definition itself rather than as an explicit setup step before `act`.\",\n    \"suggestions\": [\n      \"Move all mocking/setup logic into a dedicated fixture or class outside this test method to clearly separate arrangement from action.\"\n    ]\n  },\n  \"summary\": \"The test is partially functional but fails on critical TDD principles: it mocks internal implementation details (maintainability), relies on artificial delays and global state (repeatability, fast), uses a coarse-grained assertion that lacks context. It should be refactored to remove monkeypatching of private methods",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 2852,
+      "total_tokens": 3876,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "8fae56851a5e77f3bb7063deeb53be6b0468b3a954f085f0c91ba8a0f6d19ed6": {
+    "id": "chatcmpl-e98c5faf-4663-4e48-8d0f-20f0ff454227",
+    "created": 1783552565,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the input and expected output structure via `SAMPLE_FARLEY`. The intent is to verify that a specific unique identifier survives an async call.\", \"suggestions\": [\"Define `SAMPLE_FARLEY` as a dictionary containing at least one key representing actual saved state (e.g., `{\\\"id\\\": \\\"unique_input_xyz\\\", ...}`). If this is purely in-memory, the test should verify data integrity within the object rather than relying on string presence which could be fragile.\", \"maintainable\", \"repeatable\", \"atomic\", \"necessary\", \"granular\", \"fast\", \"first_tdd\", \"summary\"]\n},\"maintainable\": {\"score\": 9, \"rationale\": \"The test is decoupled from the system implementation details (e.g., `llm_adapter`, `_call_litellm_async`). It mocks only what's necessary to simulate a specific behavior without touching unrelated parts of the codebase. The use of `monkeypatch` correctly isolates this unit.\", \"suggestions\": [\"Ensure that mocking does not inadvertently break other tests if they rely on shared state (e.g., global variables). If possible, consider using fixtures or context managers for better isolation than direct monkeypatching in a single test file.\",\"repeatable\", \"atomic\", \"necessary\", \"granular\", \"fast\", \"first_tdd\", \"summary\"]\n},\"repeatable\": {\"score\": 7, \"rationale\": \"The test is deterministic and self-contained in terms of logic flow (setup -> call -> assert). However, the reliance on `asyncio.sleep(0)` to simulate latency makes it non-repeatable for timing-sensitive scenarios. More importantly, if external state like a database or network was involved during execution, this would fail; currently, it assumes no such dependencies exist.\", \"suggestions\": [\"Remove artificial delays (`sleep`) and replace them with explicit assertions (e.g., `assert True` or checking return values) to ensure true determinism. If the test relies on external state that might change between runs in CI/CD environments, add a mock for those specific resources explicitly.\",\"atomic\", \"necessary\", \"granular\", \"fast\", \"first_tdd\", \"summary\"]\n},\"atomic\": {\"score\": 9, \"rationale\": \"The test verifies exactly one behavior: the presence of `unique_input_xyz` in the replay store's keys after calling a specific method with that input. If this assertion fails, it immediately indicates that either the call failed to execute or data was not saved as expected.\", \"suggestions\": [\"Ensure no side effects (e.g., logging errors) occur if the test fails; use `pytest.raises` only for exceptions you expect and handle them gracefully in CI/CD pipelines. The current structure is clean, but ensure error handling doesn't mask failures elsewhere.\",\"necessary\", \"granular\", \"fast\", \"first_tdd\", \"summary\"]\n},\"necessary\": {\"score\": 6, \"rationale\": \"The test has a unique purpose (verifying data persistence), but its assertion (`any(... in k for ...)` is broad and fragile. If the replay buffer is in-memory only and not persisted externally, verifying internal consistency checks pass rather than relying on string presence increases confidence.\", \"suggestions\": [\"Define `SAMPLE_FARLEY` to include actual saved state keys (e.g., `{\\\"id\\\": \\\"unique_input_xyz\\\", ...}`). Ensure assertions are precise (checking exact keys or values) rather than using broad existence checks like `any(... in k for ...)`. This reduces noise and increases confidence that the test is truly granular about what it's testing.\",\"granular\", \"fast\", \"first_tdd\", \"summary\"]\n},\"granular\": {\"score\": 8, \"rationale\": \"The test targets the specific behavior of saving and retrieving data within the `DummyReplay` object's store mechanism. It isolates this logic from higher-level orchestration.\", \"suggestions\": [\"Refine assertions to be more precise (e.g., checking exact keys or values) rather than using broad existence checks like `any(... in k for ...)`. This reduces noise and increases confidence that the test is truly granular about what it's testing.\",\"fast\", \"first_tdd\", \"summary\"]\n},\"fast\": {\"score\": 6, \"rationale\": \"The test contains an artificial delay (`asyncio.sleep(0)`) which can be misleading. While `sleep` doesn't add real time in this context, relying on it to simulate 'latency' is poor practice for repeatability and clarity.\", \"suggestions\": [\"Remove the artificial sleep entirely or replace it with a clear assertion (e.g., `assert True`). If simulating async behavior without actual delay, use explicit assertions. Avoiding artificial delays ensures true determinism.\",\"first_tdd\", \"summary\"]\n},\"first_t",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 1812,
+      "total_tokens": 2836,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "5bddbf07e632f1e817111a1f35526bf5663939e3e76b02c60fc7cda6834de12f": {
+    "id": "chatcmpl-13dcd2cf-560b-4681-9165-05ad585ddb21",
+    "created": 1783552684,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the input and expected output structure via `SAMPLE_FARLEY`. The intent is to verify that a specific unique identifier survives an async call.\", \"suggestions\": [\"Define `SAMPLE_FARLEY` as a dictionary containing at least one key representing actual saved state (e.g., `{\\\"id\\\": \\\"unique_input_xyz\\\", ...}`). If this is purely in-memory, the test should verify data integrity within the object rather than relying on string presence which could be fragile.\", \"maintainable\", \"repeatable\", \"atomic\", \"necessary\", \"granular\", \"fast\", \"first_tdd\", \"summary\"]\n},\"maintainable\": {\"score\": 9, \"rationale\": \"The test is decoupled from the system implementation details (e.g., `llm_adapter`, `_call_litellm_async`). It mocks only what's necessary to simulate a specific behavior without touching unrelated parts of the codebase. The use of `monkeypatch` correctly isolates this unit.\", \"suggestions\": [\"Ensure that mocking does not inadvertently break other tests if they rely on shared state (e.g., global variables). If possible, consider using fixtures or context managers for better isolation than direct monkeypatching in a single test file.\",\"repeatable\", \"atomic\", \"necessary\", \"granular\", \"fast\", \"first_tdd\", \"summary\"]\n},\"repeatable\": {\"score\": 7, \"rationale\": \"The test is deterministic and self-contained in terms of logic flow (setup -> call -> assert). However, the reliance on `asyncio.sleep(0)` to simulate latency makes it non-repeatable for timing-sensitive scenarios. More importantly, if external state like a database or network was involved during execution, this would fail; currently, it assumes no such dependencies exist.\", \"suggestions\": [\"Remove artificial delays (`sleep`) and replace them with explicit assertions (e.g., `assert True` or checking return values) to ensure true determinism. If the test relies on external state that might change between runs in CI/CD environments, add a mock for those specific resources explicitly.\",\"atomic\", \"necessary\", \"granular\", \"fast\", \"first_tdd\", \"summary\"]\n},\"atomic\": {\"score\": 9, \"rationale\": \"The test verifies exactly one behavior: the presence of `unique_input_xyz` in the replay store's keys after calling a specific method with that input. If this assertion fails, it immediately indicates that either the call failed to execute or data was not saved as expected.\", \"suggestions\": [\"Ensure no side effects (e.g., logging errors) occur if the test fails; use `pytest.raises` only for exceptions you expect and handle them gracefully in CI/CD pipelines. The current structure is clean, but ensure error handling doesn't mask failures elsewhere.\",\"necessary\", \"granular\", \"fast\", \"first_tdd\", \"summary\"]\n},\"necessary\": {\"score\": 6, \"rationale\": \"The test has a unique purpose (verifying data persistence), but its assertion (`any(... in k for ...)` is broad and fragile. If the replay buffer is in-memory only and not persisted externally, verifying internal consistency checks pass rather than relying on string presence increases confidence.\", \"suggestions\": [\"Define `SAMPLE_FARLEY` to include actual saved state keys (e.g., `{\\\"id\\\": \\\"unique_input_xyz\\\", ...}`). Ensure assertions are precise (checking exact keys or values) rather than using broad existence checks like `any(... in k for ...)`. This reduces noise and increases confidence that the test is truly granular about what it's testing.\",\"granular\", \"fast\", \"first_tdd\", \"summary\"]\n},\"granular\": {\"score\": 8, \"rationale\": \"The test targets the specific behavior of saving and retrieving data within the `DummyReplay` object's store mechanism. It isolates this logic from higher-level orchestration.\", \"suggestions\": [\"Refine assertions to be more precise (e.g., checking exact keys or values) rather than using broad existence checks like `any(... in k for ...)`. This reduces noise and increases confidence that the test is truly granular about what it's testing.\",\"fast\", \"first_tdd\", \"summary\"]\n},\"fast\": {\"score\": 6, \"rationale\": \"The test contains an artificial delay (`asyncio.sleep(0)`) which can be misleading. While `sleep` doesn't add real time in this context, relying on it to simulate 'latency' is poor practice for repeatability and clarity.\", \"suggestions\": [\"Remove the artificial sleep entirely or replace it with a clear assertion (e.g., `assert True`). If simulating async behavior without actual delay, use explicit assertions. Avoiding artificial delays ensures true determinism.\",\"first_tdd\", \"summary\"]\n},\"first_tdd\": {\"score\": 7, \"rationale\":",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 3033,
+      "total_tokens": 4057,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "c8688a97013eb583c17b0ccb74e5799ceb7457e036c1afdb4b34e39f7ffecff7": {
+    "id": "chatcmpl-ed44a8de-f919-442a-bb04-c7ae4d317751",
+    "created": 1783552800,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 4,\n    \"rationale\": \"The test name and logic are understandable but slightly obscured by the specific implementation details of `call_structured_with_raw_and_diagnostics`. The business rule (retrying until valid JSON is found) is clear enough for a TDD context, though 'unrepairable' implies an edge case that might not be immediately obvious to all readers.\",\n    \"suggestions\": [\n      \"Rename the test function from `test_call_structured_retries_after_unrepairable_json` to something more descriptive like `test_retry_until_valid_output`. The word 'after' is misleading; it should imply a condition met *during* or *before*, not necessarily immediately following an error state.\",\n      \"Remove all specific method names (`_call_litellm_async`, `call_structured_with_raw_and_diagnostics`) from the test body. Tests must define behavior, not invoke implementation details.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 3,\n    \"rationale\": \"The test is brittle to changes in how `_call_litellm_async` or `llm_adapter.call_structured_with_raw_and_diagnostics` are implemented. If the retry logic inside those methods changes (e.g., from sleep(0) to a loop), this specific assertion will fail even if the underlying behavior remains correct.\",\n    \"suggestions\": [\n      \"Extract the core 'retry until valid' logic into its own helper function or unit test, then have `test_call_structured_retries_after_unrepairable_json` only verify that the adapter correctly invokes and handles this internal retry mechanism. This decouples the specific implementation of retries from the high-level flow.\",\n      \"Ensure no external state (like a shared global variable) is used to track 'unrepaired' JSON across multiple test runs or method calls within `llm_adapter`.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 5,\n    \"rationale\": \"The test relies on an async generator (`iter([...])`) and a sleep call. While deterministic in execution order (no randomization), it is not truly self-contained because the `fake_litellm` function depends on external state management via monkeypatching to simulate network latency.\",\n    \"suggestions\": [\n      \"Replace the mock with an explicit, synchronous or clearly defined async iterator that yields values without relying on global sleep timing. Use a dedicated fixture for 'network delay' if it's not part of this specific test logic.\",\n      \"Remove `asyncio.sleep(0)` and replace it with a deterministic yield statement (e.g., `yield from responses`). This ensures the test is repeatable regardless of system clock or thread scheduling variations.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 6,\n    \"rationale\": \"The test verifies exactly one behavior: that retries occur and a valid response is eventually found. The assertions are clear (assert `diagnostics[\",\"suggestions\": [\n      \"Ensure no previous assertions cover similar scenarios (e.g., successful validation without retries). If this test is part of a suite, verify that the 'no retry needed' path exists in another test to avoid redundancy.\"\n    ]},\n  \"necessary\": {\n    \"score\": 7,\n    \"rationale\": \"This test has a unique purpose: validating the retry mechanism's success in recovering from bad input. It does not duplicate coverage of other tests and doesn't trivialize logic by checking only one edge case.\",\n    \"suggestions\": [\n      \"Ensure no previous assertions cover similar scenarios (e.g., successful validation without retries). If this test is part of a suite, verify that the 'no retry needed' path exists in another test to avoid redundancy.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 4,\n    \"rationale\": \"The assertion `assert diagnostics[\",\"suggestions\": [\n      \"Remove `await asyncio.sleep(0)`. Instead, use a deterministic yield like `yield from responses` if simulating network latency is required for other reasons (e.g., mocking response time).\",\n      \"If the goal was to simulate 'slow' I/O or processing in another test, ensure that specific behavior is isolated and not mixed with this fast retry validation.\"\n    ]},\n  \"fast\": {\n    \"score\": 8,\n    \"rationale\": \"This is the most critical failure point. The test contains an artificial sleep (`asyncio.sleep(0)`), which artificially slows down execution and violates the principle of fast tests. This makes it impossible to run in CI pipelines or performance benchmarks.\",\n    \"suggestions\": [\n      \"Remove `await asyncio.sleep(0)`. Instead, use a deterministic yield like",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 1851,
+      "total_tokens": 2875,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "f81c8c5dee08f9035f24abd6d57955a65430694ad570e4158f6f458e440b0c95": {
+    "id": "chatcmpl-b2d92e72-2123-4e10-b414-f525488a8b2a",
+    "created": 1783552914,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 4,\n    \"rationale\": \"The test name and logic are understandable but slightly obscured by the specific implementation details of `call_structured_with_raw_and_diagnostics`. The business rule (retrying until valid JSON is found) is clear enough for a TDD context, though 'unrepairable' implies an edge case that might not be immediately obvious to all readers.\",\n    \"suggestions\": [\n      \"Rename the test function from `test_call_structured_retries_after_unrepairable_json` to something more descriptive like `test_retry_until_valid_output`. The word 'after' is misleading; it should imply a condition met *during* or *before*, not necessarily immediately following an error state.\",\n      \"Remove all specific method names (`_call_litellm_async`, `call_structured_with_raw_and_diagnostics`) from the test body. Tests must define behavior, not invoke implementation details.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 3,\n    \"rationale\": \"The test is brittle to changes in how `_call_litellm_async` or `llm_adapter.call_structured_with_raw_and_diagnostics` are implemented. If the retry logic inside those methods changes (e.g., from sleep(0) to a loop), this specific assertion will fail even if the underlying behavior remains correct.\",\n    \"suggestions\": [\n      \"Extract the core 'retry until valid' logic into its own helper function or unit test, then have `test_call_structured_retries_after_unrepairable_json` only verify that the adapter correctly invokes and handles this internal retry mechanism. This decouples the specific implementation of retries from the high-level flow.\",\n      \"Ensure no external state (like a shared global variable) is used to track 'unrepaired' JSON across multiple test runs or method calls within `llm_adapter`.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 5,\n    \"rationale\": \"The test relies on an async generator (`iter([...])`) and a sleep call. While deterministic in execution order (no randomization), it is not truly self-contained because the `fake_litellm` function depends on external state management via monkeypatching to simulate network latency.\",\n    \"suggestions\": [\n      \"Replace the mock with an explicit, synchronous or clearly defined async iterator that yields values without relying on global sleep timing. Use a dedicated fixture for 'network delay' if it's not part of this specific test logic.\",\n      \"Remove `asyncio.sleep(0)` and replace it with a deterministic yield statement (e.g., `yield from responses`). This ensures the test is repeatable regardless of system clock or thread scheduling variations.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 6,\n    \"rationale\": \"The test verifies exactly one behavior: that retries occur and a valid response is eventually found. The assertions are clear (assert `diagnostics[\",\"suggestions\": [\n      \"Ensure no previous assertions cover similar scenarios (e.g., successful validation without retries). If this test is part of a suite, verify that the 'no retry needed' path exists in another test to avoid redundancy.\"\n    ]},\n  \"necessary\": {\n    \"score\": 7,\n    \"rationale\": \"This test has a unique purpose: validating the retry mechanism's success in recovering from bad input. It does not duplicate coverage of other tests and doesn't trivialize logic by checking only one edge case.\",\n    \"suggestions\": [\n      \"Ensure no previous assertions cover similar scenarios (e.g., successful validation without retries). If this test is part of a suite, verify that the 'no retry needed' path exists in another test to avoid redundancy.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 4,\n    \"rationale\": \"The assertion `assert diagnostics[\",\"suggestions\": [\n      \"Remove `await asyncio.sleep(0)`. Instead, use a deterministic yield like `yield from responses` if simulating network latency is required for other reasons (e.g., mocking response time).\",\n      \"If the goal was to simulate 'slow' I/O or processing in another test, ensure that specific behavior is isolated and not mixed with this fast retry validation.\"\n    ]},\n  \"fast\": {\n    \"score\": 8,\n    \"rationale\": \"This is the most critical failure point. The test contains an artificial",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 963,
+      "prompt_tokens": 3133,
+      "total_tokens": 4096,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "3ca37569d1b378540eecfb65030c36c052f3e7b1467a02d03a834e914a4514b0": {
+    "id": "chatcmpl-cb179ee3-9128-453b-8254-028ad2cc6539",
+    "created": 1783552998,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 6,\n    \"rationale\": \"The test name is descriptive but the implementation details (e.g., `fake_litellm`, specific message strings) are cluttered with low-level artifacts rather than business logic. The intent to verify retry behavior and schema feedback is clear enough for a developer familiar with LLM testing patterns.\",\n    \"suggestions\": [\n      \"Remove all mock function definitions (`fake_litellm`) from the test file; they pollute the codebase and make it harder to read what the actual integration tests are verifying.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is decoupled from system implementation details (e.g., `llm_adapter`, specific retry logic). It does not rely on brittle side effects like shared state or external services.\",\n    \"suggestions\": [\n      \"Ensure the mock function signature matches exactly what `_call_litellm_async` expects in production to prevent subtle bugs during refactoring.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 8,\n    \"rationale\": \"The test is deterministic and self-contained. It uses a fixed sequence of responses without relying on external state or timing variations.\",\n    \"suggestions\": [\n      \"Remove the `async def fake_litellm` wrapper entirely; it adds unnecessary complexity to the repeatable nature of this specific unit test.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: that a retry mechanism successfully converges on valid schema feedback after multiple attempts. The assertion `assert calls[1][-2] == ...` is precise and isolates the logic cleanly.\",\n    \"suggestions\": [\n      \"Consider adding an explicit check for `diagnostics['validation_retries'] > 0` to ensure the retry loop actually executed, rather than just checking if it succeeded.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test duplicates coverage of other tests likely verifying schema validation or specific message formats. It may be testing implementation details (retry count) instead of the core business rule.\",\n    \"suggestions\": [\n      \"Review if this retry-specific assertion is necessary for regression testing; consider merging with a general 'schema feedback' test.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 7,\n    \"rationale\": \"The test targets specific aspects of the retry flow (content structure) but mixes high-level assertions (`assert calls[1][-2]`) with low-level implementation details. It could be more granular by isolating just the 'retry logic' or 'schema convergence' aspect.\",\n    \"suggestions\": [\n      \"Refactor to explicitly check `diagnostics['validation_retries']` and ensure it equals 3 (initial + retries) rather than inferring retry count from call history.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 8,\n    \"rationale\": \"The test avoids artificial sleeps/delays in the assertion logic itself. However, `async def fake_litellm` introduces a synchronous sleep (`await asyncio.sleep(0)`), which is technically fast but adds overhead compared to pure unit tests.\",\n    \"suggestions\": [\n      \"Remove all async/await wrappers and use standard Python functions for assertions; remove the artificial 1ms delay in `fake_litellm`. This will make execution significantly faster.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 6,\n    \"rationale\": \"The test follows a basic Arrange-Act-Assert pattern but lacks explicit separation of concerns. The 'Arrange' phase mixes setup (mocking) with data preparation in an awkward way.\",\n    \"suggestions\": [\n      \"Explicitly separate the mock configuration from the call logic using fixtures or context managers to demonstrate cleaner design principles.\"\n    ]\n  },\n  \"summary\": \"The test is functional and decoupled but suffers from excessive implementation clutter (mock functions) that violates TDD best practices for unit tests. It should be refactored to remove mocks entirely, use synchronous assertions where possible, and explicitly verify the retry count logic rather than inferring it.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 948,
+      "prompt_tokens": 755,
+      "total_tokens": 1703,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
