@@ -612,6 +612,44 @@ def _record_structured_attempt_failure(
     return _merge_structured_diagnostics(cumulative_diagnostics, exc.diagnostics)
 
 
+def _schema_field_names(schema_model: Type) -> List[str]:
+    fields = getattr(schema_model, "model_fields", None)
+    if isinstance(fields, dict):
+        return list(fields.keys())
+    legacy_fields = getattr(schema_model, "__fields__", None)
+    if isinstance(legacy_fields, dict):
+        return list(legacy_fields.keys())
+    return []
+
+
+def _schema_retry_feedback(exc: StructuredOutputError, schema_name: str, schema_model: Type) -> str:
+    fields = _schema_field_names(schema_model)
+    field_text = ", ".join(fields) if fields else "all required schema fields"
+    reason = exc.diagnostics.get("failure_reason") or str(exc)
+    return (
+        f"The previous response failed validation for {schema_name}.\n"
+        f"Validation error: {reason}\n"
+        f"Return one complete JSON object that satisfies {schema_name}. "
+        f"Include every required top-level field: {field_text}.\n"
+        "Do not include markdown, prose, comments, or partial objects."
+    )
+
+
+def _messages_with_schema_retry_feedback(
+    messages: List[Dict],
+    exc: StructuredOutputError,
+    schema_name: str,
+    schema_model: Type,
+) -> List[Dict]:
+    return [
+        *messages,
+        {
+            "role": "user",
+            "content": _schema_retry_feedback(exc, schema_name, schema_model),
+        },
+    ]
+
+
 def _replay_lookup_with_diagnostics(
     replay_manager: Any,
     model: str,
@@ -635,12 +673,13 @@ async def _call_replay_manager_with_retries(
     max_retries: int,
 ) -> Tuple[Any, str, Dict[str, Any]]:
     cumulative_diagnostics = _diagnostics_template()
+    attempt_messages = messages
     for attempt in range(max_retries + 1):
         try:
             raw = await _call_replay_manager_async(
                 replay_manager,
                 model,
-                messages,
+                attempt_messages,
                 params,
                 schema_name,
                 schema_model,
@@ -654,6 +693,12 @@ async def _call_replay_manager_with_retries(
                 cumulative_diagnostics,
             )
             if attempt < max_retries:
+                attempt_messages = _messages_with_schema_retry_feedback(
+                    messages,
+                    exc,
+                    schema_name,
+                    schema_model,
+                )
                 continue
             exc.diagnostics = cumulative_diagnostics
             raise exc
@@ -684,8 +729,9 @@ async def _call_provider_with_retries(
     max_retries: int,
 ) -> Tuple[Any, str, Dict[str, Any]]:
     cumulative_diagnostics = _diagnostics_template()
+    attempt_messages = messages
     for attempt in range(max_retries + 1):
-        raw = await _call_litellm_or_nebius(model, messages, provider, params, schema_model)
+        raw = await _call_litellm_or_nebius(model, attempt_messages, provider, params, schema_model)
         try:
             validated, raw_str, diagnostics = _validate_raw_attempt(
                 raw,
@@ -703,6 +749,12 @@ async def _call_provider_with_retries(
                 cumulative_diagnostics,
             )
             if attempt < max_retries:
+                attempt_messages = _messages_with_schema_retry_feedback(
+                    messages,
+                    exc,
+                    schema_name,
+                    schema_model,
+                )
                 continue
             exc.diagnostics = cumulative_diagnostics
             raise exc
