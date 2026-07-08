@@ -62,44 +62,49 @@ flowchart TD
 
     F1 --> F2["Load Code Review cassette"]
     F2 --> F3["Load Farley cassette and baseline state"]
-    F3 --> F4["Run API compatibility check"]
-    F4 --> F5["Normalize code review units"]
+    F3 --> F4["Run API compatibility check<br/>write compatibility_results.json"]
+    F4 --> F5["Load API compatibility results"]
+    F5 --> F6["Normalize code review units"]
 
-    F5 --> F6{"Review unit type"}
-    F6 -- "Current UnitReviewArtifact" --> F7["Use review payload"]
-    F6 -- "Legacy direct review payload" --> F8["Wrap as UnitReviewArtifact"]
-    F6 -- "Recoverable failure" --> F9["Show as N/A<br/>exclude from CQI"]
+    F6 --> F7{"Review unit type"}
+    F7 -- "Current UnitReviewArtifact" --> F8["Use review payload"]
+    F7 -- "Legacy direct review payload" --> F9["Wrap as UnitReviewArtifact"]
+    F7 -- "Recoverable failure" --> F10["Show as N/A<br/>exclude from CQI"]
 
-    F7 --> F10["Calculate CQI"]
-    F8 --> F10
-    F9 --> F11["Collect structured-output telemetry"]
+    F8 --> F11["Calculate CQI"]
+    F9 --> F11
+    F10 --> F12["Collect structured-output telemetry"]
 
-    F10 --> F12{"Invalid CQI?"}
-    F12 -- "Yes" --> F13["Fail Code Review metric"]
-    F12 -- "No" --> F14["Average valid CQI units"]
+    F11 --> F13{"Invalid CQI?"}
+    F13 -- "Yes" --> F14["Fail Code Review metric"]
+    F13 -- "No" --> F15["Average valid CQI units"]
 
-    F11 --> F14
-    F13 --> F15["Combine quality domains"]
-    F14 --> F15
-    E9 --> F15
-    F4 --> F15
+    F12 --> F15
+    F14 --> F16["Combine quality domains"]
+    F15 --> F16
+    E9 --> F16
+    F5 --> F16
 
-    F15 --> F16["Metrics overview<br/>CQI + Farley + API Compatibility"]
-    F16 --> F17["Detailed Code Review findings"]
-    F17 --> F18["Farley baseline and regression details"]
-    F18 --> F19["API compatibility details"]
-    F19 --> F20["Generate report.md"]
+    F16 --> F17["Metrics overview<br/>CQI + Farley + API Compatibility"]
+    F17 --> F18["Detailed Code Review findings"]
+    F18 --> F19["Farley baseline and regression details"]
+    F19 --> F20["API compatibility details"]
+    F20 --> F21["Generate report.md"]
 
-    F20 --> F21{"Unified verdict"}
-    F21 -- "PASS" --> F22["Post PR comment<br/>GitHub check passes"]
-    F21 -- "FAIL" --> F23["Post PR comment<br/>GitHub check fails"]
+    F21 --> F22{"Unified verdict"}
+    F22 -- "PASS" --> F23["Post PR comment<br/>GitHub check passes"]
+    F22 -- "FAIL" --> F24["Post PR comment<br/>GitHub check fails"]
 
-    F22 --> G["Developer reviews report"]
-    F23 --> G
+    F23 --> G["Developer reviews report"]
+    F24 --> G
     G --> H["Next commit or merge decision"]
 ```
 
 ## Current Semantics
+
+The API compatibility check runs as a preceding step in the `unified-report`
+job and writes `compatibility_results.json`; `scripts/unified_compare.py` loads
+that file when compiling the final report.
 
 The code review path separates three concerns:
 
