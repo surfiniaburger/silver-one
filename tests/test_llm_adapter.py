@@ -264,6 +264,7 @@ async def test_call_structured_retries_with_schema_feedback(monkeypatch):
     calls = []
     responses = iter([
         '{"title": "partial"}',
+        '{"body": "still partial"}',
         '{"title": "complete", "body": "ok"}',
     ])
 
@@ -273,7 +274,7 @@ async def test_call_structured_retries_with_schema_feedback(monkeypatch):
         return next(responses)
 
     monkeypatch.setattr(llm_adapter, "_call_litellm_async", fake_litellm)
-    monkeypatch.setenv("LLM_STRUCTURED_MAX_RETRIES", "1")
+    monkeypatch.setenv("LLM_STRUCTURED_MAX_RETRIES", "2")
 
     validated, raw, diagnostics = await llm_adapter.call_structured_with_raw_and_diagnostics(
         None,
@@ -286,8 +287,11 @@ async def test_call_structured_retries_with_schema_feedback(monkeypatch):
 
     assert validated.title == "complete"
     assert json.loads(raw)["body"] == "ok"
-    assert diagnostics["validation_retries"] == 1
-    assert len(calls) == 2
+    assert diagnostics["validation_retries"] == 2
+    assert len(calls) == 3
+    assert calls[1][-2] == {"role": "assistant", "content": '{"title": "partial"}'}
     retry_content = calls[1][-1]["content"]
     assert "previous response failed validation for RequiredPairModel" in retry_content
     assert "title, body" in retry_content
+    assert calls[2][-4] == {"role": "assistant", "content": '{"title": "partial"}'}
+    assert calls[2][-2] == {"role": "assistant", "content": '{"body": "still partial"}'}
