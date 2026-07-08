@@ -453,3 +453,5 @@ WEEKLY_BUDGET_USD = float(os.getenv("CR_WEEKLY_BUDGET_USD", "5.00"))
   CQI formula, rollout phases, KPIs
 - [`STRUCTURED_REVIEW_CONTRACT.md`](./STRUCTURED_REVIEW_CONTRACT.md) —
   cassette, validation, recoverable failure, and CQI reporting semantics
+- [`CI_QUALITY_LOOP.md`](./CI_QUALITY_LOOP.md) — end-to-end CI flow for code
+  review, Farley test quality, compatibility, and the unified report
