@@ -338,6 +338,7 @@ async def evaluate_units(
     for i, unit in enumerate(units, 1):
         name = unit["name"]
         file_path = unit["file_path"]
+        class_name = unit.get("class_name")
         print(f"[{i}/{len(units)}] Reviewing {name} in {file_path}")
 
         messages = [
@@ -364,6 +365,7 @@ async def evaluate_units(
             artifact = UnitReviewArtifact(
                 file_path=file_path,
                 name=name,
+                class_name=class_name,
                 review=breakdown,
                 validation=context,
                 raw_response=raw_str
@@ -378,6 +380,7 @@ async def evaluate_units(
             results.append({
                 "file_path": file_path,
                 "name": name,
+                "class_name": class_name,
                 "review": None,
                 "validation": {
                     "repaired": False,

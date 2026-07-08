@@ -9,20 +9,6 @@ from scripts.unified_compare import (
 from scripts.code_review_compare import get_reviews
 
 
-def valid_review_payload(severity="OK"):
-    return {
-        "readability": {"score": 8, "rationale": "ok"},
-        "maintainability": {"score": 8, "rationale": "ok"},
-        "correctness": {"score": 8, "rationale": "ok"},
-        "complexity": {"score": 8, "rationale": "ok"},
-        "security": {"score": 8, "rationale": "ok"},
-        "test_coverage": {"score": 8, "rationale": "ok"},
-        "severity": severity,
-        "summary": "legacy review",
-        "findings": [],
-    }
-
-
 def test_combine_token_spend_empty():
     res = combine_token_spend({}, {})
     assert "0 total tokens" in res
@@ -432,7 +418,7 @@ def test_write_unified_report_ignores_malformed_cqi_units(tmp_path):
     assert "| Code Quality Index (CQI) | N/A (no Python code changes) | **PASS** |" in content
 
 
-def test_write_unified_report_accepts_legacy_review_payload(tmp_path):
+def test_write_unified_report_accepts_legacy_review_payload(tmp_path, valid_review_payload):
     from scripts.unified_compare import write_unified_report
     out_file = tmp_path / "report.md"
     cr_units = get_reviews({"reviews": [valid_review_payload()]})
@@ -459,7 +445,7 @@ def test_write_unified_report_accepts_legacy_review_payload(tmp_path):
     assert "| legacy-cassette | legacy_review_1 | 8.00/10 | **OK** | legacy review |" in content
 
 
-def test_write_unified_report_excludes_recoverable_failure_from_cqi(tmp_path):
+def test_write_unified_report_excludes_recoverable_failure_from_cqi(tmp_path, valid_review_payload):
     from scripts.unified_compare import write_unified_report
     out_file = tmp_path / "report.md"
     cr_units = get_reviews({

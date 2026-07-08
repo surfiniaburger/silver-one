@@ -119,6 +119,7 @@ class ValidationContext(BaseModel):
 class UnitReviewArtifact(BaseModel):
     file_path: str
     name: str
+    class_name: Optional[str] = None
     review: Any  # CodeReviewBreakdown (any to avoid circular dependency)
     validation: Optional[ValidationContext] = None
     raw_response: str = Field(..., description="The original raw unvalidated LLM response string")
