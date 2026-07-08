@@ -2632,59 +2632,65 @@
       "file_path": "tests/test_code_review.py",
       "test_name": "test_get_reviews_wraps_legacy_review_payload",
       "class_name": null,
-      "farley_index": 7.375,
+      "farley_index": 7.0,
       "farley_breakdown": {
         "understandable": {
           "score": 8,
-          "rationale": "The test clearly demonstrates the business rule: a `legacy_review` payload must be wrapped by `code_review_compare.get_reviews()` and returned as an object with specific fields. The intent is unambiguous.",
-          "suggestions": []
+          "rationale": "The test name and assertions clearly describe the business rule: validating that a legacy review payload correctly wraps into an API response with specific fields. The code is readable but could be slightly more explicit about 'legacy' to avoid ambiguity.",
+          "suggestions": [
+            "Consider adding a comment like `# Validates legacy payload wrapping` for immediate clarity on intent."
+          ]
         },
         "maintainable": {
           "score": 6,
-          "rationale": "While the test logic itself is clean, it relies on a helper function (`valid_review_payload`) that likely contains implementation details of how legacy data should be constructed or validated. If `code_review_compare` changes its internal representation (e.g., adding fields), this assertion will break unless updated.",
+          "rationale": "The test is decoupled from implementation details (it doesn't mock the DB or network), but it relies heavily on `code_review_compare.get_reviews` and specific field names. If this function changes its internal logic to handle legacy formats differently in future refactors, the assertion will break without a clear migration path.",
           "suggestions": [
-            "Move validation logic for constructing the payload into an external contract test, not inside a unit test verifying specific field values."
+            "Ensure that any change to how reviews are processed does not alter these assertions; consider mocking `code_review_compare.get_reviews` with an explicit return value for this specific test case."
           ]
         },
         "repeatable": {
           "score": 7,
-          "rationale": "The test is deterministic and self-contained. It does not rely on databases or network calls; it uses mocked `valid_review_payload` which should be stable.",
+          "rationale": "The test is self-contained and deterministic. It uses a mock (`valid_review_payload`) which avoids external state issues. However, it relies on `code_review_compare.get_reviews` being stable; if this function's signature or behavior changes slightly (e.g., adding optional parameters), the test will fail unexpectedly.",
           "suggestions": [
-            "Ensure the mock function returns identical results across runs to guarantee repeatability."
+            "Explicitly define what constitutes a 'valid' legacy review payload in a separate fixture to ensure future-proofing against minor API contract shifts."
           ]
         },
         "atomic": {
           "score": 9,
-          "rationale": "The test verifies exactly one behavior: that a legacy payload is correctly wrapped and returned with specific attributes. If it fails, the cause (missing field or wrong value) is instantly obvious.",
-          "suggestions": []
+          "rationale": "The test verifies exactly one behavior: the wrapping of `legacy_review` into an expected response structure. If this assertion fails (e.g., wrong field value), it is instantly obvious that a specific transformation logic in `get_reviews` or payload handling failed.",
+          "suggestions": [
+            "No changes needed; ensure no side effects occur during execution."
+          ]
         },
         "necessary": {
           "score": 5,
-          "rationale": "This test likely duplicates coverage already provided by integration tests verifying `code_review_compare.get_reviews()` behavior in a real environment. It may be testing implementation details rather than the core business rule of 'wrapping' legacy data.",
+          "rationale": "This test duplicates coverage of other tests that likely verify the same wrapping logic with different payload types (e.g., new format). It also verifies trivial details like `class_name` being None which may be redundant if those fields are always null for legacy items.",
           "suggestions": [
-            "Remove this unit-level assertion if it is redundant; instead, verify that existing integration tests cover all edge cases for wrapping."
+            "Remove assertions about specific field values (`file_path`, etc.) unless they differ between test cases. Focus on the core wrapping behavior instead."
           ]
         },
         "granular": {
           "score": 7,
-          "rationale": "The test isolates specific fields (`file_path`, `name`, etc.) and validates their exact values. However, the validation logic inside the assertion could be too granular if it depends on internal state not under direct control.",
+          "rationale": "The test is granular enough to cover the full lifecycle of a legacy review: creation -> retrieval -> validation -> response construction. However, it mixes high-level assertions (length) with low-level details (`class_name`), which reduces focus on core behavior.",
           "suggestions": [
-            "Ensure assertions are purely about observable output; avoid asserting against mutable internal states unless they represent stable contract properties."
+            "Group related checks into one assertion block or separate them by 'core wrapping' vs 'payload structure'. Ensure the test isolates only what is critical to verifying the legacy handling logic."
           ]
         },
         "fast": {
           "score": 8,
-          "rationale": "The test executes rapidly. There is no artificial delay or heavy I/O operation in the code snippet itself.",
-          "suggestions": []
-        },
-        "first_tdd": {
-          "score": 9,
-          "rationale": "This follows TDD principles: Arrange (mock `valid_review_payload`), Act (`get_reviews` call with specific input), Assert (verify output structure and content). The separation of concerns is clear.",
+          "rationale": "The test executes rapidly. It avoids sleeps and heavy I/O by using mocks for external dependencies (DB/network). The `json.loads` call is lightweight compared to network calls.",
           "suggestions": [
-            "Ensure the 'Arrange' phase explicitly mocks or sets up a stable state for the legacy payload to ensure repeatability."
+            "No changes needed; ensure no artificial delays are introduced in the mock setup."
           ]
         },
-        "summary": "The test demonstrates strong TDD practices but risks redundancy if integration tests cover similar scenarios. It should be kept as-is only if it verifies specific edge cases not covered elsewhere; otherwise, consider removing assertions about internal field values in favor of verifying high-level contract behavior via external contracts or integration tests."
+        "first_tdd": {
+          "score": 6,
+          "rationale": "The test follows Arrange-Act-Pattern (Arrange: payload creation -> Act: API call + assertions). However, it lacks a clear 'specification' of the expected behavior before implementation; the `valid_review_payload` fixture implies knowledge that isn't explicitly stated in the code.",
+          "suggestions": [
+            "Add an explicit comment or docstring defining the exact input/output contract for this legacy wrapping scenario to ensure future developers understand the design intent."
+          ]
+        },
+        "summary": "The test is well-structured and fast but risks becoming brittle if underlying logic changes. It duplicates coverage of similar tests and mixes high-level expectations with low-level details. Focus on isolating core behavior assertions rather than payload specifics to improve maintainability and necessity."
       }
     },
     {
@@ -2692,65 +2698,53 @@
       "file_path": "tests/test_code_review.py",
       "test_name": "test_get_reviews_preserves_legacy_unit_metadata",
       "class_name": null,
-      "farley_index": 7.75,
+      "farley_index": 8.375,
       "farley_breakdown": {
         "understandable": {
           "score": 8,
-          "rationale": "The test clearly defines the legacy input structure and asserts specific fields are preserved. However, it lacks a clear 'why' or business rule explanation beyond field equality.",
-          "suggestions": [
-            "Add an assertion that `unit['review']['severity']` is exactly `'WARN'`, not just equal to it (e.g., using strict string comparison)."
-          ]
+          "rationale": "The test clearly demonstrates the business rule: legacy metadata must be preserved during review processing. The domain language is clear.",
+          "suggestions": []
         },
         "maintainable": {
           "score": 9,
-          "rationale": "The test isolates the logic of extracting metadata from a legacy payload without relying on external state or system internals. It does not depend on `code_review_compare`'s internal implementation details.",
-          "suggestions": [
-            "Ensure no side effects occur in other parts of the codebase when this specific unit is run."
-          ]
+          "rationale": "This test has no dependencies on system internals or implementation details; it only asserts data transformation rules that remain valid regardless of how `code_review_compare` works internally.",
+          "suggestions": []
         },
         "repeatable": {
           "score": 7,
-          "rationale": "The test relies entirely on a single external function call (`get_reviews`) and its return value. If `code_review_compare` changes internal logic or adds new parameters not listed in the payload, the test will fail unexpectedly.",
+          "rationale": "The test is deterministic and self-contained. However, the use of a mock fixture (`valid_review_payload`) introduces an implicit dependency on external state that could theoretically vary between runs if not mocked consistently.",
           "suggestions": [
-            "Explicitly mock `code_review_compare.get_reviews()` to ensure deterministic behavior regardless of underlying implementation details."
+            "Ensure `valid_review_payload` returns identical results every time; consider mocking it explicitly in CI/CD to guarantee repeatability."
           ]
         },
         "atomic": {
-          "score": 8,
-          "rationale": "The test verifies exactly one specific rule: that legacy metadata fields are correctly extracted and preserved in the output. The failure mode is immediate (assertion error).",
-          "suggestions": [
-            "Remove any flaky assertions or redundant checks to ensure atomicity of this single behavior."
-          ]
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: the preservation of legacy metadata fields. If any assertion fails (e.g., missing field), the cause is instantly obvious and isolated.",
+          "suggestions": []
         },
         "necessary": {
-          "score": 6,
-          "rationale": "This test covers a specific legacy path but does not verify general correctness for other payload types. It duplicates coverage if similar tests exist for different metadata formats.",
-          "suggestions": [
-            "Add assertions covering edge cases (empty payloads) and multiple distinct input scenarios to ensure comprehensive coverage."
-          ]
+          "score": 8,
+          "rationale": "This specific unit tests a known transformation rule for `legacy_unit`. It does not duplicate coverage from general integration or functional tests unless those are already covered elsewhere. Its purpose is unique to validating this legacy path's integrity.",
+          "suggestions": []
         },
         "granular": {
-          "score": 7,
-          "rationale": "The test is granular enough in its assertion targets but could be more specific about the transformation logic being tested. It asserts equality rather than verifying a derived property.",
-          "suggestions": [
-            "Assert that `unit['review']['severity']` equals `'WARN'`, ensuring strict type and value matching to prevent subtle bugs."
-          ]
+          "score": 9,
+          "rationale": "The test isolates precisely the transformation of `legacy_unit` into a review object and verifies specific fields (`file_path`, `name`, etc.) without noise. It is highly targeted to this single rule.",
+          "suggestions": []
         },
         "fast": {
           "score": 8,
-          "rationale": "The test executes quickly with minimal setup. It avoids sleeps or heavy I/O operations typical of integration tests.",
+          "rationale": "There are no artificial sleeps or heavy I/O operations in the test body itself; execution speed depends on the underlying library's performance rather than the test logic.",
           "suggestions": [
-            "Ensure the `code_review_compare.get_reviews` call is mocked if it involves network calls; otherwise, verify execution speed remains high."
+            "Ensure `valid_review_payload` is mocked to avoid potential network calls if it were a real API call."
           ]
         },
         "first_tdd": {
           "score": 9,
-          "rationale": "The test follows a clean Arrange-Act-Assert structure. It explicitly defines input (Arrange), performs extraction logic (Act), and verifies output assertions (Assert).",
-          "suggestions": [
-            "Refine the 'Arrangement' phase to include mocking `code_review_compare` if it's not already done, ensuring true TDD compliance."
-          ]
+          "rationale": "The code follows Arrange-Act-Assert structure: setup (`legacy_unit`) -> action (get_reviews) -> assertions. The test explicitly specifies the expected behavior of legacy metadata preservation.",
+          "suggestions": []
         },
-        "summary": "The test is well-structured but lacks robustness against external implementation changes. It should be enhanced with explicit mocks and stricter assertions for full TDD adherence."
+        "summary": "This is a high-quality TDD unit test that strictly adheres to Dave Farley's properties, demonstrating clear intent and maintainability while effectively validating business rules without external dependencies."
       }
     },
     {
@@ -2762,55 +2756,64 @@
       "farley_breakdown": {
         "understandable": {
           "score": 8,
-          "rationale": "The test name and code clearly define the business rule: null wrapping should result in a default validation state with an empty fields list. The logic is straightforward for anyone familiar with the domain.",
-          "suggestions": []
+          "rationale": "The test name and logic are clear; however, the business rule is buried in a complex nested dictionary structure that obscures intent.",
+          "suggestions": [
+            "Explicitly state: 'Verify default validation fields when input review payload contains null/None values.'",
+            "'wrapped_unit' should be named to reflect its role (e.g., `test_null_input_defaults`), not just the test name."
+          ]
         },
         "maintainable": {
           "score": 7,
-          "rationale": "While understandable, this test relies on `code_review_compare.get_reviews` returning data that might change in implementation details (e.g., if it returns a list instead of an item). It is not fully decoupled from the internal structure of how reviews are returned.",
+          "rationale": "The code is self-contained but relies on a complex nested structure that makes refactoring difficult. The logic for handling nulls could be simplified to improve maintainability.",
           "suggestions": [
-            "Ensure the return type contract for `get_reviews` is stable and documented. Consider mocking or unit-testing this function directly to verify behavior without depending on its implementation details."
+            "Extract default validation fields into constants or helper functions rather than hardcoding them in the assertion block.",
+            "Avoid deep nesting; flatten the input/output structures if possible."
           ]
         },
         "repeatable": {
           "score": 9,
-          "rationale": "The test is fully self-contained; it uses only local variables (`wrapped_unit`, `valid_review_payload`) and standard library functions. No external state (DB, network) or timing dependencies are present.",
-          "suggestions": []
+          "rationale": "The test is fully self-contained with no external dependencies. It does not rely on databases, networks, filesystems, or timing.",
+          "suggestions": [
+            "Ensure `valid_review_payload` fixture returns a deterministic object; verify this in the CI pipeline if it involves network calls."
+          ]
         },
         "atomic": {
           "score": 8,
-          "rationale": "This single assertion verifies exactly one behavior: the validation result when a review is wrapped in null fields. The cause of failure is immediately obvious if this specific check fails.",
+          "rationale": "The test verifies exactly one behavior: default validation fields for null inputs. The failure cause is immediately obvious.",
           "suggestions": [
-            "Ensure no other assertions or side effects occur within this test function."
+            "Ensure no side effects occur during execution (e.g., file writes)."
           ]
         },
         "necessary": {
           "score": 6,
-          "rationale": "This test covers one edge case (null wrapping). It does not duplicate coverage for general validation logic. However, it might be redundant if there are existing tests covering the 'no wrap' scenario and a generic null check.",
+          "rationale": "This test covers a specific edge case but may duplicate coverage of other tests already verifying default behavior for various input types. It should be combined with or replaced by more general tests.",
           "suggestions": [
-            "Review other tests to ensure this specific edge case is covered by an appropriate unit or integration test that doesn't rely on complex mocking."
+            "Review existing tests to ensure this specific null-handling scenario is not redundant.",
+            "Consider merging into a broader 'default validation' test if the logic remains similar."
           ]
         },
         "granular": {
           "score": 7,
-          "rationale": "The assertion targets `unit['validation']` specifically. It isolates the validation logic correctly without asserting unrelated fields like 'normalized' unless they are part of this specific rule.",
+          "rationale": "The assertion targets `validation` and `raw_response`, but it mixes data structure verification with JSON parsing. The isolation of behavior could be sharper by separating these concerns.",
           "suggestions": [
-            "Ensure assertions do not mix different aspects (e.g., validating both raw response and normalized output) to avoid confusion."
+            "Split assertions: one for the internal validation object, another for the raw response format to ensure clarity."
           ]
         },
         "fast": {
-          "score": 9,
-          "rationale": "The test executes immediately without artificial delays, heavy setups, or slow I/O operations. It relies on pure Python logic.",
-          "suggestions": []
-        },
-        "first_tdd": {
           "score": 8,
-          "rationale": "This follows the Arrange-Act-Assert pattern: `wrapped_unit` is arranged (mocked), then `get_reviews` acts to produce output, and assertions assert behavior. The separation of concerns is clear.",
+          "rationale": "The test executes rapidly without artificial delays or heavy I/O. The only potential bottleneck is `json.loads` if not optimized.",
           "suggestions": [
-            "Ensure 'Arrange' includes mocking external dependencies if any exist in this specific test."
+            "Pre-verify JSON validity before parsing; use a lightweight check like `assert isinstance(...)` to avoid unnecessary overhead."
           ]
         },
-        "summary": "The test demonstrates strong adherence to TDD principles with a clean Arrange-Act-Assert structure (8/10). It effectively isolates one edge case but could benefit from tighter coupling of the `get_reviews` call and more explicit documentation regarding its return contract for maintainability. Overall, it is a solid example of good unit test design."
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The test follows the Arrange-Act-Assert pattern: setup (`wrapped_unit`), act (call API), assert. It clearly specifies expected behavior for null inputs.",
+          "suggestions": [
+            "Ensure `valid_review_payload()` fixture is deterministic and isolated from external state to fully satisfy TDD principles."
+          ]
+        },
+        "summary": "{\"understandable\": 8, \"maintainable\": 7, \"repeatable\": 9, \"atomic\": 8, \"necessary\": 6, \"granular\": 7, \"fast\": 8, \"first_tdd\": 9}"
       }
     },
     {
@@ -3072,69 +3075,65 @@
       "file_path": "tests/test_code_review.py",
       "test_name": "test_unit_review_artifact",
       "class_name": null,
-      "farley_index": 4.75,
+      "farley_index": 3.625,
       "farley_breakdown": {
         "understandable": {
           "score": 6,
-          "rationale": "The test name is vague and lacks a clear business rule. It does not specify what 'artifact' or 'review' means in this context, making it difficult to understand the intent without reading the entire codebase.",
+          "rationale": "The test name is vague ('test_unit_review_artifact') and lacks a clear business rule. It does not specify what 'artifact' represents or how the code review data should be structured.",
           "suggestions": [
-            "Rename `test_unit_review_artifact` to something descriptive like `test_build_validation_context_with_findings`.",
-            "Explicitly define what an artifact is and how a review affects its state in this test's context."
+            "Rename to `test_build_validation_context_from_json` or similar, clearly stating input/output behavior."
           ]
         },
         "maintainable": {
-          "score": 5,
-          "rationale": "The code relies on external shared state (`raw_json_str`, `CodeReviewBreakdown.model_validate`) which creates brittle behavior if the schema or evaluator changes. It also mixes data loading with logic verification.",
+          "score": 4,
+          "rationale": "The test is brittle and tightly coupled to specific implementation details (`CodeReviewBreakdown`, `UnitReviewArtifact`). It relies on external shared state (the JSON string) which will break if the schema changes.",
           "suggestions": [
-            "Extract JSON parsing and validation into a dedicated utility function to decouple test logic from implementation details.",
-            "Ensure all external dependencies (schemas, evaluators) are mocked in tests rather than relying on their internal state."
+            "Extract logic into a dedicated helper function or factory. Remove direct instantiation of complex classes inside test functions."
           ]
         },
         "repeatable": {
-          "score": 4,
-          "rationale": "The test relies heavily on `raw_json_str` and the specific output of a model validation. If the schema or evaluator changes slightly (e.g., field names), this test will fail without modification.",
+          "score": 3,
+          "rationale": "The test relies on `pytest.approx` for floating-point comparison and assumes specific JSON keys exist in the model dump without verifying their presence first. This makes it non-deterministic across runs if schema versions change.",
           "suggestions": [
-            "Remove reliance on external shared state like raw JSON strings in tests; use fixtures for data instead.",
-            "Ensure deterministic behavior by mocking all non-deterministic sources of randomness."
+            "Remove reliance on external shared state (JSON string). Use a mock or fixture to simulate input data instead of hardcoding raw strings."
           ]
         },
         "atomic": {
-          "score": 7,
-          "rationale": "The test verifies multiple assertions about the serialized output and specific field values. While it isolates one 'artifact' creation scenario, verifying complex nested structures can sometimes obscure immediate failure points.",
+          "score": 5,
+          "rationale": "The test verifies multiple unrelated assertions about the dumped model and specific field values. If one assertion fails (e.g., a new validation rule is added), it becomes harder to pinpoint which part failed.",
           "suggestions": [
-            "Ensure each assertion targets a single, distinct behavior to make failures immediately obvious if they occur."
+            "Isolate each check into its own `assert` statement or use an intermediate helper function for serialization/validation."
           ]
         },
         "necessary": {
-          "score": 3,
-          "rationale": "The test appears redundant. It validates serialization and specific field values that are likely already covered by unit tests for the `CodeReviewBreakdown` model or existing integration tests.",
+          "score": 2,
+          "rationale": "The test duplicates coverage of other tests that likely verify the same artifact creation and validation logic. It also checks trivial details (like whitespace trimming) rather than core business rules.",
           "suggestions": [
-            "Remove this test if it duplicates coverage of other tests; focus on testing edge cases, error handling, or contract violations instead."
+            "Remove this specific unit test if it is covered by integration or end-to-end tests for 'artifact' generation."
           ]
         },
         "granular": {
-          "score": 5,
-          "rationale": "The test is somewhat granular in checking specific field values but lacks isolation. It mixes data loading with validation logic and relies on external state which reduces the granularity of what it actually tests.",
+          "score": 3,
+          "rationale": "The assertions are mixed and lack clear boundaries. It mixes serialization checks with field-level validation logic in a single test function.",
           "suggestions": [
-            "Isolate assertions to verify only one behavior (e.g., 'Artifact serialization preserves input exactly' vs 'Validation context is built correctly').",
-            "Remove reliance on `raw_json_str` and use fixtures for data."
+            "Split into separate tests: one for `model_dump()` correctness, another for specific field validations (confidence/repaired status)."
           ]
         },
         "fast": {
-          "score": 6,
-          "rationale": "The test loads a JSON string into memory before processing. While not inherently slow compared to network calls, it introduces unnecessary I/O overhead if the input is already available in tests.",
+          "score": 4,
+          "rationale": "The test loads a JSON string and parses it. While not heavy I/O, the overhead of parsing arbitrary user input into complex models adds unnecessary latency compared to unit tests with mocked data.",
           "suggestions": [
-            "Avoid loading large strings or external data directly; use fixtures for reproducible inputs and avoid artificial delays."
+            "Replace `json.loads` on raw strings with mock objects or fixtures that simulate the validation context without network/file system calls."
           ]
         },
         "first_tdd": {
           "score": 2,
-          "rationale": "The test does not demonstrate the Arrange-Act-Assert pattern. It loads a pre-existing artifact from an external string rather than constructing it via `build_validation_context` and asserting its properties directly.",
+          "rationale": "The test does not demonstrate a clean Arrange-Act-Assert pattern. It directly instantiates complex classes and validates internal state rather than asserting the expected behavior of an external contract.",
           "suggestions": [
-            "Adopt TDD principles: Write tests that specify behavior first (Arrange), then act to verify specific contract violations or edge cases, ensuring the test itself defines the expected outcome."
+            "Refactor to follow TDD principles: Write a failing unit that asserts specific input/output contracts, then write tests for edge cases (e.g., null inputs) before writing this test."
           ]
         },
-        "summary": "The test is partially functional but suffers from poor design choices including reliance on external state and lack of TDD principles. It should be rewritten using fixtures for data and strictly following Arrange-Act-Assert to ensure maintainability and determinism."
+        "summary": "The test is poorly designed. It lacks clarity on intent, relies heavily on brittle external state and implementation details, mixes responsibilities across assertions, and fails to demonstrate a TDD-first approach. Immediate refactoring into modularized helper functions or fixtures is required before it can be considered maintainable."
       }
     },
     {
@@ -3629,6 +3628,72 @@
           ]
         },
         "summary": "The test is understandable and repeatable but lacks atomicity (it aggregates counts rather than validating specific rules) and first-TDD principles. It should be removed or significantly refocused to avoid duplicating coverage of other tests while maintaining the core validation logic."
+      }
+    },
+    {
+      "id": "tests/test_code_review.py::test_evaluate_units_marks_structured_output_failure_recoverable",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_evaluate_units_marks_structured_output_failure_recoverable",
+      "class_name": null,
+      "farley_index": 5.5,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 4,
+          "rationale": "The test name and body are verbose but readable. However, the business rule 'recoverable failure' is buried in nested dictionaries within a complex assertion chain rather than being explicitly stated as an expected outcome.",
+          "suggestions": [
+            "Explicitly state: `assert results[0]['review'] == None` instead of relying on implicit logic flow."
+          ]
+        },
+        "maintainable": {
+          "score": 3,
+          "rationale": "The test is brittle to changes in the underlying evaluator's error handling or data structure. It relies heavily on specific field names (`validation_retries`, `repair_attempts`) and nested dictionary structures that may change during refactoring.",
+          "suggestions": [
+            "Extract common diagnostic fields into a dedicated helper class or constant map."
+          ]
+        },
+        "repeatable": {
+          "score": 5,
+          "rationale": "The test is self-contained and deterministic. It does not rely on external state (database/network/filesystem) but relies entirely on the mocked `fake_call_structured_with_raw_and_diagnostics` function.",
+          "suggestions": [
+            "Ensure the mock function's side effects are isolated; avoid any global or shared mutable state."
+          ]
+        },
+        "atomic": {
+          "score": 6,
+          "rationale": "The test verifies a single behavior: that structured output errors result in `review=None` and specific failure types. The cause is obvious (structured error handling logic).",
+          "suggestions": [
+            "Add an explicit assertion for the exact exception type raised to ensure deterministic failure propagation."
+          ]
+        },
+        "necessary": {
+          "score": 7,
+          "rationale": "The test covers a specific edge case (structured output recovery). It does not duplicate coverage of general JSON parsing tests or other unit evaluation scenarios.",
+          "suggestions": [
+            "Ensure this is the only place in the codebase testing structured output failure logic to avoid redundancy."
+          ]
+        },
+        "granular": {
+          "score": 5,
+          "rationale": "The test isolates specific fields (`validation_retries`, `repair_attempts`) rather than just the final outcome. This provides some granularity but could be more focused on the core logic flow.",
+          "suggestions": [
+            "Refine assertions to focus strictly on the logical path of error recovery, removing noise from intermediate counters."
+          ]
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "The test executes rapidly. It avoids artificial sleeps and heavy I/O operations; it is purely synchronous logic over a mock function.",
+          "suggestions": [
+            "Remove any `await` blocks if the underlying evaluator call was already async (check signature), or ensure no blocking calls occur."
+          ]
+        },
+        "first_tdd": {
+          "score": 6,
+          "rationale": "The test follows Arrange-Act-Pattern loosely. It sets up a mock and asserts behavior without explicitly defining the 'Arrange' phase (what data is being tested) before acting.",
+          "suggestions": [
+            "Explicitly define: `units = [...]` as part of the setup, then immediately assert on that specific unit's result to demonstrate design intent."
+          ]
+        },
+        "summary": "The test demonstrates good TDD principles but lacks clarity in its business rule definition and is slightly brittle due to deep nesting. It should be tightened by explicitly stating expected outcomes and reducing reliance on internal implementation details like counters."
       }
     },
     {
@@ -4343,57 +4408,65 @@
       "file_path": "tests/test_unified_compare.py",
       "test_name": "test_write_unified_report_accepts_legacy_review_payload",
       "class_name": null,
-      "farley_index": 7.5,
+      "farley_index": 7.875,
       "farley_breakdown": {
         "understandable": {
           "score": 9,
-          "rationale": "The test name and body clearly describe the business rule: accepting a specific legacy payload format. The domain language is standard for automated testing.",
-          "suggestions": []
+          "rationale": "The test name and arguments are clear; however, the `valid_review_payload` fixture is not defined within this file or accessible to the caller in a way that makes its content explicit. The intent relies entirely on an external artifact.",
+          "suggestions": [
+            "Define `def valid_review_payload() -> dict:` inside this test module immediately before it's used, ensuring no ambiguity about what constitutes 'valid' data."
+          ]
         },
         "maintainable": {
           "score": 8,
-          "rationale": "The function call `write_unified_report` appears to be the primary entry point; however, if this test were added alongside others using different argument structures or internal logic changes in that function, it could become brittle. It relies on a specific payload structure which is good for TDD but risks coupling.",
+          "rationale": "The function call passes a dictionary of arguments. While the structure is clean, relying on external fixtures (`get_reviews`) introduces coupling to other modules or test infrastructure that may change between runs if not explicitly mocked.",
           "suggestions": [
-            "Ensure `write_unified_report` has no hidden side effects (e.g., logging to stdout) unless explicitly intended and isolated within the test itself."
+            "Explicitly mock `get_reviews` in this specific test case (e.g., using a fixture like `@pytest.fixture(autouse=True)` with an empty list) rather than relying on the global state of other tests to provide valid data."
           ]
         },
         "repeatable": {
           "score": 7,
-          "rationale": "The test is self-contained but relies on `get_reviews`, which likely involves external state or network calls. If that function's internal logic changes (e.g., adding a sleep), this specific assertion will fail without updating the code.",
+          "rationale": "The test is deterministic in execution flow but relies entirely on `valid_review_payload`. If that fixture changes its internal logic or content between runs without updating the code, results will vary.",
           "suggestions": [
-            "Replace any non-deterministic dependencies with mock objects to ensure repeatability regardless of underlying implementation details."
+            "Ensure `valid_review_payload` returns a fixed, hardcoded dictionary constant (e.g., `{'reviews': [{'id': 1}]}`) rather than calling an external function that might have side effects."
           ]
         },
         "atomic": {
           "score": 9,
-          "rationale": "The test verifies exactly one behavior: the acceptance of a specific payload. If this fails, it is immediately obvious that `write_unified_report` does not accept legacy reviews.",
-          "suggestions": []
+          "rationale": "The test verifies exactly one behavior: the successful writing of a report with specific content. There is no hidden logic or multiple failure modes visible in this single assertion block.",
+          "suggestions": [
+            "Add an explicit `assert False` at the end if any other assertions fail, to ensure only this specific check passes."
+          ]
         },
         "necessary": {
           "score": 6,
-          "rationale": "This test covers one aspect (legacy review acceptance). It likely duplicates coverage of other tests already verifying the same function with different payloads or scenarios. The 'farley_data' and 'compat_data' fields suggest this might be a wrapper for integration testing rather than unit logic.",
+          "rationale": "This test verifies a single output format. It does not verify input validation logic or edge cases for malformed data; those should be handled by other tests.",
           "suggestions": [
-            "Review if there are existing tests that verify `write_unified_report` accepts various payload types; consolidate these into one comprehensive test to avoid redundancy."
+            "Remove this specific assertion if the goal is to ensure only valid inputs are accepted elsewhere, unless you specifically need to assert that legacy payloads *must* produce a PASS verdict."
           ]
         },
         "granular": {
           "score": 8,
-          "rationale": "The assertion targets a specific string pattern in the output file. It isolates the exact expected format of the report generation.",
-          "suggestions": []
+          "rationale": "The test isolates one specific scenario: the acceptance of a 'legacy' review payload. It does not mix unrelated scenarios like new features or error handling.",
+          "suggestions": [
+            "Ensure no other tests in this file (or surrounding files) are testing similar legacy-specific behaviors to avoid redundancy."
+          ]
         },
         "fast": {
-          "score": 6,
-          "rationale": "There is no explicit `assert` or check for speed; however, reading a text file and checking its content are fast operations. The test does not contain artificial sleeps or heavy I/O that would artificially slow execution.",
-          "suggestions": []
+          "score": 9,
+          "rationale": "The test executes quickly. It avoids sleeps or heavy I/O; the only potential bottleneck is reading `out_file.read_text`, which is negligible for a single line.",
+          "suggestions": [
+            "Remove any artificial delays (`time.sleep`) if this test were part of an integration suite, though it's not currently slow."
+          ]
         },
         "first_tdd": {
           "score": 7,
-          "rationale": "The structure follows Arrange-Act-Assert: `tmp_path` is set up (`Arrange`), the function call happens with specific data (`Act`), and the content assertion verifies the result (`Assert`). However, it lacks a clear 'specification' of *why* this legacy format exists before writing the test.",
+          "rationale": "The code follows Arrange-Act-Assert structure. However, the 'Arrange' phase is incomplete because `valid_review_payload` is an external dependency; a true TDD test would define this payload as part of the setup to ensure isolation.",
           "suggestions": [
-            "Add an explicit comment or docstring explaining the business rule for accepting `legacy_review_1`. This clarifies the intent and ensures future maintainers understand the design property being tested."
+            "Refactor: Move `def valid_review_payload()` into this file and use it in both Arrange (setup) and Act phases, ensuring no other tests depend on its internal state."
           ]
         },
-        "summary": "The test is well-structured (TDD style) but risks becoming brittle due to external dependencies in helper functions. It effectively tests one atomic behavior with clear expectations, though it could benefit from more explicit documentation of its business rule and potential consolidation if other similar tests exist."
+        "summary": "The test is highly readable and fast but suffers from a critical lack of self-containment due to external dependencies. It risks becoming brittle if the definition of 'valid' changes or if `get_reviews` behaves differently in parallel execution environments. To achieve full TDD compliance, it must be fully isolated."
       }
     },
     {
@@ -4405,53 +4478,53 @@
       "farley_breakdown": {
         "understandable": {
           "score": 9,
-          "rationale": "The test name and assertion clearly articulate the business rule: a unified report must exclude recoverable failures (like 'Failed to validate structured output') from its final verdict. The language is domain-appropriate for CI/CD reporting.",
+          "rationale": "The test name and assertion clearly articulate the business rule: a recoverable failure (structured_output) is excluded from the CQI calculation. The domain language ('recoverable_failure', 'excludes') makes intent unambiguous.",
           "suggestions": []
         },
         "maintainable": {
           "score": 8,
-          "rationale": "The test relies on `get_reviews` and `write_unified_report`, which are likely internal or external utilities. If these functions change their input/output contracts (e.g., adding new fields to the payload), this specific assertion will break without modification.",
+          "rationale": "The test relies on `valid_review_payload` and specific data structures (`cr_units`, `farley_data`). While the logic is clear, it tightly couples to internal API contracts. If these payloads or structure definitions change without updating this single file, maintainability drops significantly.",
           "suggestions": [
-            "Move logic into a dedicated helper function that encapsulates the 'exclude recoverable failures' rule, making it self-contained and decoupled from `get_reviews`."
+            "Extract the payload generation into a dedicated utility function with strict type hints and documentation comments explaining why certain fields are present/absent."
           ]
         },
         "repeatable": {
           "score": 7,
-          "rationale": "The test uses an external file path (`tmp_path`) which is fine for isolation. However, the payload construction relies on a helper function that may introduce hidden dependencies or side effects if not carefully managed.",
+          "rationale": "The test is self-contained but relies on `valid_review_payload` which implies external state or fixtures. If the fixture definition changes (e.g., adding a new field), this specific test will break unless all callers are updated.",
           "suggestions": [
-            "Ensure `get_reviews` and `write_unified_report` are pure functions with no shared mutable state (like file handles) between calls."
+            "Move payload generation logic into an isolated module with its own unit tests to ensure determinism and decoupling from other test suites."
           ]
         },
         "atomic": {
           "score": 9,
-          "rationale": "The test verifies exactly one behavior: the exclusion of recoverable failures. If this assertion fails, it immediately indicates a bug in how `write_unified_report` processes or filters data.",
+          "rationale": "The assertion verifies exactly one behavior: the presence of specific text in `out_file`. If this fails, it is immediately obvious that a recoverable failure was included or excluded incorrectly. No complex side effects are triggered.",
           "suggestions": []
         },
         "necessary": {
           "score": 6,
-          "rationale": "This test covers specific edge-case filtering logic (recoverable failures). However, if the core functionality of writing a report is already covered by other tests in this suite or similar generic 'write_report' tests, this might be redundant.",
+          "rationale": "This test verifies the specific logic for handling `structured_output` failures in CQI calculation. However, it does not verify that other failure types (e.g., critical errors) are handled correctly or that the report generation handles edge cases like missing files.",
           "suggestions": [
-            "Review existing coverage for `write_unified_report`. If general reporting behavior is tested elsewhere, consider removing this specific edge-case assertion to avoid duplication unless the filtering logic has changed significantly since last test."
+            "Add a complementary test case covering non-recoverable failures to ensure comprehensive coverage of all error scenarios."
           ]
         },
         "granular": {
           "score": 8,
-          "rationale": "The test isolates a precise scenario: handling structured output failures. It does not assert on general report formatting or other unrelated aspects of `write_unified_report`.",
+          "rationale": "The assertion is granular enough; it checks for specific string literals and expected values. It isolates the exact behavior regarding CQI exclusion logic without asserting implementation details of `write_unified_report`.",
           "suggestions": []
         },
         "fast": {
           "score": 9,
-          "rationale": "There are no artificial sleeps, heavy I/O operations (other than reading the file once), or complex setup logic that would slow execution. The test is lightweight and fast.",
+          "rationale": "The test executes in a single function call with minimal setup. There are no artificial sleeps or heavy I/O operations; it reads the file and checks for text presence efficiently.",
           "suggestions": []
         },
         "first_tdd": {
           "score": 7,
-          "rationale": "The assertion structure follows TDD principles (Arrange-Act-Assert). However, the 'Arrange' phase involves calling `get_reviews` with a complex payload that might not be fully isolated from other tests in the suite if they share state.",
+          "rationale": "The test follows Arrange-Act-Pattern (Arrange: `valid_review_payload`, Act: call functions, Assert: check content). However, the 'Arrange' phase is somewhat implicit in passing a fixture object rather than explicitly setting up isolated inputs for this specific logic.",
           "suggestions": [
-            "Refactor to explicitly define inputs/outputs before assertions. Ensure no side effects occur during setup (e.g., ensure `tmp_path` is created fresh per test without relying on global file system state that might be shared by multiple concurrent tests)."
+            "Explicitly document and isolate the input payload setup to make it clearer that this test specifically validates the exclusion of recoverable failures."
           ]
         },
-        "summary": "The test demonstrates strong adherence to TDD principles and clearly defines a business rule. However, it risks maintainability issues if the underlying utilities (`get_reviews`, `write_unified_report`) evolve without updating this specific assertion."
+        "summary": "The test is highly understandable and atomic. It demonstrates a solid TDD approach but risks brittleness due to reliance on external fixtures (`valid_review_payload`) for its 'Arrange' phase. To reach perfection (10s), it must be decoupled from these specific fixture definitions into reusable, documented utilities."
       }
     },
     {
@@ -5469,32 +5542,32 @@
     "farley_usage_summary": {
       "run_id": "main-baseline",
       "model": "ollama/qwen3.5:2b",
-      "reviewed_test_cases": 80,
+      "reviewed_test_cases": 81,
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 116,
-          "prompt_tokens": 70987,
-          "completion_tokens": 96430,
-          "total_tokens": 167417,
+          "calls": 114,
+          "prompt_tokens": 69536,
+          "completion_tokens": 94405,
+          "total_tokens": 163941,
           "cost_usd": 0.0,
           "missing_usage_calls": 0
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 116,
-            "prompt_tokens": 70987,
-            "completion_tokens": 96430,
-            "total_tokens": 167417,
+            "calls": 114,
+            "prompt_tokens": 69536,
+            "completion_tokens": 94405,
+            "total_tokens": 163941,
             "cost_usd": 0.0
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 116,
-            "prompt_tokens": 70987,
-            "completion_tokens": 96430,
-            "total_tokens": 167417,
+            "calls": 114,
+            "prompt_tokens": 69536,
+            "completion_tokens": 94405,
+            "total_tokens": 163941,
             "cost_usd": 0.0
           }
         },
@@ -6054,23 +6127,11 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "cache",
+            "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 544,
-            "completion_tokens": 676,
-            "total_tokens": 1220,
-            "has_usage": true,
-            "usage_source": "provider",
-            "cost_usd": 0.0
-          },
-          {
-            "stage": "farley_evaluation",
-            "model": "ollama/qwen3.5:2b",
-            "source": "cache",
-            "generation_params": {},
-            "prompt_tokens": 521,
-            "completion_tokens": 670,
-            "total_tokens": 1191,
+            "prompt_tokens": 547,
+            "completion_tokens": 975,
+            "total_tokens": 1522,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -6080,9 +6141,9 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 516,
-            "completion_tokens": 680,
-            "total_tokens": 1196,
+            "prompt_tokens": 524,
+            "completion_tokens": 553,
+            "total_tokens": 1077,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -6091,6 +6152,18 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 519,
+            "completion_tokens": 688,
+            "total_tokens": 1207,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 416,
             "completion_tokens": 923,
@@ -6102,7 +6175,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 510,
             "completion_tokens": 891,
@@ -6138,11 +6211,11 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "cache",
+            "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 1003,
-            "completion_tokens": 942,
-            "total_tokens": 1945,
+            "prompt_tokens": 1022,
+            "completion_tokens": 864,
+            "total_tokens": 1886,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -6246,35 +6319,11 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "cache",
+            "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 751,
-            "completion_tokens": 1024,
-            "total_tokens": 1775,
-            "has_usage": true,
-            "usage_source": "provider",
-            "cost_usd": 0.0
-          },
-          {
-            "stage": "farley_evaluation",
-            "model": "ollama/qwen3.5:2b",
-            "source": "cache",
-            "generation_params": {},
-            "prompt_tokens": 751,
-            "completion_tokens": 1024,
-            "total_tokens": 1775,
-            "has_usage": true,
-            "usage_source": "provider",
-            "cost_usd": 0.0
-          },
-          {
-            "stage": "farley_evaluation",
-            "model": "ollama/qwen3.5:2b",
-            "source": "cache",
-            "generation_params": {},
-            "prompt_tokens": 751,
-            "completion_tokens": 1024,
-            "total_tokens": 1775,
+            "prompt_tokens": 766,
+            "completion_tokens": 803,
+            "total_tokens": 1569,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -6570,11 +6619,11 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "cache",
+            "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 682,
-            "completion_tokens": 813,
-            "total_tokens": 1495,
+            "prompt_tokens": 686,
+            "completion_tokens": 943,
+            "total_tokens": 1629,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -6584,9 +6633,9 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 790,
-            "completion_tokens": 815,
-            "total_tokens": 1605,
+            "prompt_tokens": 794,
+            "completion_tokens": 817,
+            "total_tokens": 1611,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -9065,6 +9114,195 @@
       "completion_tokens": 815,
       "prompt_tokens": 790,
       "total_tokens": 1605,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "c0a747199ec767cf17dda5dc7228333b35edc81898c0ee42f9abe3065954799f": {
+    "id": "chatcmpl-f4e295ac-0021-46c6-9061-da497fc6151b",
+    "created": 1783533507,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and assertions clearly describe the business rule: validating that a legacy review payload correctly wraps into an API response with specific fields. The code is readable but could be slightly more explicit about 'legacy' to avoid ambiguity.\",\n    \"suggestions\": [\n      \"Consider adding a comment like `# Validates legacy payload wrapping` for immediate clarity on intent.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"The test is decoupled from implementation details (it doesn't mock the DB or network), but it relies heavily on `code_review_compare.get_reviews` and specific field names. If this function changes its internal logic to handle legacy formats differently in future refactors, the assertion will break without a clear migration path.\",\n    \"suggestions\": [\n      \"Ensure that any change to how reviews are processed does not alter these assertions; consider mocking `code_review_compare.get_reviews` with an explicit return value for this specific test case.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is self-contained and deterministic. It uses a mock (`valid_review_payload`) which avoids external state issues. However, it relies on `code_review_compare.get_reviews` being stable; if this function's signature or behavior changes slightly (e.g., adding optional parameters), the test will fail unexpectedly.\",\n    \"suggestions\": [\n      \"Explicitly define what constitutes a 'valid' legacy review payload in a separate fixture to ensure future-proofing against minor API contract shifts.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: the wrapping of `legacy_review` into an expected response structure. If this assertion fails (e.g., wrong field value), it is instantly obvious that a specific transformation logic in `get_reviews` or payload handling failed.\",\n    \"suggestions\": [\n      \"No changes needed; ensure no side effects occur during execution.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test duplicates coverage of other tests that likely verify the same wrapping logic with different payload types (e.g., new format). It also verifies trivial details like `class_name` being None which may be redundant if those fields are always null for legacy items.\",\n    \"suggestions\": [\n      \"Remove assertions about specific field values (`file_path`, etc.) unless they differ between test cases. Focus on the core wrapping behavior instead.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 7,\n    \"rationale\": \"The test is granular enough to cover the full lifecycle of a legacy review: creation -> retrieval -> validation -> response construction. However, it mixes high-level assertions (length) with low-level details (`class_name`), which reduces focus on core behavior.\",\n    \"suggestions\": [\n      \"Group related checks into one assertion block or separate them by 'core wrapping' vs 'payload structure'. Ensure the test isolates only what is critical to verifying the legacy handling logic.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 8,\n    \"rationale\": \"The test executes rapidly. It avoids sleeps and heavy I/O by using mocks for external dependencies (DB/network). The `json.loads` call is lightweight compared to network calls.\",\n    \"suggestions\": [\n      \"No changes needed; ensure no artificial delays are introduced in the mock setup.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 6,\n    \"rationale\": \"The test follows Arrange-Act-Pattern (Arrange: payload creation -> Act: API call + assertions). However, it lacks a clear 'specification' of the expected behavior before implementation; the `valid_review_payload` fixture implies knowledge that isn't explicitly stated in the code.\",\n    \"suggestions\": [\n      \"Add an explicit comment or docstring defining the exact input/output contract for this legacy wrapping scenario to ensure future developers understand the design intent.\"\n    ]\n  },\n  \"summary\": \"The test is well-structured and fast but risks becoming brittle if underlying logic changes. It duplicates coverage of similar tests and mixes high-level expectations with low-level details. Focus on isolating core behavior assertions rather than payload specifics to improve maintainability and necessity.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 975,
+      "prompt_tokens": 547,
+      "total_tokens": 1522,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "b3e0f40ff91843e73f24ee9bb4699f4cb113d3f57066c3156cac38d2c2bc0f95": {
+    "id": "chatcmpl-77ce1bd3-52a8-451f-bc89-e3cfa7f66734",
+    "created": 1783533558,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly demonstrates the business rule: legacy metadata must be preserved during review processing. The domain language is clear.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 9, \"rationale\": \"This test has no dependencies on system internals or implementation details; it only asserts data transformation rules that remain valid regardless of how `code_review_compare` works internally.\", \"suggestions\": []},\n  \"repeatable\": {\"score\": 7, \"rationale\": \"The test is deterministic and self-contained. However, the use of a mock fixture (`valid_review_payload`) introduces an implicit dependency on external state that could theoretically vary between runs if not mocked consistently.\", \"suggestions\": [\"Ensure `valid_review_payload` returns identical results every time; consider mocking it explicitly in CI/CD to guarantee repeatability.\"]},\n  \"atomic\": {\"score\": 9, \"rationale\": \"The test verifies exactly one behavior: the preservation of legacy metadata fields. If any assertion fails (e.g., missing field), the cause is instantly obvious and isolated.\", \"suggestions\": []},\n  \"necessary\": {\"score\": 8, \"rationale\": \"This specific unit tests a known transformation rule for `legacy_unit`. It does not duplicate coverage from general integration or functional tests unless those are already covered elsewhere. Its purpose is unique to validating this legacy path's integrity.\", \"suggestions\": []},\n  \"granular\": {\"score\": 9, \"rationale\": \"The test isolates precisely the transformation of `legacy_unit` into a review object and verifies specific fields (`file_path`, `name`, etc.) without noise. It is highly targeted to this single rule.\", \"suggestions\": []},\n  \"fast\": {\"score\": 8, \"rationale\": \"There are no artificial sleeps or heavy I/O operations in the test body itself; execution speed depends on the underlying library's performance rather than the test logic.\", \"suggestions\": [\"Ensure `valid_review_payload` is mocked to avoid potential network calls if it were a real API call.\"]},\n  \"first_tdd\": {\"score\": 9, \"rationale\": \"The code follows Arrange-Act-Assert structure: setup (`legacy_unit`) -> action (get_reviews) -> assertions. The test explicitly specifies the expected behavior of legacy metadata preservation.\", \"suggestions\": []},\"summary\": \"This is a high-quality TDD unit test that strictly adheres to Dave Farley's properties, demonstrating clear intent and maintainability while effectively validating business rules without external dependencies.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 553,
+      "prompt_tokens": 524,
+      "total_tokens": 1077,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "640729dcca165c2222404cfe4f232d7c02e5b075cc1f9c9f45d666cae19184c6": {
+    "id": "chatcmpl-85a5b245-66ac-42cd-916d-cdc4ec477825",
+    "created": 1783533619,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test name and logic are clear; however, the business rule is buried in a complex nested dictionary structure that obscures intent.\", \"suggestions\": [\"Explicitly state: 'Verify default validation fields when input review payload contains null/None values.'\", \"'wrapped_unit' should be named to reflect its role (e.g., `test_null_input_defaults`), not just the test name.\"]\n},\"maintainable\": {\"score\": 7, \"rationale\": \"The code is self-contained but relies on a complex nested structure that makes refactoring difficult. The logic for handling nulls could be simplified to improve maintainability.\", \"suggestions\": [\"Extract default validation fields into constants or helper functions rather than hardcoding them in the assertion block.\", \"Avoid deep nesting; flatten the input/output structures if possible.\"]\n},\"repeatable\": {\"score\": 9, \"rationale\": \"The test is fully self-contained with no external dependencies. It does not rely on databases, networks, filesystems, or timing.\", \"suggestions\": [\"Ensure `valid_review_payload` fixture returns a deterministic object; verify this in the CI pipeline if it involves network calls.\"]\n},\"atomic\": {\"score\": 8, \"rationale\": \"The test verifies exactly one behavior: default validation fields for null inputs. The failure cause is immediately obvious.\", \"suggestions\": [\"Ensure no side effects occur during execution (e.g., file writes).\"]\n},\"necessary\": {\"score\": 6, \"rationale\": \"This test covers a specific edge case but may duplicate coverage of other tests already verifying default behavior for various input types. It should be combined with or replaced by more general tests.\", \"suggestions\": [\"Review existing tests to ensure this specific null-handling scenario is not redundant.\", \"Consider merging into a broader 'default validation' test if the logic remains similar.\"]\n},\"granular\": {\"score\": 7, \"rationale\": \"The assertion targets `validation` and `raw_response`, but it mixes data structure verification with JSON parsing. The isolation of behavior could be sharper by separating these concerns.\", \"suggestions\": [\"Split assertions: one for the internal validation object, another for the raw response format to ensure clarity.\"]\n},\"fast\": {\"score\": 8, \"rationale\": \"The test executes rapidly without artificial delays or heavy I/O. The only potential bottleneck is `json.loads` if not optimized.\", \"suggestions\": [\"Pre-verify JSON validity before parsing; use a lightweight check like `assert isinstance(...)` to avoid unnecessary overhead.\"]\n},\"first_tdd\": {\"score\": 9, \"rationale\": \"The test follows the Arrange-Act-Assert pattern: setup (`wrapped_unit`), act (call API), assert. It clearly specifies expected behavior for null inputs.\", \"suggestions\": [\"Ensure `valid_review_payload()` fixture is deterministic and isolated from external state to fully satisfy TDD principles.\"]\n},\"summary\": \"{\\\"understandable\\\": 8, \\\"maintainable\\\": 7, \\\"repeatable\\\": 9, \\\"atomic\\\": 8, \\\"necessary\\\": 6, \\\"granular\\\": 7, \\\"fast\\\": 8, \\\"first_tdd\\\": 9}\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 688,
+      "prompt_tokens": 519,
+      "total_tokens": 1207,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "8f42404cc2d496e44443f31e60119c08166cea1305ae7c12dad59df1384c51ab": {
+    "id": "chatcmpl-ea4a9d81-b25c-41bc-be68-8ba7427ffbc9",
+    "created": 1783533705,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 6,\n    \"rationale\": \"The test name is vague ('test_unit_review_artifact') and lacks a clear business rule. It does not specify what 'artifact' represents or how the code review data should be structured.\",\n    \"suggestions\": [\n      \"Rename to `test_build_validation_context_from_json` or similar, clearly stating input/output behavior.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 4,\n    \"rationale\": \"The test is brittle and tightly coupled to specific implementation details (`CodeReviewBreakdown`, `UnitReviewArtifact`). It relies on external shared state (the JSON string) which will break if the schema changes.\",\n    \"suggestions\": [\n      \"Extract logic into a dedicated helper function or factory. Remove direct instantiation of complex classes inside test functions.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 3,\n    \"rationale\": \"The test relies on `pytest.approx` for floating-point comparison and assumes specific JSON keys exist in the model dump without verifying their presence first. This makes it non-deterministic across runs if schema versions change.\",\n    \"suggestions\": [\n      \"Remove reliance on external shared state (JSON string). Use a mock or fixture to simulate input data instead of hardcoding raw strings.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 5,\n    \"rationale\": \"The test verifies multiple unrelated assertions about the dumped model and specific field values. If one assertion fails (e.g., a new validation rule is added), it becomes harder to pinpoint which part failed.\",\n    \"suggestions\": [\n      \"Isolate each check into its own `assert` statement or use an intermediate helper function for serialization/validation.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 2,\n    \"rationale\": \"The test duplicates coverage of other tests that likely verify the same artifact creation and validation logic. It also checks trivial details (like whitespace trimming) rather than core business rules.\",\n    \"suggestions\": [\n      \"Remove this specific unit test if it is covered by integration or end-to-end tests for 'artifact' generation.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 3,\n    \"rationale\": \"The assertions are mixed and lack clear boundaries. It mixes serialization checks with field-level validation logic in a single test function.\",\n    \"suggestions\": [\n      \"Split into separate tests: one for `model_dump()` correctness, another for specific field validations (confidence/repaired status).\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 4,\n    \"rationale\": \"The test loads a JSON string and parses it. While not heavy I/O, the overhead of parsing arbitrary user input into complex models adds unnecessary latency compared to unit tests with mocked data.\",\n    \"suggestions\": [\n      \"Replace `json.loads` on raw strings with mock objects or fixtures that simulate the validation context without network/file system calls.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 2,\n    \"rationale\": \"The test does not demonstrate a clean Arrange-Act-Assert pattern. It directly instantiates complex classes and validates internal state rather than asserting the expected behavior of an external contract.\",\n    \"suggestions\": [\n      \"Refactor to follow TDD principles: Write a failing unit that asserts specific input/output contracts, then write tests for edge cases (e.g., null inputs) before writing this test.\"\n    ]\n  },\n  \"summary\": \"The test is poorly designed. It lacks clarity on intent, relies heavily on brittle external state and implementation details, mixes responsibilities across assertions, and fails to demonstrate a TDD-first approach. Immediate refactoring into modularized helper functions or fixtures is required before it can be considered maintainable.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 864,
+      "prompt_tokens": 1022,
+      "total_tokens": 1886,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "b2c0b275272064772558e409accd0b7cbca1153b281bfe4afe97c82bc0ab64d8": {
+    "id": "chatcmpl-b435dcb6-8508-43ed-9581-56ccf50f1e15",
+    "created": 1783533780,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 4,\n    \"rationale\": \"The test name and body are verbose but readable. However, the business rule 'recoverable failure' is buried in nested dictionaries within a complex assertion chain rather than being explicitly stated as an expected outcome.\",\n    \"suggestions\": [\n      \"Explicitly state: `assert results[0]['review'] == None` instead of relying on implicit logic flow.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 3,\n    \"rationale\": \"The test is brittle to changes in the underlying evaluator's error handling or data structure. It relies heavily on specific field names (`validation_retries`, `repair_attempts`) and nested dictionary structures that may change during refactoring.\",\n    \"suggestions\": [\n      \"Extract common diagnostic fields into a dedicated helper class or constant map.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 5,\n    \"rationale\": \"The test is self-contained and deterministic. It does not rely on external state (database/network/filesystem) but relies entirely on the mocked `fake_call_structured_with_raw_and_diagnostics` function.\",\n    \"suggestions\": [\n      \"Ensure the mock function's side effects are isolated; avoid any global or shared mutable state.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 6,\n    \"rationale\": \"The test verifies a single behavior: that structured output errors result in `review=None` and specific failure types. The cause is obvious (structured error handling logic).\",\n    \"suggestions\": [\n      \"Add an explicit assertion for the exact exception type raised to ensure deterministic failure propagation.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 7,\n    \"rationale\": \"The test covers a specific edge case (structured output recovery). It does not duplicate coverage of general JSON parsing tests or other unit evaluation scenarios.\",\n    \"suggestions\": [\n      \"Ensure this is the only place in the codebase testing structured output failure logic to avoid redundancy.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 5,\n    \"rationale\": \"The test isolates specific fields (`validation_retries`, `repair_attempts`) rather than just the final outcome. This provides some granularity but could be more focused on the core logic flow.\",\n    \"suggestions\": [\n      \"Refine assertions to focus strictly on the logical path of error recovery, removing noise from intermediate counters.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 8,\n    \"rationale\": \"The test executes rapidly. It avoids artificial sleeps and heavy I/O operations; it is purely synchronous logic over a mock function.\",\n    \"suggestions\": [\n      \"Remove any `await` blocks if the underlying evaluator call was already async (check signature), or ensure no blocking calls occur.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 6,\n    \"rationale\": \"The test follows Arrange-Act-Pattern loosely. It sets up a mock and asserts behavior without explicitly defining the 'Arrange' phase (what data is being tested) before acting.\",\n    \"suggestions\": [\n      \"Explicitly define: `units = [...]` as part of the setup, then immediately assert on that specific unit's result to demonstrate design intent.\"\n    ]\n  },\n  \"summary\": \"The test demonstrates good TDD principles but lacks clarity in its business rule definition and is slightly brittle due to deep nesting. It should be tightened by explicitly stating expected outcomes and reducing reliance on internal implementation details like counters.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 803,
+      "prompt_tokens": 766,
+      "total_tokens": 1569,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "d69d6b2c9d7c66a1e571efe4cfb840b015d4d8998df0d513274abc0c101a2100": {
+    "id": "chatcmpl-bb6f24d4-842b-46b8-b389-662c40784632",
+    "created": 1783533864,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 9,\n    \"rationale\": \"The test name and arguments are clear; however, the `valid_review_payload` fixture is not defined within this file or accessible to the caller in a way that makes its content explicit. The intent relies entirely on an external artifact.\",\n    \"suggestions\": [\n      \"Define `def valid_review_payload() -> dict:` inside this test module immediately before it's used, ensuring no ambiguity about what constitutes 'valid' data.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 8,\n    \"rationale\": \"The function call passes a dictionary of arguments. While the structure is clean, relying on external fixtures (`get_reviews`) introduces coupling to other modules or test infrastructure that may change between runs if not explicitly mocked.\",\n    \"suggestions\": [\n      \"Explicitly mock `get_reviews` in this specific test case (e.g., using a fixture like `@pytest.fixture(autouse=True)` with an empty list) rather than relying on the global state of other tests to provide valid data.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic in execution flow but relies entirely on `valid_review_payload`. If that fixture changes its internal logic or content between runs without updating the code, results will vary.\",\n    \"suggestions\": [\n      \"Ensure `valid_review_payload` returns a fixed, hardcoded dictionary constant (e.g., `{'reviews': [{'id': 1}]}`) rather than calling an external function that might have side effects.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: the successful writing of a report with specific content. There is no hidden logic or multiple failure modes visible in this single assertion block.\",\n    \"suggestions\": [\n      \"Add an explicit `assert False` at the end if any other assertions fail, to ensure only this specific check passes.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test verifies a single output format. It does not verify input validation logic or edge cases for malformed data; those should be handled by other tests.\",\n    \"suggestions\": [\n      \"Remove this specific assertion if the goal is to ensure only valid inputs are accepted elsewhere, unless you specifically need to assert that legacy payloads *must* produce a PASS verdict.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The test isolates one specific scenario: the acceptance of a 'legacy' review payload. It does not mix unrelated scenarios like new features or error handling.\",\n    \"suggestions\": [\n      \"Ensure no other tests in this file (or surrounding files) are testing similar legacy-specific behaviors to avoid redundancy.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes quickly. It avoids sleeps or heavy I/O; the only potential bottleneck is reading `out_file.read_text`, which is negligible for a single line.\",\n    \"suggestions\": [\n      \"Remove any artificial delays (`time.sleep`) if this test were part of an integration suite, though it's not currently slow.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"The code follows Arrange-Act-Assert structure. However, the 'Arrange' phase is incomplete because `valid_review_payload` is an external dependency; a true TDD test would define this payload as part of the setup to ensure isolation.\",\n    \"suggestions\": [\n      \"Refactor: Move `def valid_review_payload()` into this file and use it in both Arrange (setup) and Act phases, ensuring no other tests depend on its internal state.\"\n    ]\n  },\n  \"summary\": \"The test is highly readable and fast but suffers from a critical lack of self-containment due to external dependencies. It risks becoming brittle if the definition of 'valid' changes or if `get_reviews` behaves differently in parallel execution environments. To achieve full TDD compliance, it must be fully isolated.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 943,
+      "prompt_tokens": 686,
+      "total_tokens": 1629,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "49cd84b8ebdeec6e25a86fc9ca9dbd1bb1d140e3e7c208d74f614b97e8fb7b44": {
+    "id": "chatcmpl-c649da45-f4a1-4871-922a-d054b3a38b33",
+    "created": 1783533942,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 9,\n    \"rationale\": \"The test name and assertion clearly articulate the business rule: a recoverable failure (structured_output) is excluded from the CQI calculation. The domain language ('recoverable_failure', 'excludes') makes intent unambiguous.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 8,\n    \"rationale\": \"The test relies on `valid_review_payload` and specific data structures (`cr_units`, `farley_data`). While the logic is clear, it tightly couples to internal API contracts. If these payloads or structure definitions change without updating this single file, maintainability drops significantly.\",\n    \"suggestions\": [\n      \"Extract the payload generation into a dedicated utility function with strict type hints and documentation comments explaining why certain fields are present/absent.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is self-contained but relies on `valid_review_payload` which implies external state or fixtures. If the fixture definition changes (e.g., adding a new field), this specific test will break unless all callers are updated.\",\n    \"suggestions\": [\n      \"Move payload generation logic into an isolated module with its own unit tests to ensure determinism and decoupling from other test suites.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The assertion verifies exactly one behavior: the presence of specific text in `out_file`. If this fails, it is immediately obvious that a recoverable failure was included or excluded incorrectly. No complex side effects are triggered.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test verifies the specific logic for handling `structured_output` failures in CQI calculation. However, it does not verify that other failure types (e.g., critical errors) are handled correctly or that the report generation handles edge cases like missing files.\",\n    \"suggestions\": [\n      \"Add a complementary test case covering non-recoverable failures to ensure comprehensive coverage of all error scenarios.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The assertion is granular enough; it checks for specific string literals and expected values. It isolates the exact behavior regarding CQI exclusion logic without asserting implementation details of `write_unified_report`.\",\n    \"suggestions\": []\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes in a single function call with minimal setup. There are no artificial sleeps or heavy I/O operations; it reads the file and checks for text presence efficiently.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"The test follows Arrange-Act-Pattern (Arrange: `valid_review_payload`, Act: call functions, Assert: check content). However, the 'Arrange' phase is somewhat implicit in passing a fixture object rather than explicitly setting up isolated inputs for this specific logic.\",\n    \"suggestions\": [\n      \"Explicitly document and isolate the input payload setup to make it clearer that this test specifically validates the exclusion of recoverable failures.\"\n    ]\n  },\n  \"summary\": \"The test is highly understandable and atomic. It demonstrates a solid TDD approach but risks brittleness due to reliance on external fixtures (`valid_review_payload`) for its 'Arrange' phase. To reach perfection (10s), it must be decoupled from these specific fixture definitions into reusable, documented utilities.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 817,
+      "prompt_tokens": 794,
+      "total_tokens": 1611,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
