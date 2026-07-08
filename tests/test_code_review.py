@@ -409,6 +409,7 @@ def test_unit_review_artifact():
     artifact = UnitReviewArtifact(
         file_path="src/foo.py",
         name="foo",
+        class_name="Foo",
         review=breakdown,
         validation=context,
         raw_response=raw_json_str
@@ -418,6 +419,7 @@ def test_unit_review_artifact():
     dumped = artifact.model_dump()
     assert dumped["file_path"] == "src/foo.py"
     assert dumped["name"] == "foo"
+    assert dumped["class_name"] == "Foo"
     assert dumped["raw_response"] == raw_json_str
     assert dumped["validation"]["repaired"] is True
     assert dumped["validation"]["normalized"] is True
@@ -939,7 +941,7 @@ async def test_evaluate_units_marks_structured_output_failure_recoverable(monkey
     units = [{
         "name": "broken",
         "file_path": "scripts/broken.py",
-        "class_name": None,
+        "class_name": "Broken",
         "start_line": 1,
         "end_line": 1,
         "lines_changed": 1,
@@ -949,6 +951,7 @@ async def test_evaluate_units_marks_structured_output_failure_recoverable(monkey
     results = await code_review_evaluator.evaluate_units(None, "litellm/foo", units)
 
     assert len(results) == 1
+    assert results[0]["class_name"] == "Broken"
     assert results[0]["review"] is None
     assert results[0]["recoverable_failure"]["type"] == "structured_output"
     assert results[0]["validation"]["fields"][0]["status"] == "INVALID"
