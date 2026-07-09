@@ -488,6 +488,93 @@ def test_write_unified_report_excludes_recoverable_failure_from_cqi(tmp_path, va
     assert "| scripts/code_review_compare.py | &lt;module&gt; | N/A (recoverable failure) | **N/A** | Failed to validate structured output |" in content
 
 
+def test_write_unified_report_uses_summary_fallback_for_empty_summary(tmp_path, valid_review_payload):
+    from scripts.unified_compare import write_unified_report
+    out_file = tmp_path / "report.md"
+    review = valid_review_payload()
+    review["summary"] = "   "
+    cr_units = [{
+        "file_path": "src/summary.py",
+        "name": "missing_summary",
+        "review": review,
+    }]
+
+    write_unified_report(
+        out_path=out_file,
+        unified_verdict="PASS",
+        reasons=[],
+        spend_str="**Token spend**: 100 total tokens\n\n",
+        cr_data={"units": cr_units, "verdict": "PASS"},
+        farley_data={
+            "bsum": {"avg_index": 8.0},
+            "psum": {"avg_index": 8.0},
+            "delta": 0.0,
+            "verdict": "PASS",
+            "regressions": [],
+            "baseline_exists": True,
+        },
+        compat_data={"ok": True, "score": 10.0, "regressions": []},
+    )
+
+    content = out_file.read_text(encoding="utf-8")
+    assert "| src/summary.py | missing_summary | 8.00/10 | **OK** | No summary provided |" in content
+    assert "_Review summary fallback used for 1 unit(s)._" in content
+
+
+def test_write_unified_report_counts_empty_summaries_without_recoverable_failures(tmp_path, valid_review_payload):
+    from scripts.unified_compare import write_unified_report
+    out_file = tmp_path / "report.md"
+    empty_review = valid_review_payload()
+    empty_review["summary"] = ""
+    useful_review = valid_review_payload()
+    useful_review["summary"] = "Useful review"
+
+    cr_units = [
+        {
+            "file_path": "src/empty.py",
+            "name": "empty_summary",
+            "review": empty_review,
+        },
+        {
+            "file_path": "src/useful.py",
+            "name": "useful_summary",
+            "review": useful_review,
+        },
+        {
+            "file_path": "src/recoverable.py",
+            "name": "recoverable",
+            "review": None,
+            "recoverable_failure": {
+                "type": "structured_output",
+                "message": "Failed to validate structured output",
+            },
+        },
+    ]
+
+    write_unified_report(
+        out_path=out_file,
+        unified_verdict="PASS",
+        reasons=[],
+        spend_str="**Token spend**: 100 total tokens\n\n",
+        cr_data={"units": cr_units, "verdict": "PASS"},
+        farley_data={
+            "bsum": {"avg_index": 8.0},
+            "psum": {"avg_index": 8.0},
+            "delta": 0.0,
+            "verdict": "PASS",
+            "regressions": [],
+            "baseline_exists": True,
+        },
+        compat_data={"ok": True, "score": 10.0, "regressions": []},
+    )
+
+    content = out_file.read_text(encoding="utf-8")
+    assert "_Review summary fallback used for 1 unit(s)._" in content
+    assert "| src/empty.py | empty_summary | 8.00/10 | **OK** | No summary provided |" in content
+    assert "| src/useful.py | useful_summary | 8.00/10 | **OK** | Useful review |" in content
+    assert "| src/recoverable.py | recoverable | N/A (recoverable failure) | **N/A** | Failed to validate structured output |" in content
+
+
 def test_write_unified_report_displays_baseline_state(tmp_path):
     from scripts.unified_compare import write_unified_report
     out_file = tmp_path / "report.md"

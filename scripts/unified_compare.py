@@ -42,6 +42,7 @@ REPORT_ROOT = (PROJECT_ROOT / "reports").resolve()
 # Allowed file extensions
 JSON_EXT = frozenset({".json"})
 MD_EXT = frozenset({".md"})
+EMPTY_SUMMARY_FALLBACK = "No summary provided"
 
 
 def safe_load_json(path: Path) -> Dict[str, Any]:
@@ -336,6 +337,26 @@ def _recoverable_failure_summary(unit: Dict[str, Any]) -> str:
     return failure.get("message") or failure.get("type") or "Recoverable evaluation failure"
 
 
+def review_summary(review: Any) -> str:
+    if not isinstance(review, dict):
+        return EMPTY_SUMMARY_FALLBACK
+    summary = review.get("summary")
+    if isinstance(summary, str) and summary.strip():
+        return summary.strip()
+    return EMPTY_SUMMARY_FALLBACK
+
+
+def count_empty_review_summaries(cr_units: List[Dict[str, Any]]) -> int:
+    count = 0
+    for unit in cr_units:
+        if not isinstance(unit, dict) or is_recoverable_review_failure(unit):
+            continue
+        review = unit.get("review") or {}
+        if review_summary(review) == EMPTY_SUMMARY_FALLBACK:
+            count += 1
+    return count
+
+
 def _write_cr_units_overview(f, cr_units: List[Dict[str, Any]]) -> None:
     f.write("### Code Units Overview\n\n")
     f.write("| File | Unit | CQI | Severity | Summary |\n")
@@ -357,7 +378,7 @@ def _write_cr_units_overview(f, cr_units: List[Dict[str, Any]]) -> None:
             f"| {_esc(format_unit_name(unit))} "
             f"| {_esc(format_cqi_result(review))} "
             f"| **{_esc(severity)}** "
-            f"| {_esc(review.get('summary', ''))} |\n"
+            f"| {_esc(review_summary(review))} |\n"
         )
     f.write("\n")
 
@@ -399,6 +420,9 @@ def _write_code_review_details(f, cr_data: Dict[str, Any]) -> None:
     f.write("## 🔍 Code Review Findings\n\n")
     f.write("<details>\n<summary>Click to view detailed Code Review feedback</summary>\n\n")
     block_units, warn_units, _ = group_units_by_severity(cr_units)
+    empty_summary_count = count_empty_review_summaries(cr_units)
+    if empty_summary_count:
+        f.write(f"_Review summary fallback used for {empty_summary_count} unit(s)._\n\n")
 
     _write_cr_units_overview(f, cr_units)
 
@@ -410,7 +434,7 @@ def _write_code_review_details(f, cr_data: Dict[str, Any]) -> None:
             severity = effective_review_severity(review)
             f.write(f"#### ⚠️ `{unit.get('file_path')}` -> `{format_unit_name(unit)}` ({severity})\n")
             f.write(f"**CQI**: {format_cqi_result(review)}\n\n")
-            f.write(f"{review.get('summary', '')}\n\n")
+            f.write(f"{review_summary(review)}\n\n")
             f.write("| Dimension | Score | Rationale | Suggestions |\n")
             f.write("|---|---|---|---|\n")
             write_dimension_rows(f, review)
