@@ -337,7 +337,9 @@ def _recoverable_failure_summary(unit: Dict[str, Any]) -> str:
     return failure.get("message") or failure.get("type") or "Recoverable evaluation failure"
 
 
-def review_summary(review: Dict[str, Any]) -> str:
+def review_summary(review: Any) -> str:
+    if not isinstance(review, dict):
+        return EMPTY_SUMMARY_FALLBACK
     summary = review.get("summary")
     if isinstance(summary, str) and summary.strip():
         return summary.strip()
