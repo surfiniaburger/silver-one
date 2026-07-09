@@ -234,6 +234,23 @@ def _empty_structured_output_summary() -> Dict[str, int]:
     }
 
 
+def _empty_provider_error_summary() -> Dict[str, int]:
+    return {
+        "failures": 0,
+    }
+
+
+def _process_provider_error_telemetry(unit: Dict[str, Any], summary: Dict[str, Any]) -> bool:
+    diagnostics = unit.get("provider_error")
+    if not isinstance(diagnostics, dict):
+        return False
+
+    provider_errors = summary["details"]["provider_error"]
+    provider_errors["failures"] += 1
+    summary["invalid_units"] += 1
+    return True
+
+
 def _process_structured_output_telemetry(unit: Dict[str, Any], summary: Dict[str, Any]) -> bool:
     diagnostics = unit.get("structured_output")
     if not isinstance(diagnostics, dict):
@@ -286,9 +303,13 @@ def build_validation_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
             "normalized_text_count": 0,
             "invalid_field_count": 0,
             "structured_output": _empty_structured_output_summary(),
+            "provider_error": _empty_provider_error_summary(),
         }
     }
     for unit in results:
+        if _process_provider_error_telemetry(unit, summary):
+            continue
+
         if _process_structured_output_telemetry(unit, summary):
             continue
 
@@ -303,6 +324,36 @@ def build_validation_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
             _process_field_telemetry(field, summary)
                 
     return summary
+
+
+def _provider_error_artifact(
+    file_path: str,
+    name: str,
+    class_name: Optional[str],
+    exc: Exception,
+) -> Dict[str, Any]:
+    message = str(exc)
+    return {
+        "file_path": file_path,
+        "name": name,
+        "class_name": class_name,
+        "review": None,
+        "validation": {
+            "repaired": False,
+            "normalized": False,
+            "fields": [],
+        },
+        "raw_response": "",
+        "provider_error": {
+            "type": "provider_error",
+            "message": message,
+            "recoverable": True,
+        },
+        "recoverable_failure": {
+            "type": "provider_error",
+            "message": message,
+        },
+    }
 
 
 def persist_usage_artifacts(
@@ -406,6 +457,7 @@ async def evaluate_units(
             })
         except Exception as exc:
             print(f"\033[91mError reviewing {name} in {file_path}: {exc}\033[0m")
+            results.append(_provider_error_artifact(file_path, name, class_name, exc))
 
     return results
 

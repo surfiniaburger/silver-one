@@ -337,6 +337,20 @@ def _recoverable_failure_summary(unit: Dict[str, Any]) -> str:
     return failure.get("message") or failure.get("type") or "Recoverable evaluation failure"
 
 
+def _recoverable_failure_cqi_label(unit: Dict[str, Any]) -> str:
+    failure = unit.get("recoverable_failure") or {}
+    if failure.get("type") == "provider_error":
+        return "N/A (provider error)"
+    return "N/A (recoverable failure)"
+
+
+def _recoverable_failure_severity_label(unit: Dict[str, Any]) -> str:
+    failure = unit.get("recoverable_failure") or {}
+    if failure.get("type") == "provider_error":
+        return "PROVIDER_ERROR"
+    return "N/A"
+
+
 def review_summary(review: Any) -> str:
     if not isinstance(review, dict):
         return EMPTY_SUMMARY_FALLBACK
@@ -366,8 +380,8 @@ def _write_cr_units_overview(f, cr_units: List[Dict[str, Any]]) -> None:
             f.write(
                 f"| {_esc(unit.get('file_path'))} "
                 f"| {_esc(format_unit_name(unit))} "
-                f"| N/A (recoverable failure) "
-                f"| **N/A** "
+                f"| {_esc(_recoverable_failure_cqi_label(unit))} "
+                f"| **{_esc(_recoverable_failure_severity_label(unit))}** "
                 f"| {_esc(_recoverable_failure_summary(unit))} |\n"
             )
             continue
