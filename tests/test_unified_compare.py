@@ -5,8 +5,52 @@ from scripts.unified_compare import (
     combine_token_spend,
     parse_compatibility_result,
     resolve_farley_baseline,
+    write_unified_report,
 )
 from scripts.code_review_compare import get_reviews
+
+
+def farley_report_data(**overrides):
+    data = {
+        "bsum": {"avg_index": 8.0},
+        "psum": {"avg_index": 8.0},
+        "delta": 0.0,
+        "verdict": "PASS",
+        "regressions": [],
+        "baseline_exists": True,
+    }
+    data.update(overrides)
+    return data
+
+
+def compat_report_data(**overrides):
+    data = {"ok": True, "score": 10.0, "regressions": []}
+    data.update(overrides)
+    return data
+
+
+def render_unified_report(
+    tmp_path,
+    *,
+    cr_units=None,
+    cr_verdict="PASS",
+    unified_verdict="PASS",
+    reasons=None,
+    spend_str="**Token spend**: 100 total tokens\n\n",
+    farley_data=None,
+    compat_data=None,
+):
+    out_file = tmp_path / "report.md"
+    write_unified_report(
+        out_path=out_file,
+        unified_verdict=unified_verdict,
+        reasons=reasons or [],
+        spend_str=spend_str,
+        cr_data={"units": cr_units or [], "verdict": cr_verdict},
+        farley_data=farley_data or farley_report_data(),
+        compat_data=compat_data or compat_report_data(),
+    )
+    return out_file.read_text(encoding="utf-8")
 
 
 def test_combine_token_spend_empty():
@@ -55,25 +99,15 @@ def test_combine_token_spend_with_values():
 
 
 def test_write_unified_report_basic(tmp_path):
-    from scripts.unified_compare import write_unified_report
-    out_file = tmp_path / "report.md"
-    write_unified_report(
-        out_path=out_file,
-        unified_verdict="PASS",
-        reasons=[],
+    content = render_unified_report(
+        tmp_path,
         spend_str="**Token spend**: 0 total tokens\n\n",
-        cr_data={"units": [], "verdict": "PASS"},
-        farley_data={
-            "bsum": {"avg_index": 0.0, "count": 0},
-            "psum": {"avg_index": 8.5},
-            "delta": 0.0,
-            "verdict": "PASS",
-            "regressions": [],
-            "baseline_exists": False,
-        },
-        compat_data={"ok": True, "score": 10.0, "regressions": []}
+        farley_data=farley_report_data(
+            bsum={"avg_index": 0.0, "count": 0},
+            psum={"avg_index": 8.5},
+            baseline_exists=False,
+        ),
     )
-    content = out_file.read_text(encoding="utf-8")
     assert "# MSEC Unified Quality Report" in content
     assert "Verdict: **PASS**" in content
     assert "Token spend" in content
@@ -175,9 +209,6 @@ def test_resolve_farley_baseline_corrupted_shape(tmp_path, monkeypatch):
 
 
 def test_write_unified_report_full(tmp_path):
-    from scripts.unified_compare import write_unified_report
-    out_file = tmp_path / "report.md"
-
     cr_units = [
         {
             "file_path": "src/utils.py",
@@ -196,23 +227,19 @@ def test_write_unified_report_full(tmp_path):
 
     compat_regressions = ["Removed method foo"]
 
-    write_unified_report(
-        out_path=out_file,
+    content = render_unified_report(
+        tmp_path,
         unified_verdict="FAIL",
         reasons=["Code review quality warning", "API Compatibility regressions"],
-        spend_str="**Token spend**: 100 total tokens\n\n",
-        cr_data={"units": cr_units, "verdict": "WARN"},
-        farley_data={
-            "bsum": {"avg_index": 8.0},
-            "psum": {"avg_index": 7.5},
-            "delta": -0.5,
-            "verdict": "PASS",
-            "regressions": farley_regressions,
-            "baseline_exists": True,
-        },
-        compat_data={"ok": False, "score": 8.0, "regressions": compat_regressions}
+        cr_units=cr_units,
+        cr_verdict="WARN",
+        farley_data=farley_report_data(
+            psum={"avg_index": 7.5},
+            delta=-0.5,
+            regressions=farley_regressions,
+        ),
+        compat_data=compat_report_data(ok=False, score=8.0, regressions=compat_regressions),
     )
-    content = out_file.read_text(encoding="utf-8")
     assert "# MSEC Unified Quality Report" in content
     assert "Verdict: **FAIL**" in content
     assert "Code review quality warning" in content
@@ -223,9 +250,6 @@ def test_write_unified_report_full(tmp_path):
 
 
 def test_write_unified_report_null_values(tmp_path):
-    from scripts.unified_compare import write_unified_report
-    out_file = tmp_path / "report.md"
-
     cr_units = [
         {
             "file_path": "src/utils.py",
@@ -240,31 +264,24 @@ def test_write_unified_report_null_values(tmp_path):
 
     compat_regressions = ["Removed method foo"]
 
-    write_unified_report(
-        out_path=out_file,
+    content = render_unified_report(
+        tmp_path,
         unified_verdict="FAIL",
         reasons=["Code review quality warning", "API Compatibility regressions"],
-        spend_str="**Token spend**: 100 total tokens\n\n",
-        cr_data={"units": cr_units, "verdict": "WARN"},
-        farley_data={
-            "bsum": {"avg_index": 8.0},
-            "psum": {"avg_index": 7.5},
-            "delta": -0.5,
-            "verdict": "PASS",
-            "regressions": farley_regressions,
-            "baseline_exists": True,
-        },
-        compat_data={"ok": False, "score": None, "regressions": compat_regressions}
+        cr_units=cr_units,
+        cr_verdict="WARN",
+        farley_data=farley_report_data(
+            psum={"avg_index": 7.5},
+            delta=-0.5,
+            regressions=farley_regressions,
+        ),
+        compat_data=compat_report_data(ok=False, score=None, regressions=compat_regressions),
     )
-    content = out_file.read_text(encoding="utf-8")
     assert "# MSEC Unified Quality Report" in content
     assert "Score: 10.0/10" in content
 
 
 def test_write_unified_report_with_findings(tmp_path):
-    from scripts.unified_compare import write_unified_report
-    out_file = tmp_path / "report.md"
-
     cr_units = [
         {
             "file_path": "src/utils.py",
@@ -294,23 +311,17 @@ def test_write_unified_report_with_findings(tmp_path):
         }
     ]
 
-    write_unified_report(
-        out_path=out_file,
+    content = render_unified_report(
+        tmp_path,
         unified_verdict="FAIL",
         reasons=["Code review quality warning"],
-        spend_str="**Token spend**: 100 total tokens\n\n",
-        cr_data={"units": cr_units, "verdict": "WARN"},
-        farley_data={
-            "bsum": {"avg_index": 8.0},
-            "psum": {"avg_index": 7.5},
-            "delta": -0.5,
-            "verdict": "PASS",
-            "regressions": [],
-            "baseline_exists": True,
-        },
-        compat_data={"ok": True, "score": 10.0, "regressions": []}
+        cr_units=cr_units,
+        cr_verdict="WARN",
+        farley_data=farley_report_data(
+            psum={"avg_index": 7.5},
+            delta=-0.5,
+        ),
     )
-    content = out_file.read_text(encoding="utf-8")
     assert "##### Structured Engineering Findings" in content
     assert "Uncaught ValueError" in content
     assert "Lines 15-20" in content
@@ -319,9 +330,6 @@ def test_write_unified_report_with_findings(tmp_path):
 
 
 def test_write_unified_report_displays_effective_severity(tmp_path):
-    from scripts.unified_compare import write_unified_report
-    out_file = tmp_path / "report.md"
-
     cr_units = [
         {
             "file_path": "tests/test_code_review.py",
@@ -334,32 +342,12 @@ def test_write_unified_report_displays_effective_severity(tmp_path):
         }
     ]
 
-    write_unified_report(
-        out_path=out_file,
-        unified_verdict="PASS",
-        reasons=[],
-        spend_str="**Token spend**: 100 total tokens\n\n",
-        cr_data={"units": cr_units, "verdict": "PASS"},
-        farley_data={
-            "bsum": {"avg_index": 8.0},
-            "psum": {"avg_index": 8.0},
-            "delta": 0.0,
-            "verdict": "PASS",
-            "regressions": [],
-            "baseline_exists": True,
-        },
-        compat_data={"ok": True, "score": 10.0, "regressions": []},
-    )
-
-    content = out_file.read_text(encoding="utf-8")
+    content = render_unified_report(tmp_path, cr_units=cr_units)
     assert "| tests/test_code_review.py | test_unsubstantiated_block | INVALID (MISSING_DIMENSION) | **WARN** | OK |" in content
     assert "**BLOCK**" not in content
 
 
 def test_write_unified_report_marks_invalid_cqi_metric_failed(tmp_path):
-    from scripts.unified_compare import write_unified_report
-    out_file = tmp_path / "report.md"
-
     cr_units = [
         {
             "file_path": "src/utils.py",
@@ -371,83 +359,30 @@ def test_write_unified_report_marks_invalid_cqi_metric_failed(tmp_path):
         }
     ]
 
-    write_unified_report(
-        out_path=out_file,
+    content = render_unified_report(
+        tmp_path,
         unified_verdict="FAIL",
         reasons=["INVALID CQI: src/utils.py -> invalid_review: Required CQI dimension 'readability' is missing."],
-        spend_str="**Token spend**: 100 total tokens\n\n",
-        cr_data={"units": cr_units, "verdict": "PASS"},
-        farley_data={
-            "bsum": {"avg_index": 8.0},
-            "psum": {"avg_index": 8.0},
-            "delta": 0.0,
-            "verdict": "PASS",
-            "regressions": [],
-            "baseline_exists": True,
-        },
-        compat_data={"ok": True, "score": 10.0, "regressions": []},
+        cr_units=cr_units,
     )
-
-    content = out_file.read_text(encoding="utf-8")
     assert "| Code Quality Index (CQI) | INVALID (1/1 unit(s)) | **FAIL** |" in content
     assert "| src/utils.py | invalid_review | INVALID (MISSING_DIMENSION) | **OK** | Incomplete review |" in content
 
 
 def test_write_unified_report_ignores_malformed_cqi_units(tmp_path):
-    from scripts.unified_compare import write_unified_report
-    out_file = tmp_path / "report.md"
-
-    write_unified_report(
-        out_path=out_file,
-        unified_verdict="PASS",
-        reasons=[],
-        spend_str="**Token spend**: 100 total tokens\n\n",
-        cr_data={"units": ["not-a-unit"], "verdict": "PASS"},
-        farley_data={
-            "bsum": {"avg_index": 8.0},
-            "psum": {"avg_index": 8.0},
-            "delta": 0.0,
-            "verdict": "PASS",
-            "regressions": [],
-            "baseline_exists": True,
-        },
-        compat_data={"ok": True, "score": 10.0, "regressions": []},
-    )
-
-    content = out_file.read_text(encoding="utf-8")
+    content = render_unified_report(tmp_path, cr_units=["not-a-unit"])
     assert "| Code Quality Index (CQI) | N/A (no Python code changes) | **PASS** |" in content
 
 
 def test_write_unified_report_accepts_legacy_review_payload(tmp_path, valid_review_payload):
-    from scripts.unified_compare import write_unified_report
-    out_file = tmp_path / "report.md"
     cr_units = get_reviews({"reviews": [valid_review_payload()]})
 
-    write_unified_report(
-        out_path=out_file,
-        unified_verdict="PASS",
-        reasons=[],
-        spend_str="**Token spend**: 100 total tokens\n\n",
-        cr_data={"units": cr_units, "verdict": "PASS"},
-        farley_data={
-            "bsum": {"avg_index": 8.0},
-            "psum": {"avg_index": 8.0},
-            "delta": 0.0,
-            "verdict": "PASS",
-            "regressions": [],
-            "baseline_exists": True,
-        },
-        compat_data={"ok": True, "score": 10.0, "regressions": []},
-    )
-
-    content = out_file.read_text(encoding="utf-8")
+    content = render_unified_report(tmp_path, cr_units=cr_units)
     assert "| Code Quality Index (CQI) | 8.00/10 (average of 1 unit(s)) | **PASS** |" in content
     assert "| legacy-cassette | legacy_review_1 | 8.00/10 | **OK** | legacy review |" in content
 
 
 def test_write_unified_report_excludes_recoverable_failure_from_cqi(tmp_path, valid_review_payload):
-    from scripts.unified_compare import write_unified_report
-    out_file = tmp_path / "report.md"
     cr_units = get_reviews({
         "reviews": [
             valid_review_payload(),
@@ -463,24 +398,7 @@ def test_write_unified_report_excludes_recoverable_failure_from_cqi(tmp_path, va
         ],
     })
 
-    write_unified_report(
-        out_path=out_file,
-        unified_verdict="PASS",
-        reasons=[],
-        spend_str="**Token spend**: 100 total tokens\n\n",
-        cr_data={"units": cr_units, "verdict": "PASS"},
-        farley_data={
-            "bsum": {"avg_index": 8.0},
-            "psum": {"avg_index": 8.0},
-            "delta": 0.0,
-            "verdict": "PASS",
-            "regressions": [],
-            "baseline_exists": True,
-        },
-        compat_data={"ok": True, "score": 10.0, "regressions": []},
-    )
-
-    content = out_file.read_text(encoding="utf-8")
+    content = render_unified_report(tmp_path, cr_units=cr_units)
     assert (
         "| Code Quality Index (CQI) | 8.00/10 "
         "(average of 1 unit(s); 1 recoverable failure(s) excluded) | **PASS** |"
@@ -488,9 +406,39 @@ def test_write_unified_report_excludes_recoverable_failure_from_cqi(tmp_path, va
     assert "| scripts/code_review_compare.py | &lt;module&gt; | N/A (recoverable failure) | **N/A** | Failed to validate structured output |" in content
 
 
+def test_write_unified_report_displays_provider_error_units(tmp_path, valid_review_payload):
+    cr_units = get_reviews({
+        "reviews": [
+            valid_review_payload(),
+            {
+                "file_path": "scripts/unified_compare.py",
+                "name": "review_summary",
+                "review": None,
+                "provider_error": {
+                    "type": "provider_error",
+                    "message": "OllamaException - llama-server process has terminated",
+                    "recoverable": True,
+                },
+                "recoverable_failure": {
+                    "type": "provider_error",
+                    "message": "OllamaException - llama-server process has terminated",
+                },
+            },
+        ],
+    })
+
+    content = render_unified_report(tmp_path, cr_units=cr_units)
+    assert (
+        "| Code Quality Index (CQI) | 8.00/10 "
+        "(average of 1 unit(s); 1 recoverable failure(s) excluded) | **PASS** |"
+    ) in content
+    assert (
+        "| scripts/unified_compare.py | review_summary | N/A (provider error) "
+        "| **PROVIDER_ERROR** | OllamaException - llama-server process has terminated |"
+    ) in content
+
+
 def test_write_unified_report_uses_summary_fallback_for_empty_summary(tmp_path, valid_review_payload):
-    from scripts.unified_compare import write_unified_report
-    out_file = tmp_path / "report.md"
     review = valid_review_payload()
     review["summary"] = "   "
     cr_units = [{
@@ -499,31 +447,12 @@ def test_write_unified_report_uses_summary_fallback_for_empty_summary(tmp_path, 
         "review": review,
     }]
 
-    write_unified_report(
-        out_path=out_file,
-        unified_verdict="PASS",
-        reasons=[],
-        spend_str="**Token spend**: 100 total tokens\n\n",
-        cr_data={"units": cr_units, "verdict": "PASS"},
-        farley_data={
-            "bsum": {"avg_index": 8.0},
-            "psum": {"avg_index": 8.0},
-            "delta": 0.0,
-            "verdict": "PASS",
-            "regressions": [],
-            "baseline_exists": True,
-        },
-        compat_data={"ok": True, "score": 10.0, "regressions": []},
-    )
-
-    content = out_file.read_text(encoding="utf-8")
+    content = render_unified_report(tmp_path, cr_units=cr_units)
     assert "| src/summary.py | missing_summary | 8.00/10 | **OK** | No summary provided |" in content
     assert "_Review summary fallback used for 1 unit(s)._" in content
 
 
 def test_write_unified_report_counts_empty_summaries_without_recoverable_failures(tmp_path, valid_review_payload):
-    from scripts.unified_compare import write_unified_report
-    out_file = tmp_path / "report.md"
     empty_review = valid_review_payload()
     empty_review["summary"] = ""
     useful_review = valid_review_payload()
@@ -551,24 +480,7 @@ def test_write_unified_report_counts_empty_summaries_without_recoverable_failure
         },
     ]
 
-    write_unified_report(
-        out_path=out_file,
-        unified_verdict="PASS",
-        reasons=[],
-        spend_str="**Token spend**: 100 total tokens\n\n",
-        cr_data={"units": cr_units, "verdict": "PASS"},
-        farley_data={
-            "bsum": {"avg_index": 8.0},
-            "psum": {"avg_index": 8.0},
-            "delta": 0.0,
-            "verdict": "PASS",
-            "regressions": [],
-            "baseline_exists": True,
-        },
-        compat_data={"ok": True, "score": 10.0, "regressions": []},
-    )
-
-    content = out_file.read_text(encoding="utf-8")
+    content = render_unified_report(tmp_path, cr_units=cr_units)
     assert "_Review summary fallback used for 1 unit(s)._" in content
     assert "| src/empty.py | empty_summary | 8.00/10 | **OK** | No summary provided |" in content
     assert "| src/useful.py | useful_summary | 8.00/10 | **OK** | Useful review |" in content
@@ -576,65 +488,47 @@ def test_write_unified_report_counts_empty_summaries_without_recoverable_failure
 
 
 def test_write_unified_report_displays_baseline_state(tmp_path):
-    from scripts.unified_compare import write_unified_report
-    out_file = tmp_path / "report.md"
-
-    write_unified_report(
-        out_path=out_file,
-        unified_verdict="FAIL",
-        reasons=["FARLEY BASELINE: Farley baseline is required but was not found."],
-        spend_str="**Token spend**: 100 total tokens\n\n",
-        cr_data={"units": [], "verdict": "PASS"},
-        farley_data={
-            "bsum": {"avg_index": 0.0},
-            "psum": {"avg_index": 8.0},
-            "delta": 0.0,
-            "verdict": "PASS",
-            "regressions": [],
-            "baseline_exists": False,
-            "baseline_state": "BASELINE_MISSING",
-            "baseline_reason": "Farley baseline is required but was not found.",
-            "baseline_details": ["missing baseline.json"],
-        },
-        compat_data={"ok": True, "score": 10.0, "regressions": [], "state": "PASS"},
+    """A required missing Farley baseline must fail the gate and explain the missing input."""
+    expected_reason = "Farley baseline is required but was not found."
+    missing_baseline_details = ["missing baseline.json"]
+    missing_required_baseline = farley_report_data(
+        bsum={"avg_index": 0.0},
+        baseline_exists=False,
+        baseline_state="BASELINE_MISSING",
+        baseline_reason=expected_reason,
+        baseline_details=missing_baseline_details,
     )
 
-    content = out_file.read_text(encoding="utf-8")
+    content = render_unified_report(
+        tmp_path,
+        unified_verdict="FAIL",
+        reasons=[f"FARLEY BASELINE: {expected_reason}"],
+        farley_data=missing_required_baseline,
+        compat_data=compat_report_data(state="PASS"),
+    )
+
     assert "| Farley Test Quality | PR avg: 8.00 (baseline missing) | **FAIL** |" in content
     assert "State: **BASELINE_MISSING**" in content
     assert "missing baseline.json" in content
 
 
 def test_write_unified_report_displays_compatibility_check_failed(tmp_path):
-    from scripts.unified_compare import write_unified_report
-    out_file = tmp_path / "report.md"
-
-    write_unified_report(
-        out_path=out_file,
+    content = render_unified_report(
+        tmp_path,
         unified_verdict="FAIL",
         reasons=["API COMPATIBILITY CHECK_FAILED: Parser failed."],
-        spend_str="**Token spend**: 100 total tokens\n\n",
-        cr_data={"units": [], "verdict": "PASS"},
-        farley_data={
-            "bsum": {"avg_index": 8.0},
-            "psum": {"avg_index": 8.0},
-            "delta": 0.0,
-            "verdict": "PASS",
-            "regressions": [],
-            "baseline_exists": True,
-            "baseline_state": "AVAILABLE",
-        },
-        compat_data={
-            "ok": False,
-            "score": 0.0,
-            "regressions": [],
-            "state": "CHECK_FAILED",
-            "reason": "Parser failed.",
-            "details": ["bad syntax"],
-        },
+        farley_data=farley_report_data(
+            baseline_state="AVAILABLE",
+        ),
+        compat_data=compat_report_data(
+            ok=False,
+            score=0.0,
+            state="CHECK_FAILED",
+            reason="Parser failed.",
+            details=["bad syntax"],
+        ),
     )
 
-    content = out_file.read_text(encoding="utf-8")
     assert "| API Compatibility | CHECK_FAILED (Score: 0.0/10) | **FAIL** |" in content
     assert "State: **CHECK_FAILED**" in content
     assert "bad syntax" in content

@@ -913,6 +913,31 @@ def test_structured_output_telemetry_aggregation():
     assert structured["final_failures"] == 1
 
 
+def test_provider_error_telemetry_aggregation():
+    from scripts.code_review_evaluator import build_validation_summary
+
+    summary = build_validation_summary([
+        {
+            "file_path": "a.py",
+            "name": "a",
+            "review": None,
+            "provider_error": {
+                "type": "provider_error",
+                "message": "backend crashed",
+                "recoverable": True,
+            },
+            "recoverable_failure": {
+                "type": "provider_error",
+                "message": "backend crashed",
+            },
+        },
+    ])
+
+    assert summary["total_units"] == 1
+    assert summary["invalid_units"] == 1
+    assert summary["details"]["provider_error"]["failures"] == 1
+
+
 @pytest.mark.asyncio
 async def test_evaluate_units_marks_structured_output_failure_recoverable(monkeypatch):
     diagnostics = {
@@ -956,3 +981,35 @@ async def test_evaluate_units_marks_structured_output_failure_recoverable(monkey
     assert results[0]["recoverable_failure"]["type"] == "structured_output"
     assert results[0]["validation"]["fields"][0]["status"] == "INVALID"
     assert results[0]["structured_output"]["final_failure"] is True
+
+
+@pytest.mark.asyncio
+async def test_evaluate_units_marks_provider_error_recoverable(monkeypatch):
+    async def fake_call_structured_with_raw_and_diagnostics(**kwargs):
+        raise RuntimeError("OllamaException - llama-server process has terminated")
+
+    monkeypatch.setattr(
+        code_review_evaluator.llm_adapter,
+        "call_structured_with_raw_and_diagnostics",
+        fake_call_structured_with_raw_and_diagnostics,
+    )
+
+    units = [{
+        "name": "backend_crash",
+        "file_path": "scripts/backend.py",
+        "class_name": None,
+        "start_line": 1,
+        "end_line": 1,
+        "lines_changed": 1,
+        "code": "def backend_crash(): pass",
+    }]
+
+    results = await code_review_evaluator.evaluate_units(None, "litellm/foo", units)
+
+    assert len(results) == 1
+    assert results[0]["review"] is None
+    assert results[0]["raw_response"] == ""
+    assert results[0]["provider_error"]["type"] == "provider_error"
+    assert results[0]["provider_error"]["recoverable"] is True
+    assert results[0]["recoverable_failure"]["type"] == "provider_error"
+    assert "llama-server process has terminated" in results[0]["provider_error"]["message"]

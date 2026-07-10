@@ -78,6 +78,7 @@ def persist_usage_artifacts(
     if validation_summary is not None:
         details = validation_summary.get("details", {})
         structured = details.get("structured_output", {})
+        provider = details.get("provider_error", {})
         print(
             "\033[94mValidation Summary: "
             f"{validation_summary.get('valid_units', 0)} valid, "
@@ -90,7 +91,8 @@ def persist_usage_artifacts(
             f"{details.get('normalized_text_count', 0)} text normalizations, "
             f"{structured.get('repair_attempts', 0)} structured repair attempts, "
             f"{structured.get('validation_retries', 0)} structured retries, "
-            f"{structured.get('final_failures', 0)} structured final failures)"
+            f"{structured.get('final_failures', 0)} structured final failures, "
+            f"{provider.get('failures', 0)} provider failures)"
             "\033[0m"
         )
 
