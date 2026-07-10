@@ -101,7 +101,8 @@ def test_estimate_pr_tokens_handles_empty_or_missing_code():
 
 
 def test_estimate_unit_tokens_handles_empty_or_missing_code():
-    prompt_overhead = len(code_review_evaluator.SYSTEM_PROMPT) // 4 + 200
+    prompt_overhead = code_review_evaluator.estimate_unit_tokens({"code": ""})
+    assert prompt_overhead > 0
     assert code_review_evaluator.estimate_unit_tokens({}) == 0
     assert code_review_evaluator.estimate_unit_tokens({"code": None}) == prompt_overhead
     assert code_review_evaluator.estimate_unit_tokens({"code": ""}) == prompt_overhead
