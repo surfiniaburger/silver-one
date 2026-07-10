@@ -96,10 +96,12 @@ def test_estimate_pr_tokens_accumulates_overhead():
 
 
 def test_estimate_pr_tokens_handles_empty_or_missing_code():
-    prompt_overhead = len(code_review_evaluator.SYSTEM_PROMPT) // 4 + 200
-
     assert code_review_evaluator.estimate_pr_tokens(None) == 0
     assert code_review_evaluator.estimate_pr_tokens([]) == 0
+
+
+def test_estimate_unit_tokens_handles_empty_or_missing_code():
+    prompt_overhead = len(code_review_evaluator.SYSTEM_PROMPT) // 4 + 200
     assert code_review_evaluator.estimate_unit_tokens({}) == 0
     assert code_review_evaluator.estimate_unit_tokens({"code": None}) == prompt_overhead
     assert code_review_evaluator.estimate_unit_tokens({"code": ""}) == prompt_overhead
@@ -108,7 +110,7 @@ def test_estimate_pr_tokens_handles_empty_or_missing_code():
 def test_code_review_system_prompt_uses_structured_contract_sections():
     prompt = code_review_evaluator.SYSTEM_PROMPT
 
-    for section in [
+    sections = [
         "role",
         "task",
         "context",
@@ -119,9 +121,28 @@ def test_code_review_system_prompt_uses_structured_contract_sections():
         "constraints",
         "output_format",
         "examples",
-    ]:
+    ]
+    for section in sections:
         assert f"<{section}>" in prompt
         assert f"</{section}>" in prompt
+
+    # Semantic validation of section content
+    def extract_section(tag: str) -> str:
+        start_tag = f"<{tag}>"
+        end_tag = f"</{tag}>"
+        start_idx = prompt.find(start_tag)
+        if start_idx == -1:
+            return ""
+        end_idx = prompt.find(end_tag, start_idx)
+        if end_idx == -1:
+            return ""
+        return prompt[start_idx + len(start_tag):end_idx].strip()
+
+    role_content = extract_section("role")
+    assert "elite senior software engineer" in role_content
+
+    task_content = extract_section("task")
+    assert "CodeReviewBreakdown JSON object" in task_content
 
 
 def test_code_review_system_prompt_reinforces_schema_compliance():
@@ -159,7 +180,8 @@ def test_code_review_system_prompt_examples_validate_against_schema():
         code_review_evaluator.CodeReviewBreakdown.model_validate(payload)
 
 
-def test_filter_units_by_budget():
+def test_filter_units_by_budget_selects_highest_priority_units():
+    """Verify that filter_units_by_budget selects the largest changes that fit within the token budget, up to the maximum unit limit."""
     large_unit = {"code": "a" * 4000, "lines_changed": 10}
     largest_unit = {"code": "b" * 8000, "lines_changed": 20}
     small_unit = {"code": "c" * 200, "lines_changed": 5}
@@ -198,7 +220,9 @@ def test_batch_units_by_budget_splits_when_unit_limit_is_exceeded():
 
     batches = code_review_evaluator.batch_units_by_budget(units, max_tokens=1_000_000, max_units=2)
 
-    assert [[unit["lines_changed"] for unit in batch] for batch in batches] == [[3, 2], [1]]
+    assert len(batches) == 2
+    assert [unit["lines_changed"] for unit in batches[0]] == [3, 2]
+    assert [unit["lines_changed"] for unit in batches[1]] == [1]
 
 
 def test_batch_units_by_budget_splits_when_token_limit_is_exceeded():
@@ -217,12 +241,15 @@ def test_batch_units_by_budget_splits_when_token_limit_is_exceeded():
         max_units=20,
     )
 
-    assert [[unit["lines_changed"] for unit in batch] for batch in batches] == [[20], [10, 5]]
+    assert len(batches) == 2
+    assert [unit["lines_changed"] for unit in batches[0]] == [20]
+    assert [unit["lines_changed"] for unit in batches[1]] == [10, 5]
 
 
 def test_batch_units_by_budget_rejects_malformed_units():
-    with pytest.raises(ValueError, match="Review units must be dictionaries"):
+    with pytest.raises(ValueError) as exc_info:
         code_review_evaluator.batch_units_by_budget(["not-a-unit"], max_tokens=1000, max_units=1)
+    assert str(exc_info.value) == "Review units must be dictionaries."
 
 
 def test_batch_units_by_budget_treats_null_lines_changed_as_zero():
@@ -233,7 +260,8 @@ def test_batch_units_by_budget_treats_null_lines_changed_as_zero():
 
     batches = code_review_evaluator.batch_units_by_budget(units, max_tokens=1_000_000, max_units=2)
 
-    assert [[unit["lines_changed"] for unit in batch] for batch in batches] == [[2, None]]
+    assert len(batches) == 1
+    assert [unit["lines_changed"] for unit in batches[0]] == [2, None]
 
 
 def test_batch_units_by_budget_coerces_lines_changed_before_sorting():
@@ -245,7 +273,8 @@ def test_batch_units_by_budget_coerces_lines_changed_before_sorting():
 
     batches = code_review_evaluator.batch_units_by_budget(units, max_tokens=1_000_000, max_units=3)
 
-    assert [[unit["lines_changed"] for unit in batch] for batch in batches] == [["10", 2, "not-a-number"]]
+    assert len(batches) == 1
+    assert [unit["lines_changed"] for unit in batches[0]] == ["10", 2, "not-a-number"]
 
 
 def test_build_review_coverage_reports_complete_batch_review():
