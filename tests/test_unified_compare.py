@@ -488,17 +488,22 @@ def test_write_unified_report_counts_empty_summaries_without_recoverable_failure
 
 
 def test_write_unified_report_displays_baseline_state(tmp_path):
+    """A required missing Farley baseline must fail the gate and explain the missing input."""
+    expected_reason = "Farley baseline is required but was not found."
+    missing_baseline_details = ["missing baseline.json"]
+    missing_required_baseline = farley_report_data(
+        bsum={"avg_index": 0.0},
+        baseline_exists=False,
+        baseline_state="BASELINE_MISSING",
+        baseline_reason=expected_reason,
+        baseline_details=missing_baseline_details,
+    )
+
     content = render_unified_report(
         tmp_path,
         unified_verdict="FAIL",
-        reasons=["FARLEY BASELINE: Farley baseline is required but was not found."],
-        farley_data=farley_report_data(
-            bsum={"avg_index": 0.0},
-            baseline_exists=False,
-            baseline_state="BASELINE_MISSING",
-            baseline_reason="Farley baseline is required but was not found.",
-            baseline_details=["missing baseline.json"],
-        ),
+        reasons=[f"FARLEY BASELINE: {expected_reason}"],
+        farley_data=missing_required_baseline,
         compat_data=compat_report_data(state="PASS"),
     )
 
