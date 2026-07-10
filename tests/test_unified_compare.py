@@ -3,6 +3,7 @@ import json
 
 from scripts.unified_compare import (
     combine_token_spend,
+    get_code_review_coverage,
     parse_compatibility_result,
     resolve_farley_baseline,
     write_unified_report,
@@ -39,6 +40,7 @@ def render_unified_report(
     spend_str="**Token spend**: 100 total tokens\n\n",
     farley_data=None,
     compat_data=None,
+    review_coverage=None,
 ):
     out_file = tmp_path / "report.md"
     write_unified_report(
@@ -46,7 +48,11 @@ def render_unified_report(
         unified_verdict=unified_verdict,
         reasons=reasons or [],
         spend_str=spend_str,
-        cr_data={"units": cr_units or [], "verdict": cr_verdict},
+        cr_data={
+            "units": cr_units or [],
+            "verdict": cr_verdict,
+            "review_coverage": review_coverage or {},
+        },
         farley_data=farley_data or farley_report_data(),
         compat_data=compat_data or compat_report_data(),
     )
@@ -98,6 +104,27 @@ def test_combine_token_spend_with_values():
     assert "0.018000" in res
 
 
+def test_get_code_review_coverage_from_metadata():
+    coverage = {
+        "total_extracted_units": 33,
+        "reviewed_units": 33,
+        "skipped_units": 0,
+        "batch_count": 2,
+        "max_units_per_batch": 20,
+        "max_tokens_per_batch": 80000,
+    }
+
+    result = get_code_review_coverage({
+        "__metadata__": {
+            "code_review_usage_summary": {
+                "review_coverage": coverage,
+            }
+        }
+    })
+
+    assert result == coverage
+
+
 def test_write_unified_report_basic(tmp_path):
     content = render_unified_report(
         tmp_path,
@@ -113,6 +140,22 @@ def test_write_unified_report_basic(tmp_path):
     assert "Token spend" in content
     assert "N/A (no Python code changes)" in content
     assert "Score: 10.0/10" in content
+
+
+def test_write_unified_report_displays_code_review_coverage(tmp_path):
+    content = render_unified_report(
+        tmp_path,
+        review_coverage={
+            "total_extracted_units": 33,
+            "reviewed_units": 33,
+            "skipped_units": 0,
+            "batch_count": 2,
+            "max_units_per_batch": 20,
+            "max_tokens_per_batch": 80000,
+        },
+    )
+
+    assert "| Code Review Coverage | 33/33 unit(s) reviewed across 2 batch(es); 0 skipped | **PASS** |" in content
 
 
 def test_parse_compatibility_result_legacy_pass():

@@ -4,6 +4,7 @@ from pathlib import Path
 from scripts import diff_extractor
 from scripts import code_review_evaluator
 from scripts import code_review_compare
+from scripts import telemetry_utils
 
 SAMPLE_CODE = """# Module comment
 import os
@@ -91,20 +92,92 @@ def test_estimate_pr_tokens_accumulates_overhead():
 
 
 def test_filter_units_by_budget():
+    """Compatibility wrapper returns the first planned review batch."""
     units = [
         {"code": "a" * 4000, "lines_changed": 10},  # ~1400 tokens
         {"code": "b" * 8000, "lines_changed": 20},  # ~2400 tokens
         {"code": "c" * 200, "lines_changed": 5},    # ~450 tokens
     ]
-    # Max units 2, max tokens 3000
-    # sorted: b (20 lines changed), a (10 lines changed), c (5 lines changed)
-    # b: 2400 tokens. Remaining budget: 600.
-    # a: 1400 tokens -> exceeds remaining budget. Skip.
-    # c: 450 tokens -> fits. Selected: [b, c].
+
     selected, _ = code_review_evaluator.filter_units_by_budget(units, max_tokens=3000, max_units=2)
-    assert len(selected) == 2
-    assert selected[0]["lines_changed"] == 20
-    assert selected[1]["lines_changed"] == 5
+
+    assert [unit["lines_changed"] for unit in selected] == [20]
+
+
+def test_batch_units_by_budget_splits_when_unit_limit_is_exceeded():
+    units = [
+        {"code": "a" * 20, "lines_changed": 1},
+        {"code": "b" * 20, "lines_changed": 2},
+        {"code": "c" * 20, "lines_changed": 3},
+    ]
+
+    batches = code_review_evaluator.batch_units_by_budget(units, max_tokens=10_000, max_units=2)
+
+    assert [[unit["lines_changed"] for unit in batch] for batch in batches] == [[3, 2], [1]]
+
+
+def test_batch_units_by_budget_splits_when_token_limit_is_exceeded():
+    units = [
+        {"code": "a" * 4000, "lines_changed": 10},  # ~1400 tokens
+        {"code": "b" * 8000, "lines_changed": 20},  # ~2400 tokens
+        {"code": "c" * 200, "lines_changed": 5},    # ~450 tokens
+    ]
+
+    batches = code_review_evaluator.batch_units_by_budget(units, max_tokens=3000, max_units=20)
+
+    assert [[unit["lines_changed"] for unit in batch] for batch in batches] == [[20], [10, 5]]
+
+
+def test_build_review_coverage_reports_complete_batch_review():
+    coverage = code_review_evaluator.build_review_coverage(
+        total_extracted_units=33,
+        reviewed_units=33,
+        batch_count=2,
+        max_units_per_batch=20,
+        max_tokens_per_batch=80000,
+    )
+
+    assert coverage == {
+        "total_extracted_units": 33,
+        "reviewed_units": 33,
+        "skipped_units": 0,
+        "batch_count": 2,
+        "max_units_per_batch": 20,
+        "max_tokens_per_batch": 80000,
+    }
+
+
+def test_persist_usage_artifacts_records_review_coverage(tmp_path):
+    class DummyReplay:
+        def get_usage_summary(self):
+            return {"totals": {"total_tokens": 0, "prompt_tokens": 0, "completion_tokens": 0, "calls": 0}}
+
+    cassette_path = tmp_path / "code_review.json"
+    metrics_root = tmp_path / "metrics"
+    review_coverage = code_review_evaluator.build_review_coverage(
+        total_extracted_units=33,
+        reviewed_units=33,
+        batch_count=2,
+        max_units_per_batch=20,
+        max_tokens_per_batch=80000,
+    )
+
+    payload = telemetry_utils.persist_usage_artifacts(
+        DummyReplay(),
+        run_id="run-1",
+        model="test-model",
+        cassette_path=cassette_path,
+        reviewed_count=33,
+        project_root=tmp_path,
+        metrics_root=metrics_root,
+        reviewed_key="reviewed_units",
+        usage_key="code_review_usage_summary",
+        review_coverage=review_coverage,
+    )
+
+    cassette = json.loads(cassette_path.read_text(encoding="utf-8"))
+    assert payload["review_coverage"] == review_coverage
+    assert cassette["__metadata__"]["code_review_usage_summary"]["review_coverage"] == review_coverage
 
 
 def test_calculate_cqi():

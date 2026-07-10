@@ -33,6 +33,7 @@ def persist_usage_artifacts(
         usage_summary = {}
 
     validation_summary = kwargs.get("validation_summary")
+    review_coverage = kwargs.get("review_coverage")
 
     try:
         cassette_str = str(cassette_path.relative_to(project_root))
@@ -48,6 +49,8 @@ def persist_usage_artifacts(
     }
     if validation_summary is not None:
         payload["validation_summary"] = validation_summary
+    if review_coverage is not None:
+        payload["review_coverage"] = review_coverage
 
     metrics_path = metrics_root / "token_spend.jsonl"
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
@@ -93,6 +96,18 @@ def persist_usage_artifacts(
             f"{structured.get('validation_retries', 0)} structured retries, "
             f"{structured.get('final_failures', 0)} structured final failures, "
             f"{provider.get('failures', 0)} provider failures)"
+            "\033[0m"
+        )
+
+    if review_coverage is not None:
+        print(
+            "\033[94mReview Coverage: "
+            f"{review_coverage.get('reviewed_units', 0)}/"
+            f"{review_coverage.get('total_extracted_units', 0)} unit(s) reviewed, "
+            f"{review_coverage.get('skipped_units', 0)} skipped across "
+            f"{review_coverage.get('batch_count', 0)} batch(es) "
+            f"(max {review_coverage.get('max_units_per_batch', 0)} unit(s)/batch, "
+            f"max {review_coverage.get('max_tokens_per_batch', 0)} tokens/batch)"
             "\033[0m"
         )
 
