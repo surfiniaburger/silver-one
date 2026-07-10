@@ -239,14 +239,30 @@ Return one JSON object with this exact top-level shape:
 """
 
 
-def estimate_pr_tokens(units: List[Dict[str, Any]]) -> int:
+def estimate_pr_tokens(units: Optional[List[Dict[str, Any]]]) -> int:
     # Estimate: ~4 characters per token plus repeated system/user prompt overhead per unit.
+    if not units:
+        return 0
     return sum(estimate_unit_tokens(unit) for unit in units)
 
 
-def estimate_unit_tokens(unit: Dict[str, Any]) -> int:
+def estimate_unit_tokens(unit: Optional[Dict[str, Any]]) -> int:
+    if not isinstance(unit, dict) or "code" not in unit:
+        return 0
+    code = unit.get("code")
+    if not code:
+        return 0
+    if not isinstance(code, str):
+        code = str(code)
     prompt_overhead = len(SYSTEM_PROMPT) // 4 + 200
-    return len(unit["code"]) // 4 + prompt_overhead
+    return len(code) // 4 + prompt_overhead
+
+
+def _sort_review_units_by_changed_lines(units: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    for unit in units:
+        if not isinstance(unit, dict):
+            raise ValueError("Review units must be dictionaries.")
+    return sorted(units, key=lambda u: u.get("lines_changed", 0), reverse=True)
 
 
 def batch_units_by_budget(
@@ -258,7 +274,7 @@ def batch_units_by_budget(
     if max_units < 1:
         raise ValueError("max_units must be greater than zero.")
 
-    sorted_units = sorted(units, key=lambda u: u.get("lines_changed", 0), reverse=True)
+    sorted_units = _sort_review_units_by_changed_lines(units)
     batches: List[List[Dict[str, Any]]] = []
     current_batch: List[Dict[str, Any]] = []
     current_tokens = 0
@@ -286,7 +302,7 @@ def filter_units_by_budget(
     units: List[Dict[str, Any]], max_tokens: int, max_units: int
 ) -> Tuple[List[Dict[str, Any]], int]:
     """Sort units by changed lines and greedily select a bounded subset."""
-    sorted_units = sorted(units, key=lambda u: u.get("lines_changed", 0), reverse=True)
+    sorted_units = _sort_review_units_by_changed_lines(units)
     selected: List[Dict[str, Any]] = []
     current_tokens = 0
 

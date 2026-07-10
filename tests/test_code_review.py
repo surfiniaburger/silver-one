@@ -1,4 +1,5 @@
 import json
+import re
 import pytest
 from pathlib import Path
 from scripts import diff_extractor
@@ -95,6 +96,13 @@ def test_estimate_pr_tokens_accumulates_overhead():
     assert multiple_tokens > single_tokens * 1.9
 
 
+def test_estimate_pr_tokens_handles_empty_or_missing_code():
+    assert code_review_evaluator.estimate_pr_tokens(None) == 0
+    assert code_review_evaluator.estimate_pr_tokens([]) == 0
+    assert code_review_evaluator.estimate_unit_tokens({}) == 0
+    assert code_review_evaluator.estimate_unit_tokens({"code": None}) == 0
+
+
 def test_code_review_system_prompt_uses_structured_contract_sections():
     prompt = code_review_evaluator.SYSTEM_PROMPT
 
@@ -133,6 +141,19 @@ def test_code_review_system_prompt_includes_complete_json_examples():
     assert '"test_coverage": {"score": 8.0' in prompt
     assert '"summary": "The unit is clear, low risk, and suitable to merge."' in prompt
     assert '"findings": []' in prompt
+
+
+def test_code_review_system_prompt_examples_validate_against_schema():
+    examples = re.findall(
+        r"<example name=\"[^\"]+\">\s*(\{.*?\})\s*</example>",
+        code_review_evaluator.SYSTEM_PROMPT,
+        flags=re.DOTALL,
+    )
+
+    assert len(examples) == 2
+    for example in examples:
+        payload = json.loads(example)
+        code_review_evaluator.CodeReviewBreakdown.model_validate(payload)
 
 
 def test_filter_units_by_budget():
@@ -194,6 +215,11 @@ def test_batch_units_by_budget_splits_when_token_limit_is_exceeded():
     )
 
     assert [[unit["lines_changed"] for unit in batch] for batch in batches] == [[20], [10, 5]]
+
+
+def test_batch_units_by_budget_rejects_malformed_units():
+    with pytest.raises(ValueError, match="Review units must be dictionaries"):
+        code_review_evaluator.batch_units_by_budget(["not-a-unit"], max_tokens=1000, max_units=1)
 
 
 def test_build_review_coverage_reports_complete_batch_review():
