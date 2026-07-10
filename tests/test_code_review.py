@@ -96,10 +96,13 @@ def test_estimate_pr_tokens_accumulates_overhead():
 
 
 def test_estimate_pr_tokens_handles_empty_or_missing_code():
+    prompt_overhead = len(code_review_evaluator.SYSTEM_PROMPT) // 4 + 200
+
     assert code_review_evaluator.estimate_pr_tokens(None) == 0
     assert code_review_evaluator.estimate_pr_tokens([]) == 0
     assert code_review_evaluator.estimate_unit_tokens({}) == 0
-    assert code_review_evaluator.estimate_unit_tokens({"code": None}) == 0
+    assert code_review_evaluator.estimate_unit_tokens({"code": None}) == prompt_overhead
+    assert code_review_evaluator.estimate_unit_tokens({"code": ""}) == prompt_overhead
 
 
 def test_code_review_system_prompt_uses_structured_contract_sections():

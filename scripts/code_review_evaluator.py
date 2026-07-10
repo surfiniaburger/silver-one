@@ -249,9 +249,7 @@ def estimate_pr_tokens(units: Optional[List[Dict[str, Any]]]) -> int:
 def estimate_unit_tokens(unit: Optional[Dict[str, Any]]) -> int:
     if not isinstance(unit, dict) or "code" not in unit:
         return 0
-    code = unit.get("code")
-    if not code:
-        return 0
+    code = unit.get("code") or ""
     if not isinstance(code, str):
         code = str(code)
     prompt_overhead = len(SYSTEM_PROMPT) // 4 + 200
