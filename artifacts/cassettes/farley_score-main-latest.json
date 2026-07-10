@@ -2327,65 +2327,134 @@
       "file_path": "tests/test_code_review.py",
       "test_name": "test_estimate_pr_tokens_handles_empty_or_missing_code",
       "class_name": null,
-      "farley_index": 7.0,
+      "farley_index": 8.75,
       "farley_breakdown": {
         "understandable": {
           "score": 8,
-          "rationale": "The test name and assertions are clear enough to infer intent (handling empty/missing input), but the logic is opaque. The variable `prompt_overhead` obscures business rules; it should be defined as a constant or derived from an explicit string literal representing overhead.",
+          "rationale": "The test name and assertions are clear enough to infer intent (handling empty/missing input), but the method `code_review_evaluator.estimate_pr_tokens` is not defined in this snippet; without seeing its implementation or documentation, 'understandable' as a business rule remains ambiguous.",
           "suggestions": [
-            "Replace `len(code_review_evaluator.SYSTEM_PROMPT) // 4 + 200` with a direct, documented integer (e.g., `150`) to make the rule explicit. Remove reliance on internal implementation details like SYSTEM_PROMPT length unless it's part of public API documentation."
+            "Ensure all test names and assertions are self-explanatory even for new developers (e.g., `test_estimate_pr_tokens_handles_empty_code`).",
+            "Verify that the underlying method's behavior aligns with documented requirements or existing tests."
           ]
         },
         "maintainable": {
-          "score": 6,
-          "rationale": "The test is brittle because it relies entirely on a specific constant (`prompt_overhead`). If `SYSTEM_PROMPT` changes or the overhead calculation logic shifts in production code without updating this test file, the assertion will fail. It couples too tightly to implementation details.",
+          "score": 9,
+          "rationale": "The test is decoupled from implementation details; it only asserts contract (input/output) without touching internal logic. It will not break if the evaluator's internals change.",
           "suggestions": [
-            "Move all constants (like prompt length) into configuration files or shared utilities rather than hardcoding them inside tests. Ensure any change to `SYSTEM_PROMPT` triggers a re-run of these specific assertions."
+            "Ensure `code_review_evaluator` follows DRY principles and does not have hidden side effects that could make this test brittle under refactoring."
           ]
         },
         "repeatable": {
-          "score": 7,
-          "rationale": "The test is deterministic and self-contained in terms of logic flow (assertions only). However, it relies on the existence of an external object (`code_review_evaluator`) which may not be present or stable across environments. It lacks a clear 'setup' phase that guarantees this specific evaluator instance exists.",
+          "score": 10,
+          "rationale": "The test is fully self-contained. It uses no external state (no DB/network/filesystem), relies on a single deterministic function call with clear inputs/outputs.",
           "suggestions": [
-            "Explicitly instantiate `code_review_evaluator` in a fixture before assertions to ensure repeatability and isolation from other test contexts."
+            "Confirm that `code_review_evaluator` has no hidden dependencies or side effects in its implementation."
           ]
         },
         "atomic": {
           "score": 9,
-          "rationale": "The test verifies exactly one behavior: the return value of `estimate_pr_tokens`. If it fails, the cause is instantly obvious (the assertion error). It does not mix multiple behaviors or edge cases into a single failure point.",
+          "rationale": "The test verifies exactly one behavior: the return value of a specific method for two distinct inputs. If it fails, the cause is immediately obvious (input mismatch or logic error).",
           "suggestions": [
-            "Ensure no other assertions are hidden inside this function. The current structure is clean and atomic."
+            "Ensure no other tests depend on this evaluator's internal state in ways that could make these assertions flaky if refactored."
+          ]
+        },
+        "necessary": {
+          "score": 7,
+          "rationale": "This test covers a specific edge case (empty/missing code). However, it may duplicate coverage of other tests already handling empty inputs or missing data in different contexts.",
+          "suggestions": [
+            "Review existing `estimate_pr_tokens` and related tests to ensure this one does not re-test trivial cases covered elsewhere."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The test targets a specific edge case (empty/missing code) rather than general functionality. It isolates the behavior of handling null and empty lists.",
+          "suggestions": [
+            "Ensure this test does not accidentally cover unrelated scenarios that could confuse maintainers."
+          ]
+        },
+        "fast": {
+          "score": 10,
+          "rationale": "The test executes instantly with no artificial delays, heavy setups, or slow I/O operations. It is purely functional and deterministic.",
+          "suggestions": [
+            "Verify that the underlying `estimate_pr_tokens` method does not introduce unnecessary overhead in production-like environments."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The test follows a clean Arrange-Act-Assert pattern: no setup code is needed (Arrange implicit), the action is clear (`estimate_pr_tokens` with specific inputs), and assertions are direct. It demonstrates design properties of handling edge cases.",
+          "suggestions": [
+            "Ensure this test was written first to define behavior, not just as a sanity check for existing functionality."
+          ]
+        },
+        "summary": "The test is highly repeatable, fast, and follows TDD principles. However, its 'understandability' depends on the implementation of `code_review_evaluator`, which should be reviewed to ensure business rules are clear. It also risks redundancy if other tests already cover empty inputs."
+      }
+    },
+    {
+      "id": "tests/test_code_review.py::test_estimate_unit_tokens_handles_empty_or_missing_code",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_estimate_unit_tokens_handles_empty_or_missing_code",
+      "class_name": null,
+      "farley_index": 7.0,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 6,
+          "rationale": "The test name is descriptive but slightly verbose for a unit function; the logic relies on implicit domain knowledge (empty string vs missing key) which may not be immediately obvious to all readers without context.",
+          "suggestions": [
+            "Rename `test_estimate_unit_tokens_handles_empty_or_missing_code` to something more specific like `estimate_unit_tokens_returns_zero_for_no_input`.",
+            "Ensure the docstring explicitly defines what constitutes 'empty' vs 'missing' code in this domain."
+          ]
+        },
+        "maintainable": {
+          "score": 7,
+          "rationale": "The test is decoupled from implementation details (no mocking of `code_review_evaluator`), but it relies on the exact behavior of an internal function. If that function changes its return value logic in a future refactor without updating this specific assertion, tests will break.",
+          "suggestions": [
+            "Add comments or inline documentation explaining why `{}` and `{"
+          ]
+        },
+        "repeatable": {
+          "score": 8,
+          "rationale": "The test is self-contained within the file. It does not rely on external shared state (like a global database), network calls, local filesystem paths, or system timing mechanisms.",
+          "suggestions": [
+            "Ensure no side effects occur during execution; if `estimate_unit_tokens` modifies any internal state unexpectedly, this test will fail due to non-determinism."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: the return value of `estimate_unit_tokens`. If it fails, the cause is instantly obvious (e.g., assertion error), and no complex logic needs to be traced.",
+          "suggestions": [
+            "No immediate action needed; this follows TDD best practices."
           ]
         },
         "necessary": {
           "score": 5,
-          "rationale": "This test duplicates coverage of `estimate_pr_tokens` with empty strings/None inputs already covered by the general 'handles missing code' logic implied in its name or other tests (if they exist). It does not add unique value; it merely re-verifies a trivial edge case.",
+          "rationale": "This test duplicates coverage of other tests (e.g., `test_estimate_unit_tokens_handles_valid_code`, `test_estimate_unit_tokens_with_whitespace`). It does not add unique value and risks bloating the suite.",
           "suggestions": [
-            "Review if this specific assertion is redundant. If `estimate_pr_tokens` handles empty strings generally, ensure there isn't another test specifically for 'empty string' vs 'None'. Consider merging or removing unless the current implementation has distinct logic paths not covered elsewhere."
+            "Remove this specific assertion if it is covered by existing unit tests for empty/missing inputs. If no other test covers these cases, consider renaming to a more general 'edge case' or removing entirely."
           ]
         },
         "granular": {
           "score": 7,
-          "rationale": "The assertion is granular enough to isolate a specific return value (0), but it mixes two different methods (`estimate_pr_tokens` and `estimate_unit_tokens`) in one test. This makes the isolation of 'what' slightly muddy.",
+          "rationale": "The assertion `assert code_review_evaluator.estimate_unit_tokens({}) == 0` is granular enough for unit testing but could be more specific about the input format (e.g., `{}` vs empty string) to avoid ambiguity.",
           "suggestions": [
-            "Split these into separate tests: one for `estimate_pr_tokens(None)`/`[]`, another for `estimate_unit_tokens({})`. Keep them focused on a single method's behavior to improve granularity."
+            "Refine assertions like: `assert estimate_unit_tokens(EmptyInput()) == 0`.",
+            "Ensure no other test covers this exact scenario, or merge it into a broader 'edge case' test."
           ]
         },
         "fast": {
           "score": 8,
-          "rationale": "The test executes rapidly. There are no artificial sleeps or heavy I/O operations; it is purely logic-based assertions.",
+          "rationale": "The test executes rapidly without artificial sleeps, heavy setups (like database connections), or unneeded I/O operations. It is purely functional and deterministic.",
           "suggestions": [
-            "Ensure the `code_review_evaluator` instance does not perform expensive initialization before this specific assertion runs."
+            "No action needed; the code structure supports fast execution."
           ]
         },
         "first_tdd": {
           "score": 6,
-          "rationale": "The test follows a basic Arrange-Act-Assert pattern but lacks explicit separation of concerns. The 'Arrange' phase (instantiating evaluator) is implicit and fragile if the instance isn't guaranteed to exist in all scenarios.",
+          "rationale": "The test follows Arrange-Act-Assert (Arrange: setup `estimate_unit_tokens`, Act: call function with inputs, Assert: check return values). However, the 'Arrange' phase is implicit and relies on external state (`code_review_evaluator`), which may not be fully isolated.",
           "suggestions": [
-            "Explicitly define `code_review_evaluator = code_review_evaluator_instance()` at the top or via a fixture before assertions. Clearly document that this specific test only validates edge-case return values, not internal logic."
+            "Explicitly mock or stub `code_review_evaluator.estimate_unit_tokens` in Arrange to ensure isolation from system implementation details."
           ]
         },
-        "summary": "The test is mostly functional but suffers from high brittleness due to hardcoded constants and method duplication. It fails the 'necessary' property if redundant coverage exists elsewhere."
+        "summary": "The test is well-structured and fast but suffers from redundancy (duplicates coverage), potential ambiguity in input definitions, and reliance on external state for 'Arrange'. It should be cleaned up by removing duplicates or merging edge cases into existing tests to improve maintainability."
       }
     },
     {
@@ -2393,53 +2462,53 @@
       "file_path": "tests/test_code_review.py",
       "test_name": "test_code_review_system_prompt_uses_structured_contract_sections",
       "class_name": null,
-      "farley_index": 8.875,
+      "farley_index": 8.75,
       "farley_breakdown": {
         "understandable": {
-          "score": 9,
-          "rationale": "The test name and logic are crystal clear. It explicitly checks for the presence of specific sections within a system prompt using string containment assertions.",
+          "score": 8,
+          "rationale": "The test name and logic are highly readable. It clearly identifies the business rule: that a system prompt must contain specific structured sections defined by an evaluator constant.",
           "suggestions": []
         },
         "maintainable": {
-          "score": 8,
-          "rationale": "This is highly maintainable because it tests structural composition rather than implementation logic. If `code_review_evaluator.SYSTEM_PROMPT` changes its internal structure (e.g., from a string to an object), this test will still pass as long as the sections exist.",
+          "score": 9,
+          "rationale": "Excellent decoupling from implementation details; it tests for string presence rather than parsing logic or internal data structures. It will remain valid even if the evaluator's prompt format changes as long as these tags exist.",
           "suggestions": []
         },
         "repeatable": {
-          "score": 10,
-          "rationale": "The test is fully self-contained. It relies only on Python's built-in string operations and a constant value from an existing module; no external databases, network calls, or timing dependencies are involved.",
-          "suggestions": []
+          "score": 7,
+          "rationale": "The test is self-contained and deterministic regarding its assertions (string presence). However, it relies on `code_review_evaluator.SYSTEM_PROMPT`, which could theoretically change if the evaluator implementation changes without updating this specific unit.",
+          "suggestions": [
+            "Ensure `SYSTEM_PROMPT` in the evaluator module is a constant or explicitly documented as immutable for this test to avoid flakiness due to refactoring that doesn't update tests."
+          ]
         },
         "atomic": {
           "score": 10,
-          "rationale": "The test verifies exactly one behavior: the presence of specific tags in a string. If it fails due to missing content, the cause is instantly obvious and unambiguous.",
+          "rationale": "The test verifies exactly one behavior: the presence of specific tags within a string. If it fails, the cause is instantly obvious (missing tag or malformed XML). It does not mix setup logic with assertions.",
           "suggestions": []
         },
         "necessary": {
           "score": 9,
-          "rationale": "This check covers critical structural requirements for parsing structured data (role, task, etc.). While it doesn't test *validity* of the content within those sections, verifying their presence is a necessary prerequisite.",
+          "rationale": "This test covers one specific aspect of prompt structure. While it doesn't cover content validation yet (e.g., `elite senior software engineer`), the presence check is necessary to ensure basic structural integrity before deeper semantic checks.",
           "suggestions": []
         },
         "granular": {
-          "score": 7,
-          "rationale": "The assertion `f\"<{section}>\" in prompt` checks for substring containment. While it identifies the *presence* of sections, it does not verify that they are semantically correct or properly formatted within their respective contexts.",
+          "score": 8,
+          "rationale": "The test targets a specific pattern: `<tag>` inside `</tag>`. It isolates the 'presence of tags' behavior from content validation. However, it could be more granular by checking for whitespace or newline handling around these tags.",
           "suggestions": [
-            "Consider adding assertions to check if specific values (e.g., 'role', 'task') actually appear inside those tags rather than just checking for the tag string itself."
+            "Consider adding assertions to ensure no extra newlines exist between opening and closing tags: `<role></role>` vs `</role>\n<task>`. This prevents false negatives if the evaluator adds formatting that breaks simple string matching."
           ]
         },
         "fast": {
-          "score": 10,
-          "rationale": "The test executes in milliseconds. It contains no artificial delays, heavy setup code, or I/O operations.",
+          "score": 9,
+          "rationale": "The test is extremely fast. It involves a single function call per assertion and no heavy I/O or network operations. The `find` method on strings is O(n) but negligible for this scope.",
           "suggestions": []
         },
         "first_tdd": {
-          "score": 8,
-          "rationale": "This follows the Arrange-Act-Assert pattern: `Arrange` (fetching constant), `Act` (loop through sections and assert presence). However, it lacks a clear 'Verify' step that explicitly confirms the structure is valid or meaningful.",
-          "suggestions": [
-            "Refine the Act phase to include assertions like `assert prompt[\"<role>\"] == \"...\"` if specific values are known."
-          ]
+          "score": 10,
+          "rationale": "This test perfectly demonstrates the Arrange-Act-Assert pattern: `Arrange` (fetching prompt), `Act` (loop through sections and assert presence), `Assert` (semantic validation). It is a clean, high-level unit test.",
+          "suggestions": []
         },
-        "summary": "The test demonstrates strong adherence to TDD principles regarding structure and maintainability. It is fast, atomic, and repeatable. However, it could be improved by verifying semantic correctness within the tags rather than just their presence, which would elevate its score from a solid 'Good Test' to an exemplary one."
+        "summary": "The code passes all Farley properties with minor suggestions for whitespace handling in the granularity check."
       }
     },
     {
@@ -2562,203 +2631,55 @@
       }
     },
     {
-      "id": "tests/test_code_review.py::test_filter_units_by_budget",
-      "file_path": "tests/test_code_review.py",
-      "test_name": "test_filter_units_by_budget",
-      "class_name": null,
-      "farley_index": 4.125,
-      "farley_breakdown": {
-        "understandable": {
-          "score": 3,
-          "rationale": "The test name is vague and the logic relies on internal function names rather than business rules like 'budget' or 'units'. It reads more like an implementation detail check.",
-          "suggestions": [
-            "Rename to something descriptive: `test_filter_large_and_small_units_in_budget`",
-            "Remove internal function calls if possible, unless these are public API contracts you must verify."
-          ]
-        },
-        "maintainable": {
-          "score": 2,
-          "rationale": "The test is brittle to any change in `code_review_evaluator`. If that evaluator's logic changes (e.g., how it calculates 'budget' or filters), this specific assertion will fail without updating the code.",
-          "suggestions": [
-            "Move assertions about budget calculation into a dedicated helper function called by `filter_units_by_budget` to ensure they stay in sync."
-          ]
-        },
-        "repeatable": {
-          "score": 4,
-          "rationale": "The test is self-contained and deterministic. However, it relies on the existence of specific internal functions which may not be stable across refactors or if they are private methods.",
-          "suggestions": [
-            "Ensure these helper functions remain public (or at least have a clear contract) and their inputs/outputs do not depend on external state like databases, network calls, or random seeds."
-          ]
-        },
-        "atomic": {
-          "score": 5,
-          "rationale": "The test verifies exactly one behavior: that the filter returns two units with specific line counts. However, it does not verify *why* those were chosen (e.g., sorting order stability) or if edge cases like `max_units=2` are handled correctly when fewer than 2 fit.",
-          "suggestions": [
-            "Add an assertion to check the total number of units returned equals exactly 2, regardless of their specific line counts."
-          ]
-        },
-        "necessary": {
-          "score": 6,
-          "rationale": "This test covers a complex filtering scenario. However, it duplicates coverage for basic unit tests that already exist to verify `estimate_unit_tokens` and the sorting/filtering behavior of the evaluator.",
-          "suggestions": [
-            "Review existing test suites; ensure this specific combination isn't covered by simpler, more focused tests before adding it here."
-          ]
-        },
-        "granular": {
-          "score": 2,
-          "rationale": "The assertion `assert selected[0][\"lines_changed\"] == 20` is extremely granular and brittle. It assumes a specific order (the first two units in the list) which might change if sorting logic or input ordering varies.",
-          "suggestions": [
-            "Assert on properties that are invariant, such as `selected[1][\"lines_changed\"] == 5` instead of relying on index-based access to specific values."
-          ]
-        },
-        "fast": {
-          "score": 7,
-          "rationale": "The test is reasonably fast. However, it performs a calculation (`min(...)`), which adds overhead compared to pure arithmetic checks if the logic were simpler.",
-          "suggestions": [
-            "Remove unnecessary `min()` calls and direct function invocations; use simple comparisons or built-in functions where possible."
-          ]
-        },
-        "first_tdd": {
-          "score": 4,
-          "rationale": "The test follows the Arrange-Act-Assert pattern. However, it lacks a clear 'specification' of what `filter_units_by_budget` is supposed to do before running.",
-          "suggestions": [
-            "Refactor the code so that `test_filter_units_by_budget()` calls public API methods defined in your design spec."
-          ]
-        },
-        "summary": "The test lacks business context and relies heavily on internal implementation details, making it brittle to changes. While self-contained, it risks redundancy if basic unit tests already cover these components thoroughly."
-      }
-    },
-    {
       "id": "tests/test_code_review.py::test_batch_units_by_budget_splits_when_unit_limit_is_exceeded",
       "file_path": "tests/test_code_review.py",
       "test_name": "test_batch_units_by_budget_splits_when_unit_limit_is_exceeded",
       "class_name": null,
-      "farley_index": 8.0,
+      "farley_index": 8.75,
       "farley_breakdown": {
         "understandable": {
           "score": 8,
-          "rationale": "The test name and assertion clearly describe the business rule: batching units based on budget splits when a unit limit is exceeded. However, it lacks context about *why* this specific logic exists (e.g., 'to ensure no single line exceeds token limits'), which could be ambiguous for new developers.",
-          "suggestions": [
-            "Add comments or docstring explaining the rationale behind the `max_units=2` and budget split thresholds."
-          ]
+          "rationale": "The test name and code clearly describe the business rule: batching units based on budget splits when a specific unit limit is exceeded. The domain language (code lines changed) is used correctly without implementation clutter.",
+          "suggestions": []
         },
         "maintainable": {
           "score": 9,
-          "rationale": "The test is decoupled from implementation details; it does not rely on specific code paths of `code_review_evaluator`. It only asserts that a certain list structure exists after the function call.",
-          "suggestions": [
-            "Ensure no hidden dependencies (e.g., internal state changes) are triggered by this test. If `batch_units_by_budget` modifies global state, consider using fixtures or resetting it between calls."
-          ]
+          "rationale": "The test relies entirely on the `batch_units_by_budget` method's internal logic. It does not depend on external state (DB/filesystem) or timing variations that could break during refactoring.",
+          "suggestions": []
         },
         "repeatable": {
-          "score": 7,
-          "rationale": "The test is deterministic and self-contained within the file path provided. However, if external shared state (like a database) was involved in generating `units`, this would fail repeatability.",
-          "suggestions": [
-            "Verify that no external resources are accessed or modified during execution of this specific test case."
-          ]
+          "score": 10,
+          "rationale": "The test is fully self-contained with no reliance on shared databases, network calls, file systems, or external services. It runs deterministically in isolation.",
+          "suggestions": []
         },
         "atomic": {
           "score": 9,
-          "rationale": "The assertion verifies exactly one behavior: the resulting batch structure. If it fails, the cause is instantly obvious (the list doesn't match).",
-          "suggestions": [
-            "Ensure no side effects occur outside the `assert` statement that could confuse debugging."
-          ]
+          "rationale": "Each assertion verifies a distinct behavior: total batch count and specific line counts for the first two batches. The failure cause is immediately obvious if any of these assertions fail.",
+          "suggestions": []
         },
         "necessary": {
-          "score": 6,
-          "rationale": "This test covers a specific edge case logic but may not cover all scenarios of unit batching. It duplicates coverage if other tests already verify 'unit limit exceeded' in general.",
+          "score": 7,
+          "rationale": "While useful, this test might duplicate coverage already provided by other tests in `test_code_review.py` that cover the general batching logic. It should be kept only if it specifically targets a unique edge case not covered elsewhere.",
           "suggestions": [
-            "Review existing test suite to ensure this specific scenario isn't redundant with broader assertions about budget splitting."
+            "Review existing unit tests for similar batch scenarios to ensure no redundant assertions are needed here."
           ]
         },
         "granular": {
           "score": 8,
-          "rationale": "The assertion is granular enough: it checks the exact list of `lines_changed` values for each batch. It isolates the logic precisely.",
-          "suggestions": [
-            "Consider adding a specific check to ensure no units were dropped or merged unexpectedly during batching."
-          ]
+          "rationale": "The test isolates the specific condition: `max_units=2` causing a split. It precisely targets the behavior of splitting units when that limit is hit.",
+          "suggestions": []
         },
         "fast": {
           "score": 9,
-          "rationale": "The test executes rapidly with minimal setup (no sleeps, DB calls) and heavy I/O. It is purely functional logic verification.",
-          "suggestions": [
-            "Remove any artificial delays in the `batch_units_by_budget` call if they exist; ensure no network latency."
-          ]
+          "rationale": "No artificial sleeps or heavy I/O operations are present. The test executes purely based on method logic and list iteration speed.",
+          "suggestions": []
         },
         "first_tdd": {
-          "score": 8,
-          "rationale": "The test follows a clean Arrange-Act-Assert pattern: units are defined (Arrange), batched (Act), and validated (Assert).",
-          "suggestions": [
-            "Explicitly label sections as 'Setup', 'Execution', and 'Verification' to make the TDD structure even more obvious."
-          ]
+          "score": 10,
+          "rationale": "This is a classic Arrange-Act-Assert structure: `units` (Arrange) are defined first; the call to `batch_units_by_budget` acts on them; assertions verify expected results. It demonstrates clean separation of concerns.",
+          "suggestions": []
         },
-        "summary": "The test is well-written but lacks context for business rationale. It effectively isolates a specific edge case without side effects or external dependencies. Ensure it doesn't duplicate existing coverage of similar scenarios in other tests."
-      }
-    },
-    {
-      "id": "tests/test_code_review.py::test_batch_units_by_budget_splits_when_token_limit_is_exceeded",
-      "file_path": "tests/test_code_review.py",
-      "test_name": "test_batch_units_by_budget_splits_when_token_limit_is_exceeded",
-      "class_name": null,
-      "farley_index": 6.625,
-      "farley_breakdown": {
-        "understandable": {
-          "score": 6,
-          "rationale": "The test name is verbose and slightly ambiguous regarding the specific failure mode (token limit exceeded vs. budget exhaustion). The code uses a complex nested list comprehension to verify output structure (`[[20], [10, 5]]`), which obscures the core business rule being tested.",
-          "suggestions": [
-            "Rename `test_batch_units_by_budget_splits_when_token_limit_is_exceeded` to something like `test_batches_with_remaining_tokens`.",
-            "Simplify the assertion logic: assert that exactly two batches are created with specific token counts, rather than iterating over a potentially complex list structure."
-          ]
-        },
-        "maintainable": {
-          "score": 7,
-          "rationale": "The test is decoupled from implementation details (e.g., `code_review_evaluator` internals) and does not rely on external state. However, the assertion logic could be brittle if the batch structure changes unexpectedly.",
-          "suggestions": [
-            "Refactor the inner list comprehension into a direct comparison: assert that `len(batches)` is 2 AND `batches[0].lines_changed == [10]` and `batches[1].lines_changed == [5]`. This makes intent clearer."
-          ]
-        },
-        "repeatable": {
-          "score": 8,
-          "rationale": "The test is self-contained with no reliance on external shared state (database, network, etc.). It uses deterministic inputs and a clear expected output structure.",
-          "suggestions": [
-            "Ensure `code_review_evaluator` returns consistent results for identical inputs. Add comments to explicitly document the input/output contract."
-          ]
-        },
-        "atomic": {
-          "score": 9,
-          "rationale": "The test verifies exactly one behavior: batching units when token limits are exceeded and resulting in two batches with specific line counts. If it fails, the cause is instantly obvious (wrong number of batches or wrong values).",
-          "suggestions": [
-            "None needed; this property holds well."
-          ]
-        },
-        "necessary": {
-          "score": 5,
-          "rationale": "This test duplicates coverage already provided by `test_batch_units_by_budget` with a different token limit. It does not add unique value and may clutter the codebase.",
-          "suggestions": [
-            "Remove this specific case if it's covered elsewhere or merge its logic into an existing general budget exhaustion test."
-          ]
-        },
-        "granular": {
-          "score": 4,
-          "rationale": "The assertion is too broad and complex (`[[20], [10, 5]]`), making the specific isolation of 'token limit exceeded' behavior hard to verify. It mixes structural checks with value assertions.",
-          "suggestions": [
-            "Assert only that `batches == [[10], [5]]`. Remove unnecessary list comprehension nesting."
-          ]
-        },
-        "fast": {
-          "score": 8,
-          "rationale": "The test executes rapidly without artificial sleeps or heavy I/O. The logic is straightforward and avoids blocking operations.",
-          "suggestions": [
-            "None needed; execution speed is acceptable for a unit test."
-          ]
-        },
-        "first_tdd": {
-          "score": 6,
-          "rationale": "The code follows Arrange-Act-Assert structure. However, the 'Arrange' phase (creating units) and 'Act' phase (calling `batch_units_by_budget`) are somewhat intertwined with complex assertions that could be separated for better clarity.",
-          "suggestions": [
-            "Separate concerns: create inputs first (`Arrange`), then call evaluator methods without immediate assertion logic. Move all expected values to a separate helper function or data structure."
-          ]
-        },
-        "summary": "The test is mostly functional but suffers from verbosity in assertions and potential redundancy with existing tests. It demonstrates TDD principles (specifying behavior first) but could benefit from stricter separation of concerns between setup/act/assert phases for maximum clarity and maintainability."
+        "summary": "{\"understandable\":8,\"maintainable\":9,\"repeatable\":10,\"atomic\":9,\"necessary\":7,\"granular\":8,\"fast\":9,\"first_tdd\":10}"
       }
     },
     {
@@ -2766,66 +2687,65 @@
       "file_path": "tests/test_code_review.py",
       "test_name": "test_batch_units_by_budget_rejects_malformed_units",
       "class_name": null,
-      "farley_index": 8.375,
+      "farley_index": 7.875,
       "farley_breakdown": {
         "understandable": {
           "score": 8,
-          "rationale": "The test name and assertion message clearly communicate the business rule: malformed input (strings instead of dicts) should be rejected. However, 'Review units must be dictionaries' is slightly verbose for a unit-level check; it could be tighter.",
+          "rationale": "The test name and assertion are clear. However, the error message 'Review units must be dictionaries.' is a generic placeholder that does not reflect actual business logic or domain-specific constraints (e.g., specific field names like `name`, `type`). This makes it hard to understand *why* this particular input failed without reading code.",
           "suggestions": [
-            "Refine to `assert_raises(ValueError)` without relying on regex matching if possible, or use the exact error message directly: `pytest.raises(ValueError)`. The current regex adds unnecessary complexity and potential flakiness."
+            "Replace the hardcoded error message with an assertion against expected fields, e.g.: assert 'unit must have a valid name' or similar."
           ]
         },
         "maintainable": {
           "score": 9,
-          "rationale": "The test is decoupled from implementation details. It does not depend on specific error messages or internal logic of `batch_units_by_budget`, making it robust against future refactors.",
+          "rationale": "The test is decoupled from implementation details. It does not rely on specific class names (like `code_review_evaluator`) but rather the method signature and input/output contract defined by the API.",
           "suggestions": [
-            "None needed; the current approach aligns well with TDD principles."
+            "Ensure that if a new unit type or validation rule changes, this test remains valid without modification."
           ]
         },
         "repeatable": {
           "score": 7,
-          "rationale": "The test is deterministic and self-contained. However, it relies on `pytest.raises` which can be brittle if exceptions are raised in different ways or under specific conditions not covered by the message regex.",
+          "rationale": "The test is deterministic and self-contained. However, it relies on `pytest.raises` which can be flaky if the exception class or message changes in a future version of pytest without updating this specific assertion.",
           "suggestions": [
-            "Consider using a more robust assertion like `assert_raises(ValueError)` without regex matching to ensure exact exception type and behavior verification."
+            "Explicitly assert that an instance was raised: assert isinstance(exc_info.value, ValueError) to ensure robustness against framework updates."
           ]
         },
         "atomic": {
           "score": 9,
-          "rationale": "The test verifies exactly one specific rule: that passing strings as units triggers a ValueError. There is no ambiguity about what constitutes 'malformed' in this context.",
+          "rationale": "The test verifies exactly one behavior: the rejection of a malformed unit. It does not cover edge cases like empty lists or non-dict strings unless explicitly added.",
           "suggestions": [
-            "None needed; the logic is clean and focused."
+            "Add an assertion for valid inputs to ensure comprehensive coverage and prevent future regressions."
           ]
         },
         "necessary": {
-          "score": 8,
-          "rationale": "This test covers a specific edge case (string input). While not exhaustive for all unit types, it serves its unique purpose of validating strict type checking. It does duplicate coverage if other tests already cover string validation.",
+          "score": 6,
+          "rationale": "This test covers a specific validation rule. However, it may duplicate the purpose of other tests covering similar edge cases or general unit rejection logic.",
           "suggestions": [
-            "Review the suite to ensure no existing tests verify this exact scenario; consider adding an explicit check in a dedicated test file or ensuring `test_batch_units_by_budget` is isolated from general unit testing."
+            "Review if this specific error message and input combination are covered elsewhere in the codebase to avoid redundancy."
           ]
         },
         "granular": {
-          "score": 9,
-          "rationale": "The assertion targets the specific behavior of rejecting non-dict inputs. It isolates precisely one aspect: type validation within a batch operation.",
+          "score": 8,
+          "rationale": "The test is granular enough for its purpose. It isolates a single validation failure scenario.",
           "suggestions": [
-            "None needed; high granularity is achieved."
+            "Consider adding assertions that check the specific fields causing rejection to make it even more precise."
           ]
         },
         "fast": {
-          "score": 8,
-          "rationale": "The test executes quickly without artificial delays or heavy I/O. However, `pytest.raises` with regex matching can sometimes be slower than direct assertions due to pattern evaluation overhead.",
+          "score": 9,
+          "rationale": "The test executes rapidly. It avoids artificial sleeps and heavy setups.",
           "suggestions": [
-            "Replace the regex match in `match=",
-            "` with a direct assertion like `assert ValueError(...)`. This eliminates unnecessary string parsing and improves speed."
+            "Ensure no unnecessary `time.sleep()` calls are present in the surrounding code."
           ]
         },
         "first_tdd": {
-          "score": 9,
-          "rationale": "The test follows TDD principles: it specifies the expected behavior (raises error for strings) before implementation. The structure is clean with a clear assertion.",
+          "score": 7,
+          "rationale": "The test follows Arrange-Act-Pattern (Arrange: setup context; Act: call method with input; Assert: check result). However, it lacks a clear 'specification' of the expected behavior before running.",
           "suggestions": [
-            "None needed; this aligns well with first-TDD methodology."
+            "Refactor to explicitly state what constitutes valid vs. invalid units in an `assert` statement or helper function prior to calling the evaluator."
           ]
         },
-        "summary": ""
+        "summary": "The test is well-structured and follows TDD principles but lacks specific business logic assertions (understandable) and explicit specification of expected behavior before execution (first_tdd). It risks becoming brittle if framework exceptions change or validation rules evolve without updating the error message."
       }
     },
     {
@@ -2833,66 +2753,131 @@
       "file_path": "tests/test_code_review.py",
       "test_name": "test_batch_units_by_budget_treats_null_lines_changed_as_zero",
       "class_name": null,
-      "farley_index": 7.75,
+      "farley_index": 8.25,
       "farley_breakdown": {
         "understandable": {
           "score": 8,
-          "rationale": "The test name and assertion clearly define the business rule: null `lines_changed` values are treated as zero. The code is readable but slightly verbose with list comprehensions.",
+          "rationale": "The test name and assertion logic clearly describe the business rule: null values are treated as zero. However, 'lines_changed' is a low-level implementation detail rather than an abstract domain concept like 'cost', which slightly obscures intent.",
           "suggestions": [
-            "Refactor to use a helper function or method for clarity (e.g., `assert_null_lines_treated_as_zero`).",
-            "Remove unnecessary nested list comprehension; flatten the assertion logic if possible."
+            "Rename `units` to something more semantic (e.g., `items`, `records`) and rename the field in batches from `lines_changed` to `unit_cost`. This makes the test self-documenting without needing a comment."
           ]
         },
         "maintainable": {
-          "score": 7,
-          "rationale": "The test is decoupled from implementation details (no database/network dependencies). However, it relies on `code_review_evaluator.batch_units_by_budget`, which may be brittle if the underlying logic changes.",
+          "score": 9,
+          "rationale": "The test is decoupled; it does not rely on external state or implementation specifics. It correctly asserts that `None` maps to zero in the output structure.",
           "suggestions": [
-            "Ensure unit tests are isolated to specific functions/methods rather than system-level batch operations unless testing integration behavior explicitly."
+            "Ensure the underlying evaluator's logic for handling `None` values remains consistent across all unit tests, as this property relies heavily on internal consistency."
           ]
         },
         "repeatable": {
-          "score": 9,
-          "rationale": "The test is self-contained with no reliance on external shared state (DB/filesystem), network calls, or timing. It runs deterministically.",
+          "score": 7,
+          "rationale": "The test is deterministic and self-contained. However, it implicitly assumes the existence of a `code_review_evaluator` class with specific methods (`batch_units_by_budget`) that behave consistently across runs.",
           "suggestions": [
-            "None needed; the current structure already meets this criterion."
+            "Explicitly mock or stub any external dependencies (e.g., `evaluator`, network calls) to ensure absolute repeatability in CI/CD environments."
           ]
         },
         "atomic": {
-          "score": 8,
-          "rationale": "The test verifies exactly one behavior: how null `lines_changed` is handled. If it fails, the cause (null treated as zero) is instantly obvious.",
+          "score": 10,
+          "rationale": "The test verifies exactly one behavior: the transformation of a single input record with `lines_changed=None` into an output where that value is zero. The failure cause (assertion error) would be instantly obvious.",
           "suggestions": [
-            "None needed; this criterion is well met."
+            "None needed here; atomicity is inherent to this specific assertion."
           ]
         },
         "necessary": {
           "score": 6,
-          "rationale": "This test covers a specific edge case. However, it may duplicate coverage of other tests already handling null values or similar boundary conditions.",
+          "rationale": "This test covers a specific edge case (null handling). However, it may duplicate coverage of existing tests if there are already unit tests for `None` values in other contexts or if the general logic handles nulls implicitly.",
           "suggestions": [
-            "Review existing unit tests to ensure no redundant checks for `lines_changed == None`. Merge overlapping assertions if necessary."
+            "Review existing code review evaluation tests to ensure this specific scenario is not covered elsewhere. If duplicates exist, refactor them; otherwise, consider adding a more generic test like 'handles None as zero for all fields'."
           ]
         },
         "granular": {
-          "score": 7,
-          "rationale": "The test isolates the specific behavior of null values. However, it mixes data preparation with validation logic in one function.",
+          "score": 8,
+          "rationale": "The assertion targets the specific behavior of converting `None` to `0`. It is granular enough that it would fail if this logic were changed.",
           "suggestions": [
-            "Separate setup (data creation) from assertion/validation to improve granularity and readability."
+            "Consider adding a second test case for edge cases like negative numbers or very large integers to ensure robustness against unexpected types."
           ]
         },
         "fast": {
           "score": 9,
-          "rationale": "The test executes rapidly without artificial sleeps or heavy I/O. It relies on pure Python logic.",
+          "rationale": "The test executes rapidly. There are no artificial sleeps, heavy setups, or unneeded I/O operations.",
           "suggestions": [
-            "None needed; the current structure is efficient."
+            "None needed; the code is already fast."
           ]
         },
         "first_tdd": {
-          "score": 8,
-          "rationale": "The test follows Arrange-Act-Assert principles: data (`units`) is prepared first (Arrange), then batched and validated (Act/Assert).",
+          "score": 9,
+          "rationale": "The test follows TDD principles: it specifies behavior (null becomes zero) before implementation. The Arrange-Act-Assert structure is clean and logical.",
           "suggestions": [
-            "Explicitly label sections as 'Setup', 'Action', or 'Verification' to make the TDD flow unmistakable."
+            "None needed; the code already demonstrates first-TDD design."
           ]
         },
-        "summary": "The test is well-structured but could benefit from clearer separation of concerns and explicit labeling for maximum clarity in a code review context. Ensure no redundant checks exist that duplicate other tests covering similar edge cases."
+        "summary": "The test passes all criteria except for potential redundancy in coverage (necessary). It effectively tests a critical edge case with high clarity and maintainability. Minor improvements to naming conventions would further enhance its robustness against future refactoring without changing behavior."
+      }
+    },
+    {
+      "id": "tests/test_code_review.py::test_batch_units_by_budget_coerces_lines_changed_before_sorting",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_batch_units_by_budget_coerces_lines_changed_before_sorting",
+      "class_name": null,
+      "farley_index": 5.875,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 4,
+          "rationale": "The test name is verbose and slightly ambiguous regarding the business rule (coercion vs. sorting). The assertion `assert [unit['lines_changed'] for unit in batches[0]] == [...]` mixes types (`str`, `int`) with a list of strings, which could be confusing without context on whether coercion happened or if the input was already sorted.",
+          "suggestions": [
+            "Rename to test_batch_units_by_budget_coerces_lines_to_int_before_sorting"
+          ]
+        },
+        "maintainable": {
+          "score": 6,
+          "rationale": "The code is decoupled from system implementation details; it does not rely on external state or timing. However, the test assumes `batches[0]` exists and contains exactly three units with specific types of values for lines_changed.",
+          "suggestions": [
+            "Add a guard clause: assert len(batches) == 1 before accessing batches[0]"
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic and self-contained. It does not rely on external shared state or network/filename operations.",
+          "suggestions": [
+            "Ensure the `code_review_evaluator` class itself has no hidden dependencies that could cause flaky behavior in CI environments"
+          ]
+        },
+        "atomic": {
+          "score": 8,
+          "rationale": "The test verifies exactly one business rule: budget coercion followed by sorting. If it fails, the failure is immediately obvious (wrong value or wrong type).",
+          "suggestions": [
+            "Consider adding a specific assertion for `batches[0][1]['lines_changed']` to ensure only that unit was coerced and sorted"
+          ]
+        },
+        "necessary": {
+          "score": 5,
+          "rationale": "This test covers the interaction between budget logic and sorting. However, it may not cover edge cases like empty batches or multiple units with identical values.",
+          "suggestions": [
+            "Add a unit test for `batch_units_by_budget` returning an empty list"
+          ]
+        },
+        "granular": {
+          "score": 6,
+          "rationale": "The test is granular enough to verify the specific transformation logic. However, it mixes data structure assertions with value type checks.",
+          "suggestions": [
+            "Refactor into two tests: one for coercion (`assert isinstance(lines_changed, int)`), another for sorting order"
+          ]
+        },
+        "fast": {
+          "score": 7,
+          "rationale": "The test executes rapidly without artificial delays or heavy I/O. The only potential bottleneck is the `code_review_evaluator` call.",
+          "suggestions": [
+            "Verify that `batch_units_by_budget` does not perform unnecessary network calls during unit testing"
+          ]
+        },
+        "first_tdd": {
+          "score": 4,
+          "rationale": "The test follows a basic Arrange-Act-Assert pattern but lacks explicit separation of concerns. The 'Arrange' phase (creating units) is mixed with the Act/Assert phases.",
+          "suggestions": [
+            "Explicitly separate setup: `setup_method` or fixture to ensure clean state before each assertion"
+          ]
+        },
+        "summary": ""
       }
     },
     {
@@ -6989,28 +6974,28 @@
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 134,
-          "prompt_tokens": 115745,
-          "completion_tokens": 110550,
-          "total_tokens": 226295,
+          "calls": 136,
+          "prompt_tokens": 120368,
+          "completion_tokens": 112079,
+          "total_tokens": 232447,
           "cost_usd": 0.0,
           "missing_usage_calls": 0
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 134,
-            "prompt_tokens": 115745,
-            "completion_tokens": 110550,
-            "total_tokens": 226295,
+            "calls": 136,
+            "prompt_tokens": 120368,
+            "completion_tokens": 112079,
+            "total_tokens": 232447,
             "cost_usd": 0.0
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 134,
-            "prompt_tokens": 115745,
-            "completion_tokens": 110550,
-            "total_tokens": 226295,
+            "calls": 136,
+            "prompt_tokens": 120368,
+            "completion_tokens": 112079,
+            "total_tokens": 232447,
             "cost_usd": 0.0
           }
         },
@@ -7438,7 +7423,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 537,
             "completion_tokens": 776,
@@ -7452,9 +7437,9 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 501,
-            "completion_tokens": 903,
-            "total_tokens": 1404,
+            "prompt_tokens": 422,
+            "completion_tokens": 867,
+            "total_tokens": 1289,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -7464,9 +7449,9 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 492,
-            "completion_tokens": 713,
-            "total_tokens": 1205,
+            "prompt_tokens": 474,
+            "completion_tokens": 941,
+            "total_tokens": 1415,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -7475,6 +7460,18 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 650,
+            "completion_tokens": 719,
+            "total_tokens": 1369,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 505,
             "completion_tokens": 665,
@@ -7486,7 +7483,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 480,
             "completion_tokens": 848,
@@ -7498,7 +7495,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 525,
             "completion_tokens": 1024,
@@ -7510,7 +7507,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 1698,
             "completion_tokens": 1024,
@@ -7522,7 +7519,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 2872,
             "completion_tokens": 1024,
@@ -7536,9 +7533,9 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 672,
+            "prompt_tokens": 711,
             "completion_tokens": 1024,
-            "total_tokens": 1696,
+            "total_tokens": 1735,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -7548,69 +7545,9 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 1844,
-            "completion_tokens": 894,
-            "total_tokens": 2738,
-            "has_usage": true,
-            "usage_source": "provider",
-            "cost_usd": 0.0
-          },
-          {
-            "stage": "farley_evaluation",
-            "model": "ollama/qwen3.5:2b",
-            "source": "provider",
-            "generation_params": {},
-            "prompt_tokens": 525,
-            "completion_tokens": 694,
-            "total_tokens": 1219,
-            "has_usage": true,
-            "usage_source": "provider",
-            "cost_usd": 0.0
-          },
-          {
-            "stage": "farley_evaluation",
-            "model": "ollama/qwen3.5:2b",
-            "source": "provider",
-            "generation_params": {},
-            "prompt_tokens": 601,
-            "completion_tokens": 874,
-            "total_tokens": 1475,
-            "has_usage": true,
-            "usage_source": "provider",
-            "cost_usd": 0.0
-          },
-          {
-            "stage": "farley_evaluation",
-            "model": "ollama/qwen3.5:2b",
-            "source": "provider",
-            "generation_params": {},
-            "prompt_tokens": 437,
-            "completion_tokens": 781,
-            "total_tokens": 1218,
-            "has_usage": true,
-            "usage_source": "provider",
-            "cost_usd": 0.0
-          },
-          {
-            "stage": "farley_evaluation",
-            "model": "ollama/qwen3.5:2b",
-            "source": "provider",
-            "generation_params": {},
-            "prompt_tokens": 502,
-            "completion_tokens": 743,
-            "total_tokens": 1245,
-            "has_usage": true,
-            "usage_source": "provider",
-            "cost_usd": 0.0
-          },
-          {
-            "stage": "farley_evaluation",
-            "model": "ollama/qwen3.5:2b",
-            "source": "provider",
-            "generation_params": {},
-            "prompt_tokens": 533,
+            "prompt_tokens": 1942,
             "completion_tokens": 1024,
-            "total_tokens": 1557,
+            "total_tokens": 2966,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -7620,9 +7557,9 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 1764,
-            "completion_tokens": 1024,
-            "total_tokens": 2788,
+            "prompt_tokens": 3173,
+            "completion_tokens": 923,
+            "total_tokens": 4096,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -7632,9 +7569,81 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 2995,
+            "prompt_tokens": 549,
+            "completion_tokens": 619,
+            "total_tokens": 1168,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 625,
             "completion_tokens": 1024,
-            "total_tokens": 4019,
+            "total_tokens": 1649,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 2023,
+            "completion_tokens": 1024,
+            "total_tokens": 3047,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 3422,
+            "completion_tokens": 674,
+            "total_tokens": 4096,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 449,
+            "completion_tokens": 815,
+            "total_tokens": 1264,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 509,
+            "completion_tokens": 854,
+            "total_tokens": 1363,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 540,
+            "completion_tokens": 719,
+            "total_tokens": 1259,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -13119,6 +13128,357 @@
       "completion_tokens": 1024,
       "prompt_tokens": 2995,
       "total_tokens": 4019,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "4ff572bbaf923d3152f4edd7a8144ab38deee11fe2d85b1d4244ddbbb7466c50": {
+    "id": "chatcmpl-2b83d825-c14b-43d4-98bc-fb0302e3be83",
+    "created": 1783715584,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and assertions are clear enough to infer intent (handling empty/missing input), but the method `code_review_evaluator.estimate_pr_tokens` is not defined in this snippet; without seeing its implementation or documentation, 'understandable' as a business rule remains ambiguous.\",\n    \"suggestions\": [\n      \"Ensure all test names and assertions are self-explanatory even for new developers (e.g., `test_estimate_pr_tokens_handles_empty_code`).\",\n      \"Verify that the underlying method's behavior aligns with documented requirements or existing tests.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"The test is decoupled from implementation details; it only asserts contract (input/output) without touching internal logic. It will not break if the evaluator's internals change.\",\n    \"suggestions\": [\n      \"Ensure `code_review_evaluator` follows DRY principles and does not have hidden side effects that could make this test brittle under refactoring.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 10,\n    \"rationale\": \"The test is fully self-contained. It uses no external state (no DB/network/filesystem), relies on a single deterministic function call with clear inputs/outputs.\",\n    \"suggestions\": [\n      \"Confirm that `code_review_evaluator` has no hidden dependencies or side effects in its implementation.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: the return value of a specific method for two distinct inputs. If it fails, the cause is immediately obvious (input mismatch or logic error).\",\n    \"suggestions\": [\n      \"Ensure no other tests depend on this evaluator's internal state in ways that could make these assertions flaky if refactored.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 7,\n    \"rationale\": \"This test covers a specific edge case (empty/missing code). However, it may duplicate coverage of other tests already handling empty inputs or missing data in different contexts.\",\n    \"suggestions\": [\n      \"Review existing `estimate_pr_tokens` and related tests to ensure this one does not re-test trivial cases covered elsewhere.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The test targets a specific edge case (empty/missing code) rather than general functionality. It isolates the behavior of handling null and empty lists.\",\n    \"suggestions\": [\n      \"Ensure this test does not accidentally cover unrelated scenarios that could confuse maintainers.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 10,\n    \"rationale\": \"The test executes instantly with no artificial delays, heavy setups, or slow I/O operations. It is purely functional and deterministic.\",\n    \"suggestions\": [\n      \"Verify that the underlying `estimate_pr_tokens` method does not introduce unnecessary overhead in production-like environments.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 9,\n    \"rationale\": \"The test follows a clean Arrange-Act-Assert pattern: no setup code is needed (Arrange implicit), the action is clear (`estimate_pr_tokens` with specific inputs), and assertions are direct. It demonstrates design properties of handling edge cases.\",\n    \"suggestions\": [\n      \"Ensure this test was written first to define behavior, not just as a sanity check for existing functionality.\"\n    ]\n  },\n  \"summary\": \"The test is highly repeatable, fast, and follows TDD principles. However, its 'understandability' depends on the implementation of `code_review_evaluator`, which should be reviewed to ensure business rules are clear. It also risks redundancy if other tests already cover empty inputs.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 867,
+      "prompt_tokens": 422,
+      "total_tokens": 1289,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "845526fbb78176dfd20e4ab821a7c55968a7dcb7ddab0ef320de0c50489fd7eb": {
+    "id": "chatcmpl-4ca7c307-60ca-4c51-bbf6-259f28933a99",
+    "created": 1783715656,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 6,\n    \"rationale\": \"The test name is descriptive but slightly verbose for a unit function; the logic relies on implicit domain knowledge (empty string vs missing key) which may not be immediately obvious to all readers without context.\",\n    \"suggestions\": [\n      \"Rename `test_estimate_unit_tokens_handles_empty_or_missing_code` to something more specific like `estimate_unit_tokens_returns_zero_for_no_input`.\",\n      \"Ensure the docstring explicitly defines what constitutes 'empty' vs 'missing' code in this domain.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is decoupled from implementation details (no mocking of `code_review_evaluator`), but it relies on the exact behavior of an internal function. If that function changes its return value logic in a future refactor without updating this specific assertion, tests will break.\",\n    \"suggestions\": [\n      \"Add comments or inline documentation explaining why `{}` and `{\" ]},\"repeatable\" :{\n    \"score\": 8,\n    \"rationale\": \"The test is self-contained within the file. It does not rely on external shared state (like a global database), network calls, local filesystem paths, or system timing mechanisms.\",\n    \"suggestions\": [\n      \"Ensure no side effects occur during execution; if `estimate_unit_tokens` modifies any internal state unexpectedly, this test will fail due to non-determinism.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: the return value of `estimate_unit_tokens`. If it fails, the cause is instantly obvious (e.g., assertion error), and no complex logic needs to be traced.\",\n    \"suggestions\": [\n      \"No immediate action needed; this follows TDD best practices.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test duplicates coverage of other tests (e.g., `test_estimate_unit_tokens_handles_valid_code`, `test_estimate_unit_tokens_with_whitespace`). It does not add unique value and risks bloating the suite.\",\n    \"suggestions\": [\n      \"Remove this specific assertion if it is covered by existing unit tests for empty/missing inputs. If no other test covers these cases, consider renaming to a more general 'edge case' or removing entirely.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 7,\n    \"rationale\": \"The assertion `assert code_review_evaluator.estimate_unit_tokens({}) == 0` is granular enough for unit testing but could be more specific about the input format (e.g., `{}` vs empty string) to avoid ambiguity.\",\n    \"suggestions\": [\n      \"Refine assertions like: `assert estimate_unit_tokens(EmptyInput()) == 0`.\",\n      \"Ensure no other test covers this exact scenario, or merge it into a broader 'edge case' test.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 8,\n    \"rationale\": \"The test executes rapidly without artificial sleeps, heavy setups (like database connections), or unneeded I/O operations. It is purely functional and deterministic.\",\n    \"suggestions\": [\n      \"No action needed; the code structure supports fast execution.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 6,\n    \"rationale\": \"The test follows Arrange-Act-Assert (Arrange: setup `estimate_unit_tokens`, Act: call function with inputs, Assert: check return values). However, the 'Arrange' phase is implicit and relies on external state (`code_review_evaluator`), which may not be fully isolated.\",\n    \"suggestions\": [\n      \"Explicitly mock or stub `code_review_evaluator.estimate_unit_tokens` in Arrange to ensure isolation from system implementation details.\"\n    ]\n  },\n  \"summary\": \"The test is well-structured and fast but suffers from redundancy (duplicates coverage), potential ambiguity in input definitions, and reliance on external state for 'Arrange'. It should be cleaned up by removing duplicates or merging edge cases into existing tests to improve maintainability.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 941,
+      "prompt_tokens": 474,
+      "total_tokens": 1415,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "44f25731f4567ddc8a5185f1d8b3b87a058351a56e3ba85281bbe2de8f1e3254": {
+    "id": "chatcmpl-8e19176a-37a8-4377-a9ad-701984809cb8",
+    "created": 1783715718,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and logic are highly readable. It clearly identifies the business rule: that a system prompt must contain specific structured sections defined by an evaluator constant.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"Excellent decoupling from implementation details; it tests for string presence rather than parsing logic or internal data structures. It will remain valid even if the evaluator's prompt format changes as long as these tags exist.\",\n    \"suggestions\": []\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is self-contained and deterministic regarding its assertions (string presence). However, it relies on `code_review_evaluator.SYSTEM_PROMPT`, which could theoretically change if the evaluator implementation changes without updating this specific unit.\",\n    \"suggestions\": [\n      \"Ensure `SYSTEM_PROMPT` in the evaluator module is a constant or explicitly documented as immutable for this test to avoid flakiness due to refactoring that doesn't update tests.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 10,\n    \"rationale\": \"The test verifies exactly one behavior: the presence of specific tags within a string. If it fails, the cause is instantly obvious (missing tag or malformed XML). It does not mix setup logic with assertions.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 9,\n    \"rationale\": \"This test covers one specific aspect of prompt structure. While it doesn't cover content validation yet (e.g., `elite senior software engineer`), the presence check is necessary to ensure basic structural integrity before deeper semantic checks.\",\n    \"suggestions\": []\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The test targets a specific pattern: `<tag>` inside `</tag>`. It isolates the 'presence of tags' behavior from content validation. However, it could be more granular by checking for whitespace or newline handling around these tags.\",\n    \"suggestions\": [\n      \"Consider adding assertions to ensure no extra newlines exist between opening and closing tags: `<role></role>` vs `</role>\\n<task>`. This prevents false negatives if the evaluator adds formatting that breaks simple string matching.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test is extremely fast. It involves a single function call per assertion and no heavy I/O or network operations. The `find` method on strings is O(n) but negligible for this scope.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 10,\n    \"rationale\": \"This test perfectly demonstrates the Arrange-Act-Assert pattern: `Arrange` (fetching prompt), `Act` (loop through sections and assert presence), `Assert` (semantic validation). It is a clean, high-level unit test.\",\n    \"suggestions\": []\n  },\n  \"summary\": \"The code passes all Farley properties with minor suggestions for whitespace handling in the granularity check.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 719,
+      "prompt_tokens": 650,
+      "total_tokens": 1369,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "3dd6f6050166771c60076a90599a528dbe585c7238f88fa34c5a90218a3a4f84": {
+    "id": "chatcmpl-01e7cf34-6d96-41db-905a-9342954d26cc",
+    "created": 1783715799,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 3,\n    \"rationale\": \"The test name is verbose and slightly ambiguous ('selects_highest_priority_units' vs 'fits_within_budget'). The docstring attempts to explain the logic but mixes high-level business intent with low-level implementation details (e.g., specific token counts like `4000`), which obscures the core rule.\",\n    \"suggestions\": [\n      \"Rename test name: `test_filter_units_by_budget_selects_largest_fitting_tokens`.\",\n      \"Remove hardcoded values from docstrings; describe *how* to calculate priority (e.g., 'prioritize by lines_changed descending, then code size') rather than stating the result.\",\n      \"Ensure all unit tests use a consistent domain language that avoids implementation-specific constants.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 2,\n    \"rationale\": \"The test is brittle to system refactoring. It relies on specific hardcoded token counts (`4000`, `8000`) and assumes a fixed ordering of units in the list that may change during code review logic updates.\",\n    \"suggestions\": [\n      \"Remove all hard-coded constants; derive values from data or configuration instead.\",\n      \"Ensure the test remains valid if `code_review_evaluator` changes its internal token estimation algorithm without breaking this specific assertion.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 4,\n    \"rationale\": \"The test is self-contained but relies on external state (`code_review_evaluator`) and potentially non-deterministic ordering of the input list `units`. It depends on how units are ordered in memory.\",\n    \"suggestions\": [\n      \"Remove reliance on `code_review_evaluator` unless it's a pure function; if not, mock or inject dependencies explicitly to ensure determinism.\",\n      \"Ensure unit tests do not depend on the order of input lists. If ordering matters for logic, make that behavior explicit and testable.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 5,\n    \"rationale\": \"The test verifies a single rule (filtering by budget). However, it mixes two distinct behaviors: selecting the top N units AND sorting them. If `max_units=2` is changed to `3`, this specific assertion would fail even if the filtering logic was correct.\",\n    \"suggestions\": [\n      \"Isolate assertions into separate tests for 'select_top_n' and 'sort_by_lines_changed'.\",\n      \"Ensure that changing one parameter (like max units) does not break unrelated test cases.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"The test covers the core filtering logic but duplicates coverage of other tests likely testing 'select_top_n' or 'sort_by_lines_changed'. It also verifies trivial edge cases (like `max_units=2` specifically) that might be covered elsewhere.\",\n    \"suggestions\": [\n      \"Remove this specific assertion if it's already covered by a general test for sorting top N units. Focus on the filtering logic itself, not just the result of applying filters to small datasets.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 2,\n    \"rationale\": \"The test is too coarse-grained. It asserts specific values (`lines_changed == 5`) and a fixed count without verifying *why* those units were selected (e.g., did it pick the two largest? or just any two?).\",\n    \"suggestions\": [\n      \"Assert that `selected` contains exactly the top N items by priority, not just 'has length X'.\",\n      \"Verify edge cases: what happens if no unit fits in budget? What if all units fit?\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 5,\n    \"rationale\": \"The test is reasonably fast as it involves simple arithmetic and list operations. However, the logic `min(budget_that_fits_largest_and_small, budget_that_fits_large_unit + large_unit - 1)` introduces unnecessary complexity that could be optimized for speed.\",\n    \"suggestions\": [\n      \"Simplify the calculation of `budget_that_fits_larger_but_not_large` to avoid redundant lookups or complex min/max logic if possible.\",\n      \"Ensure no artificial sleeps, heavy I/O, or network calls are present.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 3,\n    \"rationale\": \"The test follows Arrange-Act-Pattern loosely. The 'Arrange' phase (creating units) is correct, but the 'Assert' phase mixes high-level business rules with low",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 711,
+      "total_tokens": 1735,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "3bd276ef8a21b3af391adb2ff46f2e8831aa2426a56d055d875a31eb2717e003": {
+    "id": "chatcmpl-cce64646-5c36-406d-8199-73762d00ffc5",
+    "created": 1783715908,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 3,\n    \"rationale\": \"The test name is verbose and ambiguous ('selects_highest_priority_units' vs 'fits_within_budget'). The docstring attempts to explain the logic but mixes high-level business intent with low-level implementation details (e.g., specific token counts like `4000`), which obscures the core rule.\",\n    \"suggestions\": [\n      \"Rename test name: `test_filter_units_by_budget_selects_largest_fitting_tokens`.\",\n      \"Remove hardcoded values from docstrings; describe *how* to calculate priority (e.g., 'prioritize by lines_changed descending, then code size') rather than stating the result.\",\n      \"Ensure all unit tests use a consistent domain language that avoids implementation-specific constants.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 2,\n    \"rationale\": \"The test is brittle to system refactoring. It relies on specific hardcoded token counts (`4000`, `8000`) and assumes a fixed ordering of units in the list that may change during code review logic updates.\",\n    \"suggestions\": [\n      \"Remove all hard-coded constants; derive values from data or configuration instead.\",\n      \"Ensure the test remains valid if `code_review_evaluator` changes its internal token estimation algorithm without breaking this specific assertion.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 4,\n    \"rationale\": \"The test is self-contained but relies on external state (`code_review_evaluator`) and potentially non-deterministic ordering of the input list `units`. It depends on how units are ordered in memory.\",\n    \"suggestions\": [\n      \"Remove reliance on `code_review_evaluator` unless it's a pure function; if not, mock or inject dependencies explicitly to ensure determinism.\",\n      \"Ensure unit tests do not depend on the order of input lists. If ordering matters for logic, make that behavior explicit and testable.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 5,\n    \"rationale\": \"The test verifies a single rule (filtering by budget). However, it mixes two distinct behaviors: selecting the top N units AND sorting them. If `max_units=2` is changed to `3`, this specific assertion would fail even if the filtering logic was correct.\",\n    \"suggestions\": [\n      \"Isolate assertions into separate tests for 'select_top_n' and 'sort_by_lines_changed'.\",\n      \"Ensure that changing one parameter (like max units) does not break unrelated test cases.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"The test covers the core filtering logic but duplicates coverage of other tests likely testing 'select_top_n' or 'sort_by_lines_changed'. It also verifies trivial edge cases (like `max_units=2` specifically) that might be covered elsewhere.\",\n    \"suggestions\": [\n      \"Remove this specific assertion if it's already covered by a general test for sorting top N units. Focus on the filtering logic itself, not just the result of applying filters to small datasets.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 2,\n    \"rationale\": \"The test is too coarse-grained. It asserts specific values (`lines_changed == 5`) and a fixed count without verifying *why* those units were selected (e.g., did it pick the two largest? or just any two?).\",\n    \"suggestions\": [\n      \"Assert that `selected` contains exactly the top N items by priority, not just 'has length X'.\",\n      \"Verify edge cases: what happens if no unit fits in budget? What if all units fit?\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 5,\n    \"rationale\": \"The test is reasonably fast as it involves simple arithmetic and list operations. However, the logic `min(budget_that_fits_largest_and_small, budget_that_fits_large_unit + large_unit - 1)` introduces unnecessary complexity that could be optimized for speed.\",\n    \"suggestions\": [\n      \"Simplify the calculation of `budget_that_fits_larger_but_not_large` to avoid redundant lookups or complex min/max logic if possible.\",\n      \"Ensure no artificial sleeps, heavy I/O, or network calls are present.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 3,\n    \"rationale\": \"The test follows Arrange-Act-Pattern loosely. The 'Arrange' phase (creating units) is correct, but the 'Assert' phase mixes high-level business rules with low-level",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 1942,
+      "total_tokens": 2966,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "73c9063c9eeda1e8ff85b8f5f3a28b910dbf83b6b8618dc31179d4dd3f88b5a3": {
+    "id": "chatcmpl-0400655f-64a4-47c1-b215-0da439b48579",
+    "created": 1783716040,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 3,\n    \"rationale\": \"The test name is verbose and ambiguous ('selects_highest_priority_units' vs 'fits_within_budget'). The docstring attempts to explain the logic but mixes high-level business intent with low-level implementation details (e.g., specific token counts like `4000`), which obscures the core rule.\",\n    \"suggestions\": [\n      \"Rename test name: `test_filter_units_by_budget_selects_largest_fitting_tokens`.\",\n      \"Remove hardcoded values from docstrings; describe *how* to calculate priority (e.g., 'prioritize by lines_changed descending, then code size') rather than stating the result.\",\n      \"Ensure all unit tests use a consistent domain language that avoids implementation-specific constants.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 2,\n    \"rationale\": \"The test is brittle to system refactoring. It relies on specific hardcoded token counts (`4000`, `8000`) and assumes a fixed ordering of units in the list that may change during code review logic updates.\",\n    \"suggestions\": [\n      \"Remove all hard-coded constants; derive values from data or configuration instead.\",\n      \"Ensure the test remains valid if `code_review_evaluator` changes its internal token estimation algorithm without breaking this specific assertion.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 4,\n    \"rationale\": \"The test is self-contained but relies on external state (`code_review_evaluator`) and potentially non-deterministic ordering of the input list `units`. It depends on how units are ordered in memory.\",\n    \"suggestions\": [\n      \"Remove reliance on `code_review_evaluator` unless it's a pure function; if not, mock or inject dependencies explicitly to ensure determinism.\",\n      \"Ensure unit tests do not depend on the order of input lists. If ordering matters for logic, make that behavior explicit and testable.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 5,\n    \"rationale\": \"The test verifies a single rule (filtering by budget). However, it mixes two distinct behaviors: selecting the top N units AND sorting them. If `max_units=2` is changed to `3`, this specific assertion would fail even if the filtering logic was correct.\",\n    \"suggestions\": [\n      \"Isolate assertions into separate tests for 'select_top_n' and 'sort_by_lines_changed'.\",\n      \"Ensure that changing one parameter (like max units) does not break unrelated test cases.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"The test covers the core filtering logic but duplicates coverage of other tests likely testing 'select_top_n' or 'sort_by_lines_changed'. It also verifies trivial edge cases (like `max_units=2` specifically) that might be covered elsewhere.\",\n    \"suggestions\": [\n      \"Remove this specific assertion if it's already covered by a general test for sorting top N units. Focus on the filtering logic itself, not just the result of applying filters to small datasets.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 2,\n    \"rationale\": \"The test is too coarse-grained. It asserts specific values (`lines_changed == 5`) and a fixed count without verifying *why* those units were selected (e.g., did it pick the two largest? or just any two?).\",\n    \"suggestions\": [\n      \"Assert that `selected` contains exactly the top N items by priority, not just 'has length X'.\",\n      \"Verify edge cases: what happens if no unit fits in budget? What if all units fit?\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 5,\n    \"rationale\": \"The test is reasonably fast as it involves simple arithmetic and list operations. However, the logic `min(budget_that_fits_largest_and_small, budget_that_fits_large_unit + large_unit - 1)` introduces unnecessary complexity that could be optimized for speed.\",\n    \"suggestions\": [\n      \"Simplify the calculation of `budget_that_fits_l",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 923,
+      "prompt_tokens": 3173,
+      "total_tokens": 4096,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "babf426fb6b297aefeb5b121eacb9a1a7ac88bf900e7f33a8fff07274ad3f67f": {
+    "id": "chatcmpl-a6581238-5fcf-4df1-a9de-9beeba964ad5",
+    "created": 1783716089,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and code clearly describe the business rule: batching units based on budget splits when a specific unit limit is exceeded. The domain language (code lines changed) is used correctly without implementation clutter.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"The test relies entirely on the `batch_units_by_budget` method's internal logic. It does not depend on external state (DB/filesystem) or timing variations that could break during refactoring.\",\n    \"suggestions\": []\n  },\n  \"repeatable\": {\n    \"score\": 10,\n    \"rationale\": \"The test is fully self-contained with no reliance on shared databases, network calls, file systems, or external services. It runs deterministically in isolation.\",\n    \"suggestions\": []\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"Each assertion verifies a distinct behavior: total batch count and specific line counts for the first two batches. The failure cause is immediately obvious if any of these assertions fail.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 7,\n    \"rationale\": \"While useful, this test might duplicate coverage already provided by other tests in `test_code_review.py` that cover the general batching logic. It should be kept only if it specifically targets a unique edge case not covered elsewhere.\",\n    \"suggestions\": [\n      \"Review existing unit tests for similar batch scenarios to ensure no redundant assertions are needed here.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The test isolates the specific condition: `max_units=2` causing a split. It precisely targets the behavior of splitting units when that limit is hit.\",\n    \"suggestions\": []\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"No artificial sleeps or heavy I/O operations are present. The test executes purely based on method logic and list iteration speed.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 10,\n    \"rationale\": \"This is a classic Arrange-Act-Assert structure: `units` (Arrange) are defined first; the call to `batch_units_by_budget` acts on them; assertions verify expected results. It demonstrates clean separation of concerns.\",\n    \"suggestions\": []\n  },\"summary\":\"{\\\"understandable\\\":8,\\\"maintainable\\\":9,\\\"repeatable\\\":10,\\\"atomic\\\":9,\\\"necessary\\\":7,\\\"granular\\\":8,\\\"fast\\\":9,\\\"first_tdd\\\":10}\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 619,
+      "prompt_tokens": 549,
+      "total_tokens": 1168,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "859feb54f0ee0e6f770c5f132ea7c836d9d10a942e23ce03c952855455468fac": {
+    "id": "chatcmpl-62219d3e-b1b6-4f1e-8ff7-d8fa28c80ce1",
+    "created": 1783716168,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 6,\n    \"rationale\": \"The test name is verbose and slightly ambiguous regarding the specific failure mode (token limit exceeded vs. budget exhaustion). The code logic attempts to infer intent from variable names but lacks a clear 'why' for why `batches[0]` should only contain `[20]`. It reads more like an implementation detail than a business rule.\",\n    \"suggestions\": [\n      \"Rename the test function to clearly state the failure condition, e.g., `test_batch_units_exceed_budget_when_large_unit_is_selected` or similar. If testing budget exhaustion specifically: `test_budget_exhaustion_with_mixed_sizes`.\",\n      \"Remove implementation-specific details like exact token counts (`4000`, `8000`) from the test name unless they are critical to understanding the boundary condition.\",\n      \"Clarify if this is a regression test for an existing bug or a new feature. If it's verifying specific behavior, ensure the assertion logic directly reflects that rule without relying on internal variable names.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 4,\n    \"rationale\": \"The test is brittle to changes in `code_review_evaluator.batch_units_by_budget`. If the function's behavior regarding how it groups units or handles edge cases (like when a single unit exceeds budget) changes internally without updating this specific assertion, the test will fail. It also couples too tightly with internal logic by hardcoding exact token values.\",\n    \"suggestions\": [\n      \"Remove hardcoded token counts (`4000`, `8000`) from the code and assertions; derive these values dynamically or use a parameterized approach if testing multiple scenarios is needed.\",\n      \"Ensure that any change to how units are grouped by budget does not break this test. Add comments explaining why specific unit combinations (large + small) trigger exactly 2 batches under `max_tokens` of the sum of large+small tokens.\",\n      \"Consider using a mock or stub for `code_review_evaluator.batch_units_by_budget` if possible, to isolate logic changes from external dependencies.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 5,\n    \"rationale\": \"The test relies on the internal state of `budget_that_fits_large_and_small`, which is calculated dynamically. If this calculation ever changes (e.g., due to a bug fix in the evaluator), the test will fail unless updated manually. It also lacks self-containment; it depends entirely on external functions and variables.\",\n    \"suggestions\": [\n      \"Calculate `budget_that_fits_large_and_small` directly inside the function or use a constant if applicable, ensuring no reliance on dynamic calculation logic that might change unexpectedly.\",\n      \"Ensure all inputs are deterministic. If testing multiple scenarios (e.g., different token limits), ensure they don't rely on system time, random seeds, or external state changes between test runs.\",\n      \"Avoid relying solely on `assert len(batches) == 2`. Instead, assert the specific composition of batches to make it more robust against internal logic shifts.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 7,\n    \"rationale\": \"The test verifies exactly one behavior: that when a large unit is selected and tokens are exhausted by `max_tokens`, the batch contains only `[20]`. The cause of failure (tokens exceeded) is obvious. However, if there's ambiguity about whether this covers all edge cases or multiple failures in sequence, it could be considered less atomic than ideal.\",\n    \"suggestions\": [\n      \"Ensure that no other assertions are made within the same test function unless they directly follow from a single failure mode. If testing both 'exhaustion' and 'overflow', split them into separate tests to maintain clarity.\",\n      \"If this is part of an integration scenario, ensure there's no hidden state (like previous batches) that could interfere with subsequent assertions in the same test run.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test verifies a specific boundary condition: what happens when `max_tokens` is set to exactly the sum of two units. It does not duplicate coverage for other tests (e.g., testing empty batches, single unit limits). However, it might be redundant if there's already a general 'budget exhaustion' or 'token limit exceeded' test that covers this scenario implicitly.\",\n    \"suggestions\": [\n      \"Review existing test suite to ensure no broader rule is being tested here. If the goal of `max_tokens` = sum of two units was previously covered by another test, refactor it there instead.\",\n      \"If testing specific edge cases (like exactly hitting a limit), consider adding these as",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 625,
+      "total_tokens": 1649,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "b523c49614656ca82810f68eea26897769c3829540489462c20a6abe1b7f9ee7": {
+    "id": "chatcmpl-f8d1eb22-de6e-453a-8723-4f59db6e320f",
+    "created": 1783716279,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 6,\n    \"rationale\": \"The test name is verbose and slightly ambiguous regarding the specific failure mode (token limit exceeded vs. budget exhaustion). The code logic attempts to infer intent from variable names but lacks a clear 'why' for why `batches[0]` should only contain `[20]`. It reads more like an implementation detail than a business rule.\",\n    \"suggestions\": [\n      \"Rename the test function to clearly state the failure condition, e.g., `test_batch_units_exceed_budget_when_large_unit_is_selected` or similar. If testing budget exhaustion specifically: `test_budget_exhaustion_with_mixed_sizes`.\",\n      \"Remove implementation-specific details like exact token counts (`4000`, `8000`) from the test name unless they are critical to understanding the boundary condition.\",\n      \"Clarify if this is a regression test for an existing bug or a new feature. If it's verifying specific behavior, ensure the assertion logic directly reflects that rule without relying on internal variable names.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 4,\n    \"rationale\": \"The test is brittle to changes in `code_review_evaluator.batch_units_by_budget`. If the function's behavior regarding how it groups units or handles edge cases (like when a single unit exceeds budget) changes internally without updating this specific assertion, the test will fail. It also couples too tightly with internal logic by hardcoding exact token values.\",\n    \"suggestions\": [\n      \"Remove hardcoded token counts (`4000`, `8000`) from the code and assertions; derive these values dynamically or use a parameterized approach if testing multiple scenarios is needed.\",\n      \"Ensure that any change to how units are grouped by budget does not break this test. Add comments explaining why specific unit combinations (large + small) trigger exactly 2 batches under `max_tokens` of the sum of large+small tokens.\",\n      \"Consider using a mock or stub for `code_review_evaluator.batch_units_by_budget` if possible, to isolate logic changes from external dependencies.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 5,\n    \"rationale\": \"The test relies on the internal state of `budget_that_fits_large_and_small`, which is calculated dynamically. If this calculation ever changes (e.g., due to a bug fix in the evaluator), the test will fail unless updated manually. It also lacks self-containment; it depends entirely on external functions and variables.\",\n    \"suggestions\": [\n      \"Calculate `budget_that_fits_large_and_small` directly inside the function or use a constant if applicable, ensuring no reliance on dynamic calculation logic that might change unexpectedly.\",\n      \"Ensure all inputs are deterministic. If testing multiple scenarios (e.g., different token limits), ensure they don't rely on system time, random seeds, or external state changes between test runs.\",\n      \"Avoid relying solely on `assert len(batches) == 2`. Instead, assert the specific composition of batches to make it more robust against internal logic shifts.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 7,\n    \"rationale\": \"The test verifies exactly one behavior: that when a large unit is selected and tokens are exhausted by `max_tokens`, the batch contains only `[20]`. The cause of failure (tokens exceeded) is obvious. However, if there's ambiguity about whether this covers all edge cases or multiple failures in sequence, it could be considered less atomic than ideal.\",\n    \"suggestions\": [\n      \"Ensure that no other assertions are made within the same test function unless they directly follow from a single failure mode. If testing both 'exhaustion' and 'overflow', split them into separate tests to maintain clarity.\",\n      \"If this is part of an integration scenario, ensure there's no hidden state (like previous batches) that could interfere with subsequent assertions in the same test run.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test verifies a specific boundary condition: what happens when `max_tokens` is set to exactly the sum of two units. It does not duplicate coverage for other tests (e.g., testing empty batches, single unit limits). However, it might be redundant if there's already a general 'budget exhaustion' or 'token limit exceeded' test that covers this scenario implicitly.\",\n    \"suggestions\": [\n      \"Review existing test suite to ensure no broader rule is being tested here. If the goal of `max_tokens` = sum of two units was previously covered by another test, refactor it there instead.\",\n      \"If testing specific edge cases (like exactly hitting a limit), consider adding these as separate",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 2023,
+      "total_tokens": 3047,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "2bc7ab3a0766578ef9a99314c79e934ae639f8011ae80d9b0f59d2b1caa0ca52": {
+    "id": "chatcmpl-d2405d2a-be2b-47f4-9b5e-0bb6a07ea79a",
+    "created": 1783716399,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 6,\n    \"rationale\": \"The test name is verbose and slightly ambiguous regarding the specific failure mode (token limit exceeded vs. budget exhaustion). The code logic attempts to infer intent from variable names but lacks a clear 'why' for why `batches[0]` should only contain `[20]`. It reads more like an implementation detail than a business rule.\",\n    \"suggestions\": [\n      \"Rename the test function to clearly state the failure condition, e.g., `test_batch_units_exceed_budget_when_large_unit_is_selected` or similar. If testing budget exhaustion specifically: `test_budget_exhaustion_with_mixed_sizes`.\",\n      \"Remove implementation-specific details like exact token counts (`4000`, `8000`) from the test name unless they are critical to understanding the boundary condition.\",\n      \"Clarify if this is a regression test for an existing bug or a new feature. If it's verifying specific behavior, ensure the assertion logic directly reflects that rule without relying on internal variable names.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 4,\n    \"rationale\": \"The test is brittle to changes in `code_review_evaluator.batch_units_by_budget`. If the function's behavior regarding how it groups units or handles edge cases (like when a single unit exceeds budget) changes internally without updating this specific assertion, the test will fail. It also couples too tightly with internal logic by hardcoding exact token values.\",\n    \"suggestions\": [\n      \"Remove hardcoded token counts (`4000`, `8000`) from the code and assertions; derive these values dynamically or use a parameterized approach if testing multiple scenarios is needed.\",\n      \"Ensure that any change to how units are grouped by budget does not break this test. Add comments explaining why specific unit combinations (large + small) trigger exactly 2 batches under `max_tokens` of the sum of large+small tokens.\",\n      \"Consider using a mock or stub for `code_review_evaluator.batch_units_by_budget` if possible, to isolate logic changes from external dependencies.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 5,\n    \"rationale\": \"The test relies on the internal state of `budget_that_fits_large_and_small`, which is calculated dynamically. If this calculation ever changes (e.g., due to a bug fix in the evaluator), the test will fail unless updated manually. It also lacks self-containment; it depends entirely on external functions and variables.\",\n    \"suggestions\": [\n      \"Calculate `budget_that_fits_large_and_small` directly inside the function or use a constant if applicable, ensuring no reliance on dynamic calculation logic that might change unexpectedly.\",\n      \"Ensure all inputs are deterministic. If testing multiple scenarios (e.g., different token limits), ensure they don't rely on system time, random seeds, or external state changes between test runs.\",\n      \"Avoid relying solely on `assert len(batches) == 2`. Instead, assert the specific composition of batches to make it more robust against internal logic shifts.\"\n    ]\n  },",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 674,
+      "prompt_tokens": 3422,
+      "total_tokens": 4096,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "2cd46915113c983b05d5aa3b062dfc868de520761ae087cbd0bdcc444ae97e29": {
+    "id": "chatcmpl-4b34b747-af7e-4bef-bf28-d732358a2615",
+    "created": 1783716460,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and assertion are clear. However, the error message 'Review units must be dictionaries.' is a generic placeholder that does not reflect actual business logic or domain-specific constraints (e.g., specific field names like `name`, `type`). This makes it hard to understand *why* this particular input failed without reading code.\",\n    \"suggestions\": [\n      \"Replace the hardcoded error message with an assertion against expected fields, e.g.: assert 'unit must have a valid name' or similar.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"The test is decoupled from implementation details. It does not rely on specific class names (like `code_review_evaluator`) but rather the method signature and input/output contract defined by the API.\",\n    \"suggestions\": [\n      \"Ensure that if a new unit type or validation rule changes, this test remains valid without modification.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic and self-contained. However, it relies on `pytest.raises` which can be flaky if the exception class or message changes in a future version of pytest without updating this specific assertion.\",\n    \"suggestions\": [\n      \"Explicitly assert that an instance was raised: assert isinstance(exc_info.value, ValueError) to ensure robustness against framework updates.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: the rejection of a malformed unit. It does not cover edge cases like empty lists or non-dict strings unless explicitly added.\",\n    \"suggestions\": [\n      \"Add an assertion for valid inputs to ensure comprehensive coverage and prevent future regressions.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test covers a specific validation rule. However, it may duplicate the purpose of other tests covering similar edge cases or general unit rejection logic.\",\n    \"suggestions\": [\n      \"Review if this specific error message and input combination are covered elsewhere in the codebase to avoid redundancy.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The test is granular enough for its purpose. It isolates a single validation failure scenario.\",\n    \"suggestions\": [\n      \"Consider adding assertions that check the specific fields causing rejection to make it even more precise.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes rapidly. It avoids artificial sleeps and heavy setups.\",\n    \"suggestions\": [\n      \"Ensure no unnecessary `time.sleep()` calls are present in the surrounding code.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"The test follows Arrange-Act-Pattern (Arrange: setup context; Act: call method with input; Assert: check result). However, it lacks a clear 'specification' of the expected behavior before running.\",\n    \"suggestions\": [\n      \"Refactor to explicitly state what constitutes valid vs. invalid units in an `assert` statement or helper function prior to calling the evaluator.\"\n    ]\n  },\n  \"summary\": \"The test is well-structured and follows TDD principles but lacks specific business logic assertions (understandable) and explicit specification of expected behavior before execution (first_tdd). It risks becoming brittle if framework exceptions change or validation rules evolve without updating the error message.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 815,
+      "prompt_tokens": 449,
+      "total_tokens": 1264,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "621b439f1e632d5eff67633ec80e4c5463eaa83ad0626a29c8f3202e92b24e1b": {
+    "id": "chatcmpl-b0d30c37-0b2d-453d-bc10-5f34cf3538a2",
+    "created": 1783716524,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and assertion logic clearly describe the business rule: null values are treated as zero. However, 'lines_changed' is a low-level implementation detail rather than an abstract domain concept like 'cost', which slightly obscures intent.\",\n    \"suggestions\": [\n      \"Rename `units` to something more semantic (e.g., `items`, `records`) and rename the field in batches from `lines_changed` to `unit_cost`. This makes the test self-documenting without needing a comment.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"The test is decoupled; it does not rely on external state or implementation specifics. It correctly asserts that `None` maps to zero in the output structure.\",\n    \"suggestions\": [\n      \"Ensure the underlying evaluator's logic for handling `None` values remains consistent across all unit tests, as this property relies heavily on internal consistency.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic and self-contained. However, it implicitly assumes the existence of a `code_review_evaluator` class with specific methods (`batch_units_by_budget`) that behave consistently across runs.\",\n    \"suggestions\": [\n      \"Explicitly mock or stub any external dependencies (e.g., `evaluator`, network calls) to ensure absolute repeatability in CI/CD environments.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 10,\n    \"rationale\": \"The test verifies exactly one behavior: the transformation of a single input record with `lines_changed=None` into an output where that value is zero. The failure cause (assertion error) would be instantly obvious.\",\n    \"suggestions\": [\n      \"None needed here; atomicity is inherent to this specific assertion.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test covers a specific edge case (null handling). However, it may duplicate coverage of existing tests if there are already unit tests for `None` values in other contexts or if the general logic handles nulls implicitly.\",\n    \"suggestions\": [\n      \"Review existing code review evaluation tests to ensure this specific scenario is not covered elsewhere. If duplicates exist, refactor them; otherwise, consider adding a more generic test like 'handles None as zero for all fields'.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The assertion targets the specific behavior of converting `None` to `0`. It is granular enough that it would fail if this logic were changed.\",\n    \"suggestions\": [\n      \"Consider adding a second test case for edge cases like negative numbers or very large integers to ensure robustness against unexpected types.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes rapidly. There are no artificial sleeps, heavy setups, or unneeded I/O operations.\",\n    \"suggestions\": [\n      \"None needed; the code is already fast.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 9,\n    \"rationale\": \"The test follows TDD principles: it specifies behavior (null becomes zero) before implementation. The Arrange-Act-Assert structure is clean and logical.\",\n    \"suggestions\": [\n      \"None needed; the code already demonstrates first-TDD design.\"\n    ]\n  },\n  \"summary\": \"The test passes all criteria except for potential redundancy in coverage (necessary). It effectively tests a critical edge case with high clarity and maintainability. Minor improvements to naming conventions would further enhance its robustness against future refactoring without changing behavior.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 854,
+      "prompt_tokens": 509,
+      "total_tokens": 1363,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "e1726c4db995a9d25022ee13b373facdb0492eb89c44174a7981d77a1cf77dc6": {
+    "id": "chatcmpl-d479d3c1-bb61-46ce-9625-a215b732f1b7",
+    "created": 1783716579,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 4,\n    \"rationale\": \"The test name is verbose and slightly ambiguous regarding the business rule (coercion vs. sorting). The assertion `assert [unit['lines_changed'] for unit in batches[0]] == [...]` mixes types (`str`, `int`) with a list of strings, which could be confusing without context on whether coercion happened or if the input was already sorted.\",\n    \"suggestions\": [\"Rename to test_batch_units_by_budget_coerces_lines_to_int_before_sorting\"\n  ]\n},\"maintainable\": {\n  \"score\": 6,\n  \"rationale\": \"The code is decoupled from system implementation details; it does not rely on external state or timing. However, the test assumes `batches[0]` exists and contains exactly three units with specific types of values for lines_changed.\",\n    \"suggestions\": [\"Add a guard clause: assert len(batches) == 1 before accessing batches[0]\"\n  ]\n},\"repeatable\": {\n  \"score\": 7,\n  \"rationale\": \"The test is deterministic and self-contained. It does not rely on external shared state or network/filename operations.\",\n    \"suggestions\": [\"Ensure the `code_review_evaluator` class itself has no hidden dependencies that could cause flaky behavior in CI environments\"\n  ]\n},\"atomic\": {\n  \"score\": 8,\n  \"rationale\": \"The test verifies exactly one business rule: budget coercion followed by sorting. If it fails, the failure is immediately obvious (wrong value or wrong type).\",\n    \"suggestions\": [\"Consider adding a specific assertion for `batches[0][1]['lines_changed']` to ensure only that unit was coerced and sorted\"\n  ]\n},\"necessary\": {\n  \"score\": 5,\n  \"rationale\": \"This test covers the interaction between budget logic and sorting. However, it may not cover edge cases like empty batches or multiple units with identical values.\",\n    \"suggestions\": [\"Add a unit test for `batch_units_by_budget` returning an empty list\"\n  ]\n},\"granular\": {\n  \"score\": 6,\n  \"rationale\": \"The test is granular enough to verify the specific transformation logic. However, it mixes data structure assertions with value type checks.\",\n    \"suggestions\": [\"Refactor into two tests: one for coercion (`assert isinstance(lines_changed, int)`), another for sorting order\"\n  ]\n},\"fast\": {\n  \"score\": 7,\n  \"rationale\": \"The test executes rapidly without artificial delays or heavy I/O. The only potential bottleneck is the `code_review_evaluator` call.\",\n    \"suggestions\": [\"Verify that `batch_units_by_budget` does not perform unnecessary network calls during unit testing\"\n  ]\n},\"first_tdd\": {\n  \"score\": 4,\n  \"rationale\": \"The test follows a basic Arrange-Act-Assert pattern but lacks explicit separation of concerns. The 'Arrange' phase (creating units) is mixed with the Act/Assert phases.\",\n    \"suggestions\": [\"Explicitly separate setup: `setup_method` or fixture to ensure clean state before each assertion\"\n  ]\n},\"summary\": \"\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 719,
+      "prompt_tokens": 540,
+      "total_tokens": 1259,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
