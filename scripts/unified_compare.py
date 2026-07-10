@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 from statistics import mean
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Optional, Tuple
 
 # Enable relative imports from parent directory
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -193,6 +193,22 @@ def get_token_totals(cassette: Dict[str, Any], key: str) -> Dict[str, Any]:
     return totals
 
 
+def get_code_review_coverage(cassette: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract review coverage telemetry from a code-review cassette."""
+    if not isinstance(cassette, dict):
+        return {}
+    metadata = cassette.get("__metadata__")
+    if not isinstance(metadata, dict):
+        return {}
+    summary = metadata.get("code_review_usage_summary")
+    if not isinstance(summary, dict):
+        return {}
+    coverage = summary.get("review_coverage")
+    if not isinstance(coverage, dict):
+        return {}
+    return coverage
+
+
 def combine_token_spend(cr_cassette: Dict[str, Any], farley_cassette: Dict[str, Any]) -> str:
     """Summarize total token spend across both Code Review and Farley runs."""
     cr_totals = get_token_totals(cr_cassette, "code_review_usage_summary")
@@ -307,6 +323,23 @@ def _get_compat_metric(compat_data: Dict[str, Any]) -> Tuple[str, str]:
     return f"{state or verdict} (Score: {compat_score:.1f}/10)", verdict
 
 
+def _get_code_review_coverage_metric(cr_data: Dict[str, Any]) -> Optional[Tuple[str, str]]:
+    coverage = cr_data.get("review_coverage")
+    if not isinstance(coverage, dict):
+        return None
+
+    total = int(coverage.get("total_extracted_units", 0) or 0)
+    reviewed = int(coverage.get("reviewed_units", 0) or 0)
+    skipped = int(coverage.get("skipped_units", 0) or 0)
+    batches = int(coverage.get("batch_count", 0) or 0)
+    if total == 0 and reviewed == 0 and batches == 0:
+        return None
+
+    metric = f"{reviewed}/{total} unit(s) reviewed across {batches} batch(es); {skipped} skipped"
+    status = "PASS" if skipped == 0 else "WARN"
+    return metric, status
+
+
 def _write_metrics_overview(
     f,
     cr_data: Dict[str, Any],
@@ -319,6 +352,11 @@ def _write_metrics_overview(
 
     cqi_metric, cqi_status = _get_cqi_metric(cr_data)
     f.write(f"| Code Quality Index (CQI) | {cqi_metric} | **{cqi_status}** |\n")
+
+    coverage_metric = _get_code_review_coverage_metric(cr_data)
+    if coverage_metric:
+        metric, status = coverage_metric
+        f.write(f"| Code Review Coverage | {metric} | **{status}** |\n")
 
     farley_metric, farley_status = _get_farley_metric(farley_data)
     f.write(f"| Farley Test Quality | {farley_metric} | **{farley_status}** |\n")
@@ -641,6 +679,7 @@ def main():
     cr_data = {
         "units": cr_units,
         "verdict": cr_verdict,
+        "review_coverage": get_code_review_coverage(cr_cassette),
     }
     farley_data = {
         "bsum": farley_bsum,

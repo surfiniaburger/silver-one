@@ -144,13 +144,50 @@ Provide constructive, specific comments. Cite specific variables, lines, or cons
 
 def estimate_pr_tokens(units: List[Dict[str, Any]]) -> int:
     # Estimate: ~4 characters per token + 400 fixed overhead tokens per unit (system prompt, overhead)
-    return sum(len(unit["code"]) // 4 + 400 for unit in units)
+    return sum(estimate_unit_tokens(unit) for unit in units)
+
+
+def estimate_unit_tokens(unit: Dict[str, Any]) -> int:
+    return len(unit["code"]) // 4 + 400
+
+
+def batch_units_by_budget(
+    units: List[Dict[str, Any]], max_tokens: int, max_units: int
+) -> List[List[Dict[str, Any]]]:
+    """Sort units by changed lines and split them into review batches."""
+    if max_tokens < 1:
+        raise ValueError("max_tokens must be greater than zero.")
+    if max_units < 1:
+        raise ValueError("max_units must be greater than zero.")
+
+    sorted_units = sorted(units, key=lambda u: u.get("lines_changed", 0), reverse=True)
+    batches: List[List[Dict[str, Any]]] = []
+    current_batch: List[Dict[str, Any]] = []
+    current_tokens = 0
+
+    for unit in sorted_units:
+        unit_tokens = estimate_unit_tokens(unit)
+        batch_is_full = len(current_batch) >= max_units
+        batch_would_exceed_tokens = current_tokens + unit_tokens > max_tokens
+
+        if current_batch and (batch_is_full or batch_would_exceed_tokens):
+            batches.append(current_batch)
+            current_batch = []
+            current_tokens = 0
+
+        current_batch.append(unit)
+        current_tokens += unit_tokens
+
+    if current_batch:
+        batches.append(current_batch)
+
+    return batches
 
 
 def filter_units_by_budget(
     units: List[Dict[str, Any]], max_tokens: int, max_units: int
 ) -> Tuple[List[Dict[str, Any]], int]:
-    """Sort units by size/lines modified and truncate to fit the token budget and unit limit."""
+    """Sort units by changed lines and greedily select a bounded subset."""
     sorted_units = sorted(units, key=lambda u: u.get("lines_changed", 0), reverse=True)
     selected: List[Dict[str, Any]] = []
     current_tokens = 0
@@ -158,9 +195,9 @@ def filter_units_by_budget(
     for unit in sorted_units:
         if len(selected) >= max_units:
             break
-        unit_tokens = len(unit["code"]) // 4 + 400
+        unit_tokens = estimate_unit_tokens(unit)
         if current_tokens + unit_tokens > max_tokens:
-            if not selected:  # Always evaluate at least one unit if there are any
+            if not selected:
                 selected.append(unit)
                 current_tokens += unit_tokens
             continue
@@ -168,6 +205,24 @@ def filter_units_by_budget(
         current_tokens += unit_tokens
 
     return selected, current_tokens
+
+
+def build_review_coverage(
+    *,
+    total_extracted_units: int,
+    reviewed_units: int,
+    batch_count: int,
+    max_units_per_batch: int,
+    max_tokens_per_batch: int,
+) -> Dict[str, int]:
+    return {
+        "total_extracted_units": total_extracted_units,
+        "reviewed_units": reviewed_units,
+        "skipped_units": max(total_extracted_units - reviewed_units, 0),
+        "batch_count": batch_count,
+        "max_units_per_batch": max_units_per_batch,
+        "max_tokens_per_batch": max_tokens_per_batch,
+    }
 
 
 def format_unit(unit: Dict[str, Any]) -> str:
@@ -364,6 +419,7 @@ def persist_usage_artifacts(
     cassette_path: Path,
     reviewed_count: int,
     validation_summary: Optional[Dict[str, Any]] = None,
+    review_coverage: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     return telemetry_utils.persist_usage_artifacts(
         replay_mgr,
@@ -375,7 +431,10 @@ def persist_usage_artifacts(
         metrics_root=METRICS_ROOT,
         reviewed_key="reviewed_units",
         usage_key="code_review_usage_summary",
-        **{"validation_summary": validation_summary}
+        **{
+            "validation_summary": validation_summary,
+            "review_coverage": review_coverage,
+        }
     )
 
 
@@ -525,13 +584,11 @@ async def main_async():
     max_units = int(os.getenv("CR_MAX_UNITS", "20"))
 
     print(f"\033[94mTotal estimated tokens for changed code: {total_est_tokens}\033[0m")
-    target_units, _ = filter_units_by_budget(all_units, max_tokens, max_units)
-
-    if len(target_units) < len(all_units):
-        print(
-            f"\033[93mWarning: Token budget ({max_tokens}) or unit limit ({max_units}) exceeded. "
-            f"Truncating evaluation from {len(all_units)} to {len(target_units)} units.\033[0m"
-        )
+    unit_batches = batch_units_by_budget(all_units, max_tokens, max_units)
+    print(
+        f"\033[94mPlanned {len(all_units)} changed unit(s) into {len(unit_batches)} review batch(es) "
+        f"(max {max_units} unit(s)/batch, max {max_tokens} tokens/batch).\033[0m"
+    )
 
     replay_mgr = _init_replay_manager(
         safe_run_id,
@@ -541,9 +598,19 @@ async def main_async():
         args.model,
     )
 
-    results = await evaluate_units(replay_mgr, args.model, target_units)
+    results: List[Dict[str, Any]] = []
+    for batch_index, unit_batch in enumerate(unit_batches, 1):
+        print(f"\033[94mStarting review batch {batch_index}/{len(unit_batches)}...\033[0m")
+        results.extend(await evaluate_units(replay_mgr, args.model, unit_batch))
 
     val_summary = build_validation_summary(results)
+    review_coverage = build_review_coverage(
+        total_extracted_units=len(all_units),
+        reviewed_units=len(results),
+        batch_count=len(unit_batches),
+        max_units_per_batch=max_units,
+        max_tokens_per_batch=max_tokens,
+    )
     persist_usage_artifacts(
         replay_mgr,
         run_id=safe_run_id,
@@ -551,6 +618,7 @@ async def main_async():
         cassette_path=cassette_path,
         reviewed_count=len(results),
         validation_summary=val_summary,
+        review_coverage=review_coverage,
     )
 
     save_review_cassette(cassette_path, results)
