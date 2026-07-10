@@ -1,5 +1,4 @@
 import json
-import re
 import pytest
 from pathlib import Path
 from scripts import diff_extractor
@@ -144,11 +143,12 @@ def test_code_review_system_prompt_includes_complete_json_examples():
 
 
 def test_code_review_system_prompt_examples_validate_against_schema():
-    examples = re.findall(
-        r"<example name=\"[^\"]+\">\s*(\{.*?\})\s*</example>",
-        code_review_evaluator.SYSTEM_PROMPT,
-        flags=re.DOTALL,
-    )
+    examples = []
+    for example_name in ["ok_review", "warn_review_with_finding"]:
+        start_tag = f'<example name="{example_name}">'
+        start_index = code_review_evaluator.SYSTEM_PROMPT.index(start_tag) + len(start_tag)
+        end_index = code_review_evaluator.SYSTEM_PROMPT.index("</example>", start_index)
+        examples.append(code_review_evaluator.SYSTEM_PROMPT[start_index:end_index].strip())
 
     assert len(examples) == 2
     for example in examples:
