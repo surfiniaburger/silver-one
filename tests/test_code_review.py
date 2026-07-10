@@ -222,6 +222,17 @@ def test_batch_units_by_budget_rejects_malformed_units():
         code_review_evaluator.batch_units_by_budget(["not-a-unit"], max_tokens=1000, max_units=1)
 
 
+def test_batch_units_by_budget_treats_null_lines_changed_as_zero():
+    units = [
+        {"code": "a" * 20, "lines_changed": None},
+        {"code": "b" * 20, "lines_changed": 2},
+    ]
+
+    batches = code_review_evaluator.batch_units_by_budget(units, max_tokens=1_000_000, max_units=2)
+
+    assert [[unit["lines_changed"] for unit in batch] for batch in batches] == [[2, None]]
+
+
 def test_build_review_coverage_reports_complete_batch_review():
     coverage = code_review_evaluator.build_review_coverage(
         total_extracted_units=33,

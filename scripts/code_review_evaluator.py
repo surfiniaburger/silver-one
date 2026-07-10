@@ -258,11 +258,13 @@ def estimate_unit_tokens(unit: Optional[Dict[str, Any]]) -> int:
     return len(code) // 4 + prompt_overhead
 
 
-def _sort_review_units_by_changed_lines(units: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _sort_review_units_by_changed_lines(units: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    if not units:
+        return []
     for unit in units:
         if not isinstance(unit, dict):
             raise ValueError("Review units must be dictionaries.")
-    return sorted(units, key=lambda u: u.get("lines_changed", 0), reverse=True)
+    return sorted(units, key=lambda u: u.get("lines_changed") or 0, reverse=True)
 
 
 def batch_units_by_budget(
