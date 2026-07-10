@@ -41,6 +41,7 @@ Common examples:
 - `units is None`
 - missing `unit["code"]`
 - `lines_changed=None`
+- `lines_changed="10"` or another JSON-derived non-integer value
 - missing cassette `__metadata__`
 - malformed `reviews`
 - legacy review payloads without the current wrapper shape
@@ -53,17 +54,26 @@ Preferred pattern:
   `isinstance(value, list)` before reading nested fields.
 - Use explicit defaults for JSON-derived scalar fields, especially when `None`
   is a plausible serialized value.
+- Coerce JSON-derived numeric fields before comparing, sorting, or using them
+  in arithmetic. Fall back to a safe default when parsing fails.
 - Raise a clear `ValueError` when malformed input means the caller has violated
   the contract.
 
 Example:
 
 ```python
-def estimate_pr_tokens(units: Optional[List[Dict[str, Any]]]) -> int:
-    if not units:
+def _coerce_lines_changed(value: Any) -> int:
+    if value is None:
         return 0
-    return sum(estimate_unit_tokens(unit) for unit in units)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 ```
+
+When reviewers include a `References` note beneath a comment, treat it as a
+candidate general rule. If the rule repeats across PRs, capture it here rather
+than only fixing the local instance.
 
 ## Dictionary Shape Validation
 

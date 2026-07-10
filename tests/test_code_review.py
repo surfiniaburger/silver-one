@@ -236,6 +236,18 @@ def test_batch_units_by_budget_treats_null_lines_changed_as_zero():
     assert [[unit["lines_changed"] for unit in batch] for batch in batches] == [[2, None]]
 
 
+def test_batch_units_by_budget_coerces_lines_changed_before_sorting():
+    units = [
+        {"code": "a" * 20, "lines_changed": "not-a-number"},
+        {"code": "b" * 20, "lines_changed": 2},
+        {"code": "c" * 20, "lines_changed": "10"},
+    ]
+
+    batches = code_review_evaluator.batch_units_by_budget(units, max_tokens=1_000_000, max_units=3)
+
+    assert [[unit["lines_changed"] for unit in batch] for batch in batches] == [["10", 2, "not-a-number"]]
+
+
 def test_build_review_coverage_reports_complete_batch_review():
     coverage = code_review_evaluator.build_review_coverage(
         total_extracted_units=33,
