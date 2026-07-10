@@ -2377,6 +2377,197 @@
       }
     },
     {
+      "id": "tests/test_code_review.py::test_batch_units_by_budget_splits_when_token_limit_is_exceeded",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_batch_units_by_budget_splits_when_token_limit_is_exceeded",
+      "class_name": null,
+      "farley_index": 5.375,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 6,
+          "rationale": "The test name is verbose and slightly ambiguous regarding the specific failure mode (token limit exceeded vs. budget split). The code uses a list comprehension to extract `lines_changed` from units in batches, which obscures the core business rule being tested.",
+          "suggestions": [
+            "Rename function/method: Use `test_batch_units_by_budget_splits_when_token_limit_exceeded()` instead of extracting lines manually."
+          ]
+        },
+        "maintainable": {
+          "score": 5,
+          "rationale": "The test is brittle to changes in the underlying implementation logic (e.g., if `batch_units` returns a different structure or order). It relies on specific list comprehension syntax that may break with minor refactoring.",
+          "suggestions": [
+            "Ensure tests verify business rules directly, not data transformation artifacts. Use assertions like `assert len(batches) == 2 and ...` instead of complex expressions."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic in execution order but relies on the specific structure of input data (`units`) which could vary. It does not depend on external state or timing.",
+          "suggestions": [
+            "Ensure `code_review_evaluator.batch_units_by_budget` behaves consistently across runs and environments."
+          ]
+        },
+        "atomic": {
+          "score": 8,
+          "rationale": "The test verifies exactly one behavior: the splitting of units based on token limits. The assertion is clear about what it checks.",
+          "suggestions": [
+            "No immediate issues here; ensure no side effects occur during batch creation."
+          ]
+        },
+        "necessary": {
+          "score": 4,
+          "rationale": "This test likely duplicates coverage of existing tests for `batch_units_by_budget` or token limit logic. It may be testing implementation details rather than the core business rule.",
+          "suggestions": [
+            "Review if this specific case is covered by other unit/integration tests. Remove redundant assertions."
+          ]
+        },
+        "granular": {
+          "score": 3,
+          "rationale": "The test mixes data preparation (`units`), logic execution (batching), and result verification in one function. It does not isolate the specific failure condition clearly.",
+          "suggestions": [
+            "Split into: `setup`, `execute_batch_logic`, `assert_split_behavior`. Ensure each step is isolated."
+          ]
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "The test executes quickly without artificial delays or heavy I/O. The logic flow is straightforward.",
+          "suggestions": [
+            "No changes needed for performance; ensure no unnecessary network calls."
+          ]
+        },
+        "first_tdd": {
+          "score": 2,
+          "rationale": "The test does not follow Arrange-Act-Pattern. It assumes the `batch_units_by_budget` function exists and works correctly without verifying its internal logic or contract.",
+          "suggestions": [
+            "Refactor to: Arrange (setup evaluator), Act (call method with specific inputs), Assert (verify split behavior). Ensure no hidden dependencies."
+          ]
+        },
+        "summary": "The test is partially functional but suffers from poor design principles. It lacks clarity in intent and structure, making it difficult to maintain or extend without breaking existing logic. Immediate refactoring into a proper TDD pattern is required to ensure the business rule is isolated correctly."
+      }
+    },
+    {
+      "id": "tests/test_code_review.py::test_build_review_coverage_reports_complete_batch_review",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_build_review_coverage_reports_complete_batch_review",
+      "class_name": null,
+      "farley_index": 7.875,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 9,
+          "rationale": "The test name and arguments are clear. The assertion explicitly lists the expected dictionary keys with their values, leaving no ambiguity about what 'coverage' represents.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 8,
+          "rationale": "This is a pure unit test that does not depend on external state (DB, network). However, it relies heavily on the internal logic of `build_review_coverage` to produce specific values. If this function changes its return format or adds side effects in future refactors, this brittle assertion will break immediately.",
+          "suggestions": [
+            "Remove all assertions that check for exact dictionary equality against hardcoded keys/values unless these are immutable constants defined elsewhere (e.g., `assert coverage == {'total_extracted_units': 33}`).",
+            "Ensure the test does not rely on specific values in `build_review_coverage` being correct; instead, verify it returns a valid structure or raises an appropriate exception if inputs are invalid."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The function call is deterministic. However, the test relies on specific numeric values (33 units) which might be arbitrary and could change during development or refactoring without updating this single line.",
+          "suggestions": [
+            "Remove all hardcoded numbers from both arguments (`total_extracted_units`, `batch_count`) and assertions in favor of using a mock object that returns predictable, testable values based on inputs."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The single assertion verifies exactly one behavior: the return value matches expectations. There is no hidden logic or multiple failure modes to investigate.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test covers a specific edge case (complete batch review). However, it duplicates the coverage of other tests that likely cover general `build_review_coverage` behavior. It is not necessary to have this exact scenario isolated here if there are existing integration or unit tests for similar inputs.",
+          "suggestions": [
+            "Review whether this test adds unique value compared to existing tests in `test_code_review.py`. If the goal was simply to verify a specific input-output pair, consider removing it from its own file and moving it to an appropriate module-level test suite or integration layer."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The assertion is granular enough. It checks the exact structure of a specific return value object.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "No artificial sleeps or heavy I/O operations are present in this test code itself; it is purely logic-based and execution speed should be negligible compared to the actual build process.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 7,
+          "rationale": "The structure follows Arrange-Act-Assert (function call -> assert). However, it lacks a clear 'Arrange' phase that isolates the input state before calling `build_review_coverage`. The test assumes specific inputs without mocking them first.",
+          "suggestions": [
+            "Implement TDD by writing an assertion for expected values based on mock data or stubbed function behavior. Then write code to make those mocks return those exact values, ensuring the 'Arrange' phase is explicit and isolated from system state."
+          ]
+        },
+        "summary": "The test passes all criteria except necessary (duplicates coverage) and maintainability (brittle on internal logic). It demonstrates basic TDD structure but lacks isolation of inputs/outputs required for robustness in a production environment."
+      }
+    },
+    {
+      "id": "tests/test_code_review.py::test_persist_usage_artifacts_records_review_coverage",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_persist_usage_artifacts_records_review_coverage",
+      "class_name": null,
+      "farley_index": 6.5,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 7,
+          "rationale": "The test name and logic are clear enough for a code reviewer familiar with the project context. However, it lacks explicit documentation of business rules (e.g., 'asserts that review coverage is correctly persisted'), which makes intent slightly ambiguous without prior knowledge.",
+          "suggestions": [
+            "Add docstring comments explicitly stating: 'Verifies that `persist_usage_artifacts` correctly serializes and deserializes the calculated `review_coverage`.'",
+            "Ensure all variables are named with domain-specific terminology (e.g., instead of just `metrics_root`, use something like `/tmp/metrics/code_review`)."
+          ]
+        },
+        "maintainable": {
+          "score": 6,
+          "rationale": "The test is somewhat brittle because it relies on the specific implementation details of how `build_review_coverage` and `persist_usage_artifacts` are structured. If these functions change their internal logic or return types without updating this test, the assertion will fail.",
+          "suggestions": [
+            "Move assertions about data values into a dedicated helper function that encapsulates the 'what' (data integrity) rather than embedding them in the flow of specific implementation calls.",
+            "Ensure `review_coverage` is computed deterministically based on inputs; if it depends on external state or non-deterministic ordering, this test will fail during refactoring."
+          ]
+        },
+        "repeatable": {
+          "score": 5,
+          "rationale": "The test relies heavily on the existence of a specific file path (`cassette_path`) and `tmp_path` which is standard for CI but introduces dependency on filesystem state. It also assumes no external network calls or database interactions.",
+          "suggestions": [
+            "Remove reliance on temporary files by using in-memory data structures (e.g., lists/dicts) to simulate the cassette content directly within the test function, ensuring it runs without I/O dependencies."
+          ]
+        },
+        "atomic": {
+          "score": 8,
+          "rationale": "The single assertion `assert payload[",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 7,
+          "rationale": "This test verifies a specific data transformation (serialization of review coverage). It does not duplicate other tests that might verify the calculation logic itself or general artifact handling.",
+          "suggestions": [
+            "Ensure no existing unit tests cover the internal computation of `build_review_coverage` to avoid redundancy."
+          ]
+        },
+        "granular": {
+          "score": 6,
+          "rationale": "The test is granular enough for its specific purpose (data serialization), but it mixes high-level configuration parameters with low-level data assertions. It could be more focused on a single aspect like 'asserts that the JSON structure matches expectations' rather than comparing full objects.",
+          "suggestions": [
+            "Refine the assertion to focus strictly on structural integrity: `assert cassette['__metadata__']['code_review_usage_summary'] == review_coverage` instead of deep equality, which is less robust against minor formatting changes."
+          ]
+        },
+        "fast": {
+          "score": 7,
+          "rationale": "The test executes quickly as it performs minimal I/O (reading one file) and no artificial delays. However, the `tmp_path` setup adds a small overhead compared to pure in-memory tests.",
+          "suggestions": [
+            "Replace `cassette_path.read_text()` with direct dictionary comparison or JSON parsing of an already-loaded object if possible to eliminate disk read latency."
+          ]
+        },
+        "first_tdd": {
+          "score": 6,
+          "rationale": "The test follows a basic Arrange-Act-Pattern but lacks explicit separation. It does not clearly demonstrate the 'Arrange' phase (preparing inputs) before the 'Act' (calling functions), making it slightly harder to read as an isolated unit of behavior.",
+          "suggestions": [
+            "Explicitly separate setup logic into `setup_method` or a dedicated helper function called first, then call the core functionality in its own block. This makes the test's intent and isolation boundaries clearer."
+          ]
+        },
+        "summary": "The code is functional but lacks the rigor expected for high-quality TDD tests regarding documentation of rules (understandable), separation from implementation details (maintainable), elimination of I/O dependencies (repeatable/granular/fast), and explicit architectural demonstration (first_tdd). It currently mixes data validation with flow control, making it fragile to changes in underlying library implementations."
+      }
+    },
+    {
       "id": "tests/test_code_review.py::test_calculate_cqi",
       "file_path": "tests/test_code_review.py",
       "test_name": "test_calculate_cqi",
@@ -4003,6 +4194,72 @@
       }
     },
     {
+      "id": "tests/test_unified_compare.py::test_get_code_review_coverage_from_metadata",
+      "file_path": "tests/test_unified_compare.py",
+      "test_name": "test_get_code_review_coverage_from_metadata",
+      "class_name": null,
+      "farley_index": 7.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the input structure (`__metadata__`) and expected output format. However, it lacks a clear business rule description; 'code_review_coverage' is an opaque data object rather than a defined domain concept.",
+          "suggestions": [
+            "Explicitly define what `coverage` represents in terms of code review metrics (e.g., percentage coverage)."
+          ]
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "The test isolates the logic for extracting metadata and converting it to an assertion. It does not depend on external state or implementation details.",
+          "suggestions": [
+            "Ensure `get_code_review_coverage` is unit-tested in isolation; this file only tests one function."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test relies entirely on the internal logic of `get_code_review_coverage`. If that function uses external state (e.g., a database or network), running this specific test will not be repeatable without mocking those dependencies.",
+          "suggestions": [
+            "Verify if `get_code_review_coverage` is mocked in other tests. Ensure no hidden side effects occur during execution."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: the conversion of metadata to a dictionary match. The cause of failure (if any) would be immediately obvious.",
+          "suggestions": [
+            "Ensure `get_code_review_coverage` is deterministic and does not rely on timing or randomization."
+          ]
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "This test covers one specific aspect: metadata parsing for code review coverage. It likely complements other tests covering different parts of the system.",
+          "suggestions": [
+            "Review if this test duplicates functionality covered by integration tests that verify end-to-end workflows."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The assertion is broad (`assert result == coverage`). While it covers one aspect, it doesn't isolate specific edge cases or error conditions related to the metadata structure.",
+          "suggestions": [
+            "Refine assertions to check for null values, type mismatches, and structural integrity of `coverage`."
+          ]
+        },
+        "fast": {
+          "score": 6,
+          "rationale": "The test is lightweight in terms of setup. However, if it relies on external calls (e.g., network requests or database queries) that are not mocked here, execution time will vary.",
+          "suggestions": [
+            "Ensure all dependencies within `get_code_review_coverage` are mocked when running this specific unit test."
+          ]
+        },
+        "first_tdd": {
+          "score": 8,
+          "rationale": "The code follows a clean Arrange-Act-Assert pattern. The input is clearly defined before the function call and after.",
+          "suggestions": [
+            "Explicitly document the expected behavior of `get_code_review_coverage` in comments or documentation to ensure future maintainability."
+          ]
+        },
+        "summary": "This test demonstrates strong adherence to TDD principles with clear inputs/outputs and a focused assertion, but it lacks explicit business rule definitions for its opaque data structures. It is repeatable only if internal dependencies are properly mocked; otherwise, external state risks breaking the determinism required by continuous delivery pipelines."
+      }
+    },
+    {
       "id": "tests/test_unified_compare.py::test_write_unified_report_basic",
       "file_path": "tests/test_unified_compare.py",
       "test_name": "test_write_unified_report_basic",
@@ -4066,6 +4323,72 @@
           ]
         },
         "summary": "The test is functional but lacks strategic value. It risks being redundant with existing coverage while introducing brittleness due to reliance on a potentially mutable utility function."
+      }
+    },
+    {
+      "id": "tests/test_unified_compare.py::test_write_unified_report_displays_code_review_coverage",
+      "file_path": "tests/test_unified_compare.py",
+      "test_name": "test_write_unified_report_displays_code_review_coverage",
+      "class_name": null,
+      "farley_index": 6.375,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test name and assertion are clear. However, the function `render_unified_report` is not defined or imported; its business logic (how to format 'PASS' based on specific numeric thresholds) is hidden in an undefined implementation.",
+          "suggestions": [
+            "Import `render_unified_report`. If it's a utility from another module, ensure that import path and function signature are documented. Ideally, the test should assert against expected output strings directly if possible to avoid dependency hell on internal formatting logic."
+          ]
+        },
+        "maintainable": {
+          "score": 6,
+          "rationale": "The test is brittle because it relies entirely on a specific string format produced by an undefined `render_unified_report` function. If that function changes its output structure or adds whitespace variations without updating the assertion, this test will fail even if the underlying logic remains correct.",
+          "suggestions": [
+            "Refactor to use mocking (e.g., `unittest.mock`) for `render_unified_report`. Assert against specific data structures rather than string literals. This decouples the test from implementation details and makes it robust against future changes in how reports are rendered."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic (no sleeps/network) but relies on `tmp_path` which implies file system state. While not strictly 'external' like a DB, it depends on the existence of files in that path and their content being stable across runs if they are generated by an external process.",
+          "suggestions": [
+            "Ensure all inputs to `render_unified_report` (the dict) are constant between test runs. If this function generates random data or relies on timestamps, add explicit seeding logic inside the mock call."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The assertion verifies exactly one behavior: that `render_unified_report` produces a specific string. If this fails, it is immediately obvious what went wrong (the report generation logic). It does not test edge cases like empty inputs or malformed data.",
+          "suggestions": [
+            "Add assertions for boundary conditions and error handling scenarios to ensure the function behaves correctly under stress."
+          ]
+        },
+        "necessary": {
+          "score": 5,
+          "rationale": "This test likely duplicates coverage of other tests that verify `render_unified_report` with different inputs or check specific fields within it. It may be testing a trivial formatting detail rather than the core business rule.",
+          "suggestions": [
+            "Audit existing tests to see if they already cover this scenario. If not, refactor into separate unit tests for individual report components (e.g., `test_render_total_extracted_units`, etc.)."
+          ]
+        },
+        "granular": {
+          "score": 4,
+          "rationale": "The test is too coarse-grained; it asserts the entire output string at once. It does not isolate specific assertions about individual fields (e.g., `total_extracted_units`, `batch_count`) or validate intermediate steps.",
+          "suggestions": [
+            "Break down into smaller, focused tests: one for each key-value pair in the input dict and a final integration test to verify the formatted string. This provides better isolation of concerns."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The execution is fast as it contains no sleeps or heavy I/O operations (other than reading from `tmp_path` which is standard).",
+          "suggestions": [
+            "None needed."
+          ]
+        },
+        "first_tdd": {
+          "score": 3,
+          "rationale": "This test fails the 'Arrange-Act-Assert' principle. The `tmp_path` fixture is not explicitly set up in this specific function (it's a global fixture), and there are no clear Arrange steps before Act or Assert that define what data should be passed to ensure deterministic results.",
+          "suggestions": [
+            "Explicitly setup the test environment: assert on input parameters, call `render_unified_report` with those inputs, then perform assertions. Ensure all dependencies (like fixtures) are properly scoped within this function if possible."
+          ]
+        },
+        "summary": "The test is understandable but brittle due to hidden implementation details and lack of mocking for the rendering logic. It lacks granular isolation and proper Arrange-Act-Assert structure typical of TDD-first development."
       }
     },
     {
@@ -6209,32 +6532,32 @@
     "farley_usage_summary": {
       "run_id": "main-baseline",
       "model": "ollama/qwen3.5:2b",
-      "reviewed_test_cases": 91,
+      "reviewed_test_cases": 96,
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 115,
-          "prompt_tokens": 97163,
-          "completion_tokens": 93741,
-          "total_tokens": 190904,
+          "calls": 123,
+          "prompt_tokens": 105042,
+          "completion_tokens": 101038,
+          "total_tokens": 206080,
           "cost_usd": 0.0,
           "missing_usage_calls": 0
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 115,
-            "prompt_tokens": 97163,
-            "completion_tokens": 93741,
-            "total_tokens": 190904,
+            "calls": 123,
+            "prompt_tokens": 105042,
+            "completion_tokens": 101038,
+            "total_tokens": 206080,
             "cost_usd": 0.0
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 115,
-            "prompt_tokens": 97163,
-            "completion_tokens": 93741,
-            "total_tokens": 190904,
+            "calls": 123,
+            "prompt_tokens": 105042,
+            "completion_tokens": 101038,
+            "total_tokens": 206080,
             "cost_usd": 0.0
           }
         },
@@ -6686,6 +7009,78 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 522,
+            "completion_tokens": 1024,
+            "total_tokens": 1546,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 1696,
+            "completion_tokens": 1024,
+            "total_tokens": 2720,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 2871,
+            "completion_tokens": 1024,
+            "total_tokens": 3895,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 553,
+            "completion_tokens": 799,
+            "total_tokens": 1352,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 529,
+            "completion_tokens": 858,
+            "total_tokens": 1387,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 672,
+            "completion_tokens": 889,
+            "total_tokens": 1561,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
             "source": "cache",
             "generation_params": {},
             "prompt_tokens": 663,
@@ -6974,7 +7369,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 545,
             "completion_tokens": 748,
@@ -6998,7 +7393,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 673,
             "completion_tokens": 770,
@@ -7048,9 +7443,33 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
+            "prompt_tokens": 512,
+            "completion_tokens": 667,
+            "total_tokens": 1179,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "cache",
+            "generation_params": {},
             "prompt_tokens": 537,
             "completion_tokens": 872,
             "total_tokens": 1409,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 524,
+            "completion_tokens": 1012,
+            "total_tokens": 1536,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -7154,7 +7573,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 758,
             "completion_tokens": 924,
@@ -7166,7 +7585,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 645,
             "completion_tokens": 709,
@@ -7178,7 +7597,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 806,
             "completion_tokens": 853,
@@ -7190,7 +7609,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 531,
             "completion_tokens": 879,
@@ -7202,7 +7621,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 579,
             "completion_tokens": 686,
@@ -7214,7 +7633,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 450,
             "completion_tokens": 624,
@@ -7226,7 +7645,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 502,
             "completion_tokens": 881,
@@ -7238,7 +7657,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 610,
             "completion_tokens": 912,
@@ -7250,7 +7669,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 663,
             "completion_tokens": 1024,
@@ -7262,7 +7681,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 1834,
             "completion_tokens": 1024,
@@ -7274,7 +7693,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 3009,
             "completion_tokens": 1024,
@@ -7286,7 +7705,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 526,
             "completion_tokens": 832,
@@ -7298,7 +7717,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 728,
             "completion_tokens": 881,
@@ -7310,7 +7729,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 614,
             "completion_tokens": 838,
@@ -7322,7 +7741,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 554,
             "completion_tokens": 992,
@@ -11440,6 +11859,222 @@
       "completion_tokens": 992,
       "prompt_tokens": 554,
       "total_tokens": 1546,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "876c5d7e6b5c71e8965edc2ec17ecd7bb7c5155009e172538b1434310ef508a8": {
+    "id": "chatcmpl-1b0cd115-1849-4c21-8acf-a77d8e374c2f",
+    "created": 1783652057,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and assertion logic are clear. However, the business rule 'when unit limit is exceeded' relies on an internal implementation detail (`max_units=2`) rather than a stable contract or observable behavior.\",\n    \"suggestions\": [\n      \"Refactor to assert that exactly 3 units were produced given `lines_changed` values of `[1, 2, 3]`, regardless of the specific budget split logic. This isolates the core transformation rule from implementation-specific constraints like token limits.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"The test is brittle to changes in `max_units` or internal batching algorithms. If the evaluator's logic for splitting units by budget changes (e.g., adding a new rule), this specific assertion will likely fail even if the core functionality remains correct.\",\n    \"suggestions\": [\n      \"Remove reliance on `max_units`. Instead, assert that all input lines are consumed and grouped into exactly 3 batches based solely on their line counts. This decouples the test from internal state management.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 4,\n    \"rationale\": \"The test relies heavily on `code_review_evaluator.batch_units_by_budget`, which likely involves network calls or database lookups depending on its implementation. This makes the test non-repeatable in CI/CD environments without flaky failures.\",\n    \"suggestions\": [\n      \"Replace external dependencies with a mock object that simulates the batching logic deterministically. Ensure `batch_units_by_budget` is mocked to return predictable results based only on input data.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 7,\n    \"rationale\": \"The assertion verifies one specific behavior: grouping lines by budget splits into exactly three batches with line counts `[3, 2]`. If this fails, the cause is immediately obvious (the split logic or input data).\",\n    \"suggestions\": [\n      \"Keep the current atomicity. However, ensure that if `max_units` changes in production, you do not hardcode specific splits like `[3, 2]`, which makes debugging difficult.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test duplicates coverage of other tests (e.g., `test_batch_units_by_budget_splits_when_unit_limit_is_exceeded` with different inputs). It also verifies a trivial implementation detail rather than the core business rule.\",\n    \"suggestions\": [\n      \"Remove this specific assertion. The general behavior 'units are grouped by budget' is covered elsewhere, and verifying exact split counts `[3, 2]` adds no value to understanding or testing the system's robustness.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 6,\n    \"rationale\": \"The test targets a specific edge case (limit exceeded) but is too broad. It mixes input data (`lines_changed`) with internal constraints (`max_units`), making it hard to isolate the exact failure mode.\",\n    \"suggestions\": [\n      \"Refine the assertion to focus strictly on how `batch_units_by_budget` handles arbitrary inputs without enforcing a specific limit, or explicitly mock the constraint logic.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 7,\n    \"rationale\": \"The test is relatively fast as it uses simple list comprehensions and direct assertions. However, if `batch_units_by_budget` involves heavy I/O (e.g., real DB queries), the overall execution time could be significant.\",\n    \"suggestions\": [\n      \"Ensure that any mocked dependencies in your CI environment are lightweight mocks rather than full database instances or network services to maintain speed.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 5,\n    \"rationale\": \"The test follows a basic Arrange-Act-Assert pattern but fails the 'specifies behavior' criterion. It assumes `max_units=2` is part of the contract to be tested rather than an implementation detail that should not constrain the core logic.\",\n    \"suggestions\": [\n      \"Design this as a pure unit test: Given `[1, 2, 3]`, Act with any valid batching algorithm (mocked), Assert exactly three batches are returned. Do not hardcode `max_units` in the contract; let the system handle it.\"\n    ]\n  },\n  \"summary\": \"The test is understandable but brittle and non-atomic due to reliance on internal constraints (`max_units`). It duplicates coverage of other tests and mixes implementation details with business",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 522,
+      "total_tokens": 1546,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "8af260e72435152218c647bc9dd571e5eab134e9492ddd3e623313681eecfb9d": {
+    "id": "chatcmpl-ba4f6815-0d5f-4ed4-94b2-15166fdfe6d5",
+    "created": 1783652164,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and assertion logic are clear. However, the business rule 'when unit limit is exceeded' relies on an internal implementation detail (`max_units=2`) rather than a stable contract or observable behavior.\",\n    \"suggestions\": [\n      \"Refactor to assert that exactly 3 units were produced given `lines_changed` values of `[1, 2, 3]`, regardless of the specific budget split logic. This isolates the core transformation rule from implementation-specific constraints like token limits.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"The test is brittle to changes in `max_units` or internal batching algorithms. If the evaluator's logic for splitting units by budget changes (e.g., adding a new rule), this specific assertion will likely fail even if the core functionality remains correct.\",\n    \"suggestions\": [\n      \"Remove reliance on `max_units`. Instead, assert that all input lines are consumed and grouped into exactly 3 batches based solely on their line counts. This decouples the test from internal state management.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 4,\n    \"rationale\": \"The test relies heavily on `code_review_evaluator.batch_units_by_budget`, which likely involves network calls or database lookups depending on its implementation. This makes the test non-repeatable in CI/CD environments without flaky failures.\",\n    \"suggestions\": [\n      \"Replace external dependencies with a mock object that simulates the batching logic deterministically. Ensure `batch_units_by_budget` is mocked to return predictable results based only on input data.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 7,\n    \"rationale\": \"The assertion verifies one specific behavior: grouping lines by budget splits into exactly three batches with line counts `[3, 2]`. If this fails, the cause is immediately obvious (the split logic or input data).\",\n    \"suggestions\": [\n      \"Keep the current atomicity. However, ensure that if `max_units` changes in production, you do not hardcode specific splits like `[3, 2]`, which makes debugging difficult.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test duplicates coverage of other tests (e.g., `test_batch_units_by_budget_splits_when_unit_limit_is_exceeded` with different inputs). It also verifies a trivial implementation detail rather than the core business rule.\",\n    \"suggestions\": [\n      \"Remove this specific assertion. The general behavior 'units are grouped by budget' is covered elsewhere, and verifying exact split counts `[3, 2]` adds no value to understanding or testing the system's robustness.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 6,\n    \"rationale\": \"The test targets a specific edge case (limit exceeded) but is too broad. It mixes input data (`lines_changed`) with internal constraints (`max_units`), making it hard to isolate the exact failure mode.\",\n    \"suggestions\": [\n      \"Refine the assertion to focus strictly on how `batch_units_by_budget` handles arbitrary inputs without enforcing a specific limit, or explicitly mock the constraint logic.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 7,\n    \"rationale\": \"The test is relatively fast as it uses simple list comprehensions and direct assertions. However, if `batch_units_by_budget` involves heavy I/O (e.g., real DB queries), the overall execution time could be significant.\",\n    \"suggestions\": [\n      \"Ensure that any mocked dependencies in your CI environment are lightweight mocks rather than full database instances or network services to maintain speed.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 5,\n    \"rationale\": \"The test follows a basic Arrange-Act-Assert pattern but fails the 'specifies behavior' criterion. It assumes `max_units=2` is part of the contract to be tested rather than an implementation detail that should not constrain the core logic.\",\n    \"suggestions\": [\n      \"Design this as a pure unit test: Given `[1, 2, 3]`, Act with any valid batching algorithm (mocked), Assert exactly three batches are returned. Do not hardcode `max_units` in the contract; let the system handle it.\"\n    ]\n  },\n  \"summary\": \"The test is understandable but brittle and non-atomic due to reliance on internal constraints (`max_units`). It duplicates coverage of other tests and mixes implementation details with business logic",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 1696,
+      "total_tokens": 2720,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "46746df381092473949df8cdf1fd7cbc6c1deababf7098962f0d573473e97f58": {
+    "id": "chatcmpl-fa1f6d4c-af43-4e49-bb62-d8ff3d6e244c",
+    "created": 1783652301,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and assertion logic are clear. However, the business rule 'when unit limit is exceeded' relies on an internal implementation detail (`max_units=2`) rather than a stable contract or observable behavior.\",\n    \"suggestions\": [\n      \"Refactor to assert that exactly 3 units were produced given `lines_changed` values of `[1, 2, 3]`, regardless of the specific budget split logic. This isolates the core transformation rule from implementation-specific constraints like token limits.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"The test is brittle to changes in `max_units` or internal batching algorithms. If the evaluator's logic for splitting units by budget changes (e.g., adding a new rule), this specific assertion will likely fail even if the core functionality remains correct.\",\n    \"suggestions\": [\n      \"Remove reliance on `max_units`. Instead, assert that all input lines are consumed and grouped into exactly 3 batches based solely on their line counts. This decouples the test from internal state management.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 4,\n    \"rationale\": \"The test relies heavily on `code_review_evaluator.batch_units_by_budget`, which likely involves network calls or database lookups depending on its implementation. This makes the test non-repeatable in CI/CD environments without flaky failures.\",\n    \"suggestions\": [\n      \"Replace external dependencies with a mock object that simulates the batching logic deterministically. Ensure `batch_units_by_budget` is mocked to return predictable results based only on input data.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 7,\n    \"rationale\": \"The assertion verifies one specific behavior: grouping lines by budget splits into exactly three batches with line counts `[3, 2]`. If this fails, the cause is immediately obvious (the split logic or input data).\",\n    \"suggestions\": [\n      \"Keep the current atomicity. However, ensure that if `max_units` changes in production, you do not hardcode specific splits like `[3, 2]`, which makes debugging difficult.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test duplicates coverage of other tests (e.g., `test_batch_units_by_budget_splits_when_unit_limit_is_exceeded` with different inputs). It also verifies a trivial implementation detail rather than the core business rule.\",\n    \"suggestions\": [\n      \"Remove this specific assertion. The general behavior 'units are grouped by budget' is covered elsewhere, and verifying exact split counts `[3, 2]` adds no value to understanding or testing the system's robustness.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 6,\n    \"rationale\": \"The test targets a specific edge case (limit exceeded) but is too broad. It mixes input data (`lines_changed`) with internal constraints (`max_units`), making it hard to isolate the exact failure mode.\",\n    \"suggestions\": [\n      \"Refine the assertion to focus strictly on how `batch_units_by_budget` handles arbitrary inputs without enforcing a specific limit, or explicitly mock the constraint logic.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 7,\n    \"rationale\": \"The test is relatively fast as it uses simple list comprehensions and direct assertions. However, if `batch_units_by_budget` involves heavy I/O (e.g., real DB queries), the overall execution time could be significant.\",\n    \"suggestions\": [\n      \"Ensure that any mocked dependencies in your CI environment are lightweight mocks rather than full database instances or network services to maintain speed.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 5,\n    \"rationale\": \"The test follows a basic Arrange-Act-Assert pattern but fails the 'specifies behavior' criterion. It assumes `max_units=2` is part of the contract to be tested rather than an implementation detail that should not constrain the core logic.\",\n    \"suggestions\": [\n      \"Design this as a pure unit test: Given `[1, 2, 3]`, Act with any valid batching algorithm (mocked), Assert exactly three batches are returned. Do not hardcode `max_units` in the contract; let the system handle it.\"\n    ]\n  },\n  \"summary\": \"The test is understandable but brittle and non-atomic due to reliance on internal constraints (`max_units`). It duplicates coverage of other tests and mixes implementation details with business logic",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 2871,
+      "total_tokens": 3895,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "c83e83e829b24e07bd1919fde03151e3880d637509366074248eeaf126db693e": {
+    "id": "chatcmpl-441ef30c-e2e9-4d32-81ff-4bc0159b0212",
+    "created": 1783652366,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 6,\n    \"rationale\": \"The test name is verbose and slightly ambiguous regarding the specific failure mode (token limit exceeded vs. budget split). The code uses a list comprehension to extract `lines_changed` from units in batches, which obscures the core business rule being tested.\",\n    \"suggestions\": [\n      \"Rename function/method: Use `test_batch_units_by_budget_splits_when_token_limit_exceeded()` instead of extracting lines manually.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 5,\n    \"rationale\": \"The test is brittle to changes in the underlying implementation logic (e.g., if `batch_units` returns a different structure or order). It relies on specific list comprehension syntax that may break with minor refactoring.\",\n    \"suggestions\": [\n      \"Ensure tests verify business rules directly, not data transformation artifacts. Use assertions like `assert len(batches) == 2 and ...` instead of complex expressions.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic in execution order but relies on the specific structure of input data (`units`) which could vary. It does not depend on external state or timing.\",\n    \"suggestions\": [\n      \"Ensure `code_review_evaluator.batch_units_by_budget` behaves consistently across runs and environments.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 8,\n    \"rationale\": \"The test verifies exactly one behavior: the splitting of units based on token limits. The assertion is clear about what it checks.\",\n    \"suggestions\": [\n      \"No immediate issues here; ensure no side effects occur during batch creation.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 4,\n    \"rationale\": \"This test likely duplicates coverage of existing tests for `batch_units_by_budget` or token limit logic. It may be testing implementation details rather than the core business rule.\",\n    \"suggestions\": [\n      \"Review if this specific case is covered by other unit/integration tests. Remove redundant assertions.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 3,\n    \"rationale\": \"The test mixes data preparation (`units`), logic execution (batching), and result verification in one function. It does not isolate the specific failure condition clearly.\",\n    \"suggestions\": [\n      \"Split into: `setup`, `execute_batch_logic`, `assert_split_behavior`. Ensure each step is isolated.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 8,\n    \"rationale\": \"The test executes quickly without artificial delays or heavy I/O. The logic flow is straightforward.\",\n    \"suggestions\": [\n      \"No changes needed for performance; ensure no unnecessary network calls.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 2,\n    \"rationale\": \"The test does not follow Arrange-Act-Pattern. It assumes the `batch_units_by_budget` function exists and works correctly without verifying its internal logic or contract.\",\n    \"suggestions\": [\n      \"Refactor to: Arrange (setup evaluator), Act (call method with specific inputs), Assert (verify split behavior). Ensure no hidden dependencies.\"\n    ]\n  },\n  \"summary\": \"The test is partially functional but suffers from poor design principles. It lacks clarity in intent and structure, making it difficult to maintain or extend without breaking existing logic. Immediate refactoring into a proper TDD pattern is required to ensure the business rule is isolated correctly.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 799,
+      "prompt_tokens": 553,
+      "total_tokens": 1352,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "fb2a3c91ec3921ac622d19a047e21bcea1ee6ecff74d044dcb305ad0b1c2002f": {
+    "id": "chatcmpl-787b352c-fca1-4a3c-9af1-2f60c4685f4a",
+    "created": 1783652434,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 9,\n    \"rationale\": \"The test name and arguments are clear. The assertion explicitly lists the expected dictionary keys with their values, leaving no ambiguity about what 'coverage' represents.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 8,\n    \"rationale\": \"This is a pure unit test that does not depend on external state (DB, network). However, it relies heavily on the internal logic of `build_review_coverage` to produce specific values. If this function changes its return format or adds side effects in future refactors, this brittle assertion will break immediately.\",\n    \"suggestions\": [\n      \"Remove all assertions that check for exact dictionary equality against hardcoded keys/values unless these are immutable constants defined elsewhere (e.g., `assert coverage == {'total_extracted_units': 33}`).\",\n      \"Ensure the test does not rely on specific values in `build_review_coverage` being correct; instead, verify it returns a valid structure or raises an appropriate exception if inputs are invalid.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The function call is deterministic. However, the test relies on specific numeric values (33 units) which might be arbitrary and could change during development or refactoring without updating this single line.\",\n    \"suggestions\": [\n      \"Remove all hardcoded numbers from both arguments (`total_extracted_units`, `batch_count`) and assertions in favor of using a mock object that returns predictable, testable values based on inputs.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The single assertion verifies exactly one behavior: the return value matches expectations. There is no hidden logic or multiple failure modes to investigate.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test covers a specific edge case (complete batch review). However, it duplicates the coverage of other tests that likely cover general `build_review_coverage` behavior. It is not necessary to have this exact scenario isolated here if there are existing integration or unit tests for similar inputs.\",\n    \"suggestions\": [\n      \"Review whether this test adds unique value compared to existing tests in `test_code_review.py`. If the goal was simply to verify a specific input-output pair, consider removing it from its own file and moving it to an appropriate module-level test suite or integration layer.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The assertion is granular enough. It checks the exact structure of a specific return value object.\",\n    \"suggestions\": []\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"No artificial sleeps or heavy I/O operations are present in this test code itself; it is purely logic-based and execution speed should be negligible compared to the actual build process.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"The structure follows Arrange-Act-Assert (function call -> assert). However, it lacks a clear 'Arrange' phase that isolates the input state before calling `build_review_coverage`. The test assumes specific inputs without mocking them first.\",\n    \"suggestions\": [\n      \"Implement TDD by writing an assertion for expected values based on mock data or stubbed function behavior. Then write code to make those mocks return those exact values, ensuring the 'Arrange' phase is explicit and isolated from system state.\"\n    ]\n  },\n  \"summary\": \"The test passes all criteria except necessary (duplicates coverage) and maintainability (brittle on internal logic). It demonstrates basic TDD structure but lacks isolation of inputs/outputs required for robustness in a production environment.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 858,
+      "prompt_tokens": 529,
+      "total_tokens": 1387,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "fcdc6464284b4dd8abaaaf8f15408dbb57ba88fe195b5873b45d7dd60cdb75f4": {
+    "id": "chatcmpl-4f2c070d-c61b-49ce-a70e-fc053bf2a7cd",
+    "created": 1783652507,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 7, \"rationale\": \"The test name and logic are clear enough for a code reviewer familiar with the project context. However, it lacks explicit documentation of business rules (e.g., 'asserts that review coverage is correctly persisted'), which makes intent slightly ambiguous without prior knowledge.\", \"suggestions\": [\"Add docstring comments explicitly stating: 'Verifies that `persist_usage_artifacts` correctly serializes and deserializes the calculated `review_coverage`.'\", \"Ensure all variables are named with domain-specific terminology (e.g., instead of just `metrics_root`, use something like `/tmp/metrics/code_review`).\"]},\n  \"maintainable\": {\"score\": 6, \"rationale\": \"The test is somewhat brittle because it relies on the specific implementation details of how `build_review_coverage` and `persist_usage_artifacts` are structured. If these functions change their internal logic or return types without updating this test, the assertion will fail.\", \"suggestions\": [\"Move assertions about data values into a dedicated helper function that encapsulates the 'what' (data integrity) rather than embedding them in the flow of specific implementation calls.\", \"Ensure `review_coverage` is computed deterministically based on inputs; if it depends on external state or non-deterministic ordering, this test will fail during refactoring.\"]},\n  \"repeatable\": {\"score\": 5, \"rationale\": \"The test relies heavily on the existence of a specific file path (`cassette_path`) and `tmp_path` which is standard for CI but introduces dependency on filesystem state. It also assumes no external network calls or database interactions.\", \"suggestions\": [\"Remove reliance on temporary files by using in-memory data structures (e.g., lists/dicts) to simulate the cassette content directly within the test function, ensuring it runs without I/O dependencies.\"]},\n  \"atomic\": {\"score\": 8, \"rationale\": \"The single assertion `assert payload[\"\n},\"necessary\": {\"score\": 7, \"rationale\": \"This test verifies a specific data transformation (serialization of review coverage). It does not duplicate other tests that might verify the calculation logic itself or general artifact handling.\", \"suggestions\": [\"Ensure no existing unit tests cover the internal computation of `build_review_coverage` to avoid redundancy.\"]},\n  \"granular\": {\"score\": 6, \"rationale\": \"The test is granular enough for its specific purpose (data serialization), but it mixes high-level configuration parameters with low-level data assertions. It could be more focused on a single aspect like 'asserts that the JSON structure matches expectations' rather than comparing full objects.\", \"suggestions\": [\"Refine the assertion to focus strictly on structural integrity: `assert cassette['__metadata__']['code_review_usage_summary'] == review_coverage` instead of deep equality, which is less robust against minor formatting changes.\"]},\n  \"fast\": {\"score\": 7, \"rationale\": \"The test executes quickly as it performs minimal I/O (reading one file) and no artificial delays. However, the `tmp_path` setup adds a small overhead compared to pure in-memory tests.\", \"suggestions\": [\"Replace `cassette_path.read_text()` with direct dictionary comparison or JSON parsing of an already-loaded object if possible to eliminate disk read latency.\"]},\n  \"first_tdd\": {\"score\": 6, \"rationale\": \"The test follows a basic Arrange-Act-Pattern but lacks explicit separation. It does not clearly demonstrate the 'Arrange' phase (preparing inputs) before the 'Act' (calling functions), making it slightly harder to read as an isolated unit of behavior.\", \"suggestions\": [\"Explicitly separate setup logic into `setup_method` or a dedicated helper function called first, then call the core functionality in its own block. This makes the test's intent and isolation boundaries clearer.\"]},\n  \"summary\": \"The code is functional but lacks the rigor expected for high-quality TDD tests regarding documentation of rules (understandable), separation from implementation details (maintainable), elimination of I/O dependencies (repeatable/granular/fast), and explicit architectural demonstration (first_tdd). It currently mixes data validation with flow control, making it fragile to changes in underlying library implementations.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 889,
+      "prompt_tokens": 672,
+      "total_tokens": 1561,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "f565f0489d3a1369b4189d3ef13db1944fedecb771e66b9eed8a6fa78252dcc9": {
+    "id": "chatcmpl-6baf3c4b-d36e-4fd7-b962-ab424f2ee50f",
+    "created": 1783652565,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the input structure (`__metadata__`) and expected output format. However, it lacks a clear business rule description; 'code_review_coverage' is an opaque data object rather than a defined domain concept.\", \"suggestions\": [\"Explicitly define what `coverage` represents in terms of code review metrics (e.g., percentage coverage).\"]\n},\"maintainable\": {\"score\": 9, \"rationale\": \"The test isolates the logic for extracting metadata and converting it to an assertion. It does not depend on external state or implementation details.\", \"suggestions\": [\"Ensure `get_code_review_coverage` is unit-tested in isolation; this file only tests one function.\"]},\"repeatable\": {\"score\": 7, \"rationale\": \"The test relies entirely on the internal logic of `get_code_review_coverage`. If that function uses external state (e.g., a database or network), running this specific test will not be repeatable without mocking those dependencies.\", \"suggestions\": [\"Verify if `get_code_review_coverage` is mocked in other tests. Ensure no hidden side effects occur during execution.\"]},\"atomic\": {\"score\": 9, \"rationale\": \"The test verifies exactly one behavior: the conversion of metadata to a dictionary match. The cause of failure (if any) would be immediately obvious.\", \"suggestions\": [\"Ensure `get_code_review_coverage` is deterministic and does not rely on timing or randomization.\"]},\"necessary\": {\"score\": 8, \"rationale\": \"This test covers one specific aspect: metadata parsing for code review coverage. It likely complements other tests covering different parts of the system.\", \"suggestions\": [\"Review if this test duplicates functionality covered by integration tests that verify end-to-end workflows.\"]},\"granular\": {\"score\": 7, \"rationale\": \"The assertion is broad (`assert result == coverage`). While it covers one aspect, it doesn't isolate specific edge cases or error conditions related to the metadata structure.\", \"suggestions\": [\"Refine assertions to check for null values, type mismatches, and structural integrity of `coverage`.\"]},\"fast\": {\"score\": 6, \"rationale\": \"The test is lightweight in terms of setup. However, if it relies on external calls (e.g., network requests or database queries) that are not mocked here, execution time will vary.\", \"suggestions\": [\"Ensure all dependencies within `get_code_review_coverage` are mocked when running this specific unit test.\"]},\"first_tdd\": {\"score\": 8, \"rationale\": \"The code follows a clean Arrange-Act-Assert pattern. The input is clearly defined before the function call and after.\", \"suggestions\": [\"Explicitly document the expected behavior of `get_code_review_coverage` in comments or documentation to ensure future maintainability.\"]},\"summary\": \"This test demonstrates strong adherence to TDD principles with clear inputs/outputs and a focused assertion, but it lacks explicit business rule definitions for its opaque data structures. It is repeatable only if internal dependencies are properly mocked; otherwise, external state risks breaking the determinism required by continuous delivery pipelines.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 667,
+      "prompt_tokens": 512,
+      "total_tokens": 1179,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "06f968a3ff9e8b6d56febbf8c26f2562f60d57f49b4b65bf68e21b4b0f3d9c0c": {
+    "id": "chatcmpl-6f875545-d737-4ee3-b641-70eb451f1a54",
+    "created": 1783652644,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and assertion are clear. However, the function `render_unified_report` is not defined or imported; its business logic (how to format 'PASS' based on specific numeric thresholds) is hidden in an undefined implementation.\",\n    \"suggestions\": [\n      \"Import `render_unified_report`. If it's a utility from another module, ensure that import path and function signature are documented. Ideally, the test should assert against expected output strings directly if possible to avoid dependency hell on internal formatting logic.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"The test is brittle because it relies entirely on a specific string format produced by an undefined `render_unified_report` function. If that function changes its output structure or adds whitespace variations without updating the assertion, this test will fail even if the underlying logic remains correct.\",\n    \"suggestions\": [\n      \"Refactor to use mocking (e.g., `unittest.mock`) for `render_unified_report`. Assert against specific data structures rather than string literals. This decouples the test from implementation details and makes it robust against future changes in how reports are rendered.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic (no sleeps/network) but relies on `tmp_path` which implies file system state. While not strictly 'external' like a DB, it depends on the existence of files in that path and their content being stable across runs if they are generated by an external process.\",\n    \"suggestions\": [\n      \"Ensure all inputs to `render_unified_report` (the dict) are constant between test runs. If this function generates random data or relies on timestamps, add explicit seeding logic inside the mock call.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The assertion verifies exactly one behavior: that `render_unified_report` produces a specific string. If this fails, it is immediately obvious what went wrong (the report generation logic). It does not test edge cases like empty inputs or malformed data.\",\n    \"suggestions\": [\n      \"Add assertions for boundary conditions and error handling scenarios to ensure the function behaves correctly under stress.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test likely duplicates coverage of other tests that verify `render_unified_report` with different inputs or check specific fields within it. It may be testing a trivial formatting detail rather than the core business rule.\",\n    \"suggestions\": [\n      \"Audit existing tests to see if they already cover this scenario. If not, refactor into separate unit tests for individual report components (e.g., `test_render_total_extracted_units`, etc.).\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 4,\n    \"rationale\": \"The test is too coarse-grained; it asserts the entire output string at once. It does not isolate specific assertions about individual fields (e.g., `total_extracted_units`, `batch_count`) or validate intermediate steps.\",\n    \"suggestions\": [\n      \"Break down into smaller, focused tests: one for each key-value pair in the input dict and a final integration test to verify the formatted string. This provides better isolation of concerns.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The execution is fast as it contains no sleeps or heavy I/O operations (other than reading from `tmp_path` which is standard).\",\n    \"suggestions\": [\n      \"None needed.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 3,\n    \"rationale\": \"This test fails the 'Arrange-Act-Assert' principle. The `tmp_path` fixture is not explicitly set up in this specific function (it's a global fixture), and there are no clear Arrange steps before Act or Assert that define what data should be passed to ensure deterministic results.\",\n    \"suggestions\": [\n      \"Explicitly setup the test environment: assert on input parameters, call `render_unified_report` with those inputs, then perform assertions. Ensure all dependencies (like fixtures) are properly scoped within this function if possible.\"\n    ]\n  },\n  \"summary\": \"The test is understandable but brittle due to hidden implementation details and lack of mocking for the rendering logic. It lacks granular isolation and proper Arrange-Act-Assert structure typical of TDD-first development.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1012,
+      "prompt_tokens": 524,
+      "total_tokens": 1536,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
