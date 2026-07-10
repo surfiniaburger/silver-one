@@ -92,16 +92,20 @@ def test_estimate_pr_tokens_accumulates_overhead():
 
 
 def test_filter_units_by_budget():
-    """Compatibility wrapper returns the first planned review batch."""
     units = [
         {"code": "a" * 4000, "lines_changed": 10},  # ~1400 tokens
         {"code": "b" * 8000, "lines_changed": 20},  # ~2400 tokens
         {"code": "c" * 200, "lines_changed": 5},    # ~450 tokens
     ]
-
+    # Max units 2, max tokens 3000
+    # sorted: b (20 lines changed), a (10 lines changed), c (5 lines changed)
+    # b: 2400 tokens. Remaining budget: 600.
+    # a: 1400 tokens -> exceeds remaining budget. Skip.
+    # c: 450 tokens -> fits. Selected: [b, c].
     selected, _ = code_review_evaluator.filter_units_by_budget(units, max_tokens=3000, max_units=2)
-
-    assert [unit["lines_changed"] for unit in selected] == [20]
+    assert len(selected) == 2
+    assert selected[0]["lines_changed"] == 20
+    assert selected[1]["lines_changed"] == 5
 
 
 def test_batch_units_by_budget_splits_when_unit_limit_is_exceeded():

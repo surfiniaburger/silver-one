@@ -187,10 +187,24 @@ def batch_units_by_budget(
 def filter_units_by_budget(
     units: List[Dict[str, Any]], max_tokens: int, max_units: int
 ) -> Tuple[List[Dict[str, Any]], int]:
-    """Compatibility wrapper returning only the first planned batch."""
-    batches = batch_units_by_budget(units, max_tokens, max_units)
-    selected = batches[0] if batches else []
-    return selected, estimate_pr_tokens(selected)
+    """Sort units by changed lines and greedily select a bounded subset."""
+    sorted_units = sorted(units, key=lambda u: u.get("lines_changed", 0), reverse=True)
+    selected: List[Dict[str, Any]] = []
+    current_tokens = 0
+
+    for unit in sorted_units:
+        if len(selected) >= max_units:
+            break
+        unit_tokens = estimate_unit_tokens(unit)
+        if current_tokens + unit_tokens > max_tokens:
+            if not selected:
+                selected.append(unit)
+                current_tokens += unit_tokens
+            continue
+        selected.append(unit)
+        current_tokens += unit_tokens
+
+    return selected, current_tokens
 
 
 def build_review_coverage(
