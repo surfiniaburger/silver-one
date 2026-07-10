@@ -209,6 +209,22 @@ def get_code_review_coverage(cassette: Dict[str, Any]) -> Dict[str, Any]:
     return coverage
 
 
+def get_code_review_validation_summary(cassette: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract structured-output validation telemetry from a code-review cassette."""
+    if not isinstance(cassette, dict):
+        return {}
+    metadata = cassette.get("__metadata__")
+    if not isinstance(metadata, dict):
+        return {}
+    summary = metadata.get("code_review_usage_summary")
+    if not isinstance(summary, dict):
+        return {}
+    validation = summary.get("validation_summary")
+    if not isinstance(validation, dict):
+        return {}
+    return validation
+
+
 def combine_token_spend(cr_cassette: Dict[str, Any], farley_cassette: Dict[str, Any]) -> str:
     """Summarize total token spend across both Code Review and Farley runs."""
     cr_totals = get_token_totals(cr_cassette, "code_review_usage_summary")
@@ -244,6 +260,8 @@ def _write_header_and_summary(f, unified_verdict: str, reasons: List[str], spend
     status_color = "🔴" if unified_verdict == "FAIL" else "🟢"
     f.write(f"## {status_color} Verdict: **{unified_verdict}**\n\n")
 
+    _write_run_context(f)
+
     if reasons:
         f.write("### Summary Notes\n")
         for reason in reasons:
@@ -251,6 +269,23 @@ def _write_header_and_summary(f, unified_verdict: str, reasons: List[str], spend
         f.write("\n")
 
     f.write(spend_str)
+
+
+def _write_run_context(f) -> None:
+    run_id = os.getenv("GITHUB_RUN_ID")
+    run_attempt = os.getenv("GITHUB_RUN_ATTEMPT")
+    sha = os.getenv("GITHUB_SHA")
+    if not any([run_id, run_attempt, sha]):
+        return
+
+    f.write("### Run Context\n")
+    if run_id:
+        f.write(f"- GitHub run: `{run_id}`\n")
+    if run_attempt:
+        f.write(f"- Attempt: `{run_attempt}`\n")
+    if sha:
+        f.write(f"- Commit: `{sha[:12]}`\n")
+    f.write("\n")
 
 
 def _get_cqi_metric(cr_data: Dict[str, Any]) -> Tuple[str, str]:
@@ -323,21 +358,67 @@ def _get_compat_metric(compat_data: Dict[str, Any]) -> Tuple[str, str]:
     return f"{state or verdict} (Score: {compat_score:.1f}/10)", verdict
 
 
+def _coerce_metric_int(value: Any) -> int:
+    if value is None:
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _get_code_review_coverage_metric(cr_data: Dict[str, Any]) -> Optional[Tuple[str, str]]:
     coverage = cr_data.get("review_coverage")
     if not isinstance(coverage, dict):
         return None
 
-    total = int(coverage.get("total_extracted_units", 0) or 0)
-    reviewed = int(coverage.get("reviewed_units", 0) or 0)
-    skipped = int(coverage.get("skipped_units", 0) or 0)
-    batches = int(coverage.get("batch_count", 0) or 0)
+    total = _coerce_metric_int(coverage.get("total_extracted_units"))
+    reviewed = _coerce_metric_int(coverage.get("reviewed_units"))
+    skipped = _coerce_metric_int(coverage.get("skipped_units"))
+    batches = _coerce_metric_int(coverage.get("batch_count"))
     if total == 0 and reviewed == 0 and batches == 0:
         return None
 
     metric = f"{reviewed}/{total} unit(s) reviewed across {batches} batch(es); {skipped} skipped"
-    status = "PASS" if skipped == 0 else "WARN"
+    status = "PASS" if skipped == 0 and reviewed <= total else "WARN"
     return metric, status
+
+
+def _get_structured_output_metric(cr_data: Dict[str, Any]) -> Optional[Tuple[str, str]]:
+    summary = cr_data.get("validation_summary")
+    if not isinstance(summary, dict) or not summary:
+        return None
+
+    details = summary.get("details") or {}
+    structured = details.get("structured_output") or {}
+
+    valid = _coerce_metric_int(summary.get("valid_units"))
+    repaired = _coerce_metric_int(summary.get("repaired_units"))
+    normalized = _coerce_metric_int(summary.get("normalized_units"))
+    invalid = _coerce_metric_int(summary.get("invalid_units"))
+    repair_attempts = _coerce_metric_int(structured.get("repair_attempts"))
+    retries = _coerce_metric_int(structured.get("validation_retries"))
+    final_failures = _coerce_metric_int(structured.get("final_failures"))
+
+    metric = (
+        f"{valid} valid, {repaired} repaired, {normalized} normalized, "
+        f"{invalid} invalid; {repair_attempts} repair attempt(s), "
+        f"{retries} retry/retries, {final_failures} final failure(s)"
+    )
+    status = "FAIL" if final_failures or invalid else "PASS"
+    return metric, status
+
+
+def _get_provider_runtime_metric(cr_data: Dict[str, Any]) -> Optional[Tuple[str, str]]:
+    summary = cr_data.get("validation_summary")
+    if not isinstance(summary, dict) or not summary:
+        return None
+
+    details = summary.get("details") or {}
+    provider = details.get("provider_error") or {}
+    failures = _coerce_metric_int(provider.get("failures"))
+    status = "FAIL" if failures else "PASS"
+    return f"{failures} provider failure(s)", status
 
 
 def _write_metrics_overview(
@@ -347,22 +428,50 @@ def _write_metrics_overview(
     compat_data: Dict[str, Any],
 ) -> None:
     f.write("## Metrics Overview\n\n")
-    f.write("| Quality Domain | Metric / Score | Status |\n")
-    f.write("|---|---|---|\n")
+    f.write("| Lane | What It Measures | Metric / Score | Status |\n")
+    f.write("|---|---|---|---|\n")
 
     cqi_metric, cqi_status = _get_cqi_metric(cr_data)
-    f.write(f"| Code Quality Index (CQI) | {cqi_metric} | **{cqi_status}** |\n")
+    f.write(
+        f"| Reviewer Quality | Model judgment over reviewed code "
+        f"| {cqi_metric} | **{cqi_status}** |\n"
+    )
+
+    structured_metric = _get_structured_output_metric(cr_data)
+    if structured_metric:
+        metric, status = structured_metric
+        f.write(
+            f"| Structured Output Health | Schema validity, repairs, retries, final failures "
+            f"| {metric} | **{status}** |\n"
+        )
+
+    provider_metric = _get_provider_runtime_metric(cr_data)
+    if provider_metric:
+        metric, status = provider_metric
+        f.write(
+            f"| Provider Runtime | Local model/provider execution health "
+            f"| {metric} | **{status}** |\n"
+        )
 
     coverage_metric = _get_code_review_coverage_metric(cr_data)
     if coverage_metric:
         metric, status = coverage_metric
-        f.write(f"| Code Review Coverage | {metric} | **{status}** |\n")
+        f.write(
+            f"| Review Coverage | Changed units reviewed by the evaluator "
+            f"| {metric} | **{status}** |\n"
+        )
 
     farley_metric, farley_status = _get_farley_metric(farley_data)
-    f.write(f"| Farley Test Quality | {farley_metric} | **{farley_status}** |\n")
+    f.write(
+        f"| Test Quality | Farley comparison against baseline "
+        f"| {farley_metric} | **{farley_status}** |\n"
+    )
 
     compat_metric, compat_status = _get_compat_metric(compat_data)
-    f.write(f"| API Compatibility | {compat_metric} | **{compat_status}** |\n\n")
+    f.write(
+        f"| API Compatibility | Public API compatibility state "
+        f"| {compat_metric} | **{compat_status}** |\n\n"
+    )
 
 
 def _esc(value: Any) -> str:
@@ -680,6 +789,7 @@ def main():
         "units": cr_units,
         "verdict": cr_verdict,
         "review_coverage": get_code_review_coverage(cr_cassette),
+        "validation_summary": get_code_review_validation_summary(cr_cassette),
     }
     farley_data = {
         "bsum": farley_bsum,

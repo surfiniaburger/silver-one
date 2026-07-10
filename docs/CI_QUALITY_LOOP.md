@@ -85,7 +85,7 @@ flowchart TD
     E9 --> F16
     F5 --> F16
 
-    F16 --> F17["Metrics overview<br/>CQI + Farley + API Compatibility"]
+    F16 --> F17["Metrics overview lanes<br/>reviewer + structured output + provider + coverage + test + API"]
     F17 --> F18["Detailed Code Review findings"]
     F18 --> F19["Farley baseline and regression details"]
     F19 --> F20["API compatibility details"]
@@ -112,6 +112,22 @@ The code review path separates three concerns:
 - Harness reliability: JSON repair, schema retries, recoverable failures, and
   validation telemetry
 - CI policy: whether the unified report should pass or fail the pull request
+
+## Report Lanes
+
+The unified report separates feedback into lanes so reviewer quality is not
+confused with harness reliability:
+
+- Reviewer Quality: CQI, severity, findings, and model judgment.
+- Structured Output Health: schema validity, repairs, retries, and final
+  failures.
+- Provider Runtime: provider crashes or runtime failures.
+- Review Coverage: extracted, reviewed, skipped units, and batch count.
+- Test Quality: Farley test quality comparison.
+- API Compatibility: public API compatibility state.
+
+The final unified verdict may fail because of any lane, but the lanes explain
+which part of the workflow failed.
 
 Recoverable evaluation failures are visible in the report, but they are not
 treated as invalid CQI reviews. They mean the harness could not obtain a valid
