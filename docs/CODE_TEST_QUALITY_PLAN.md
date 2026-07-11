@@ -49,7 +49,7 @@ CI Workflow & Gates (recommended rollout)
   - CI runs Farley evaluator (light local model) but does not block — posts `report.md` and artifacts.
 - Phase 2 (soft gates)
   - After several weeks of observing false positives, enable warning thresholds that fail PRs only on severe regressions.
-  - Example fail thresholds (tunable): suite Farley delta <= -0.25, U or M drop >= -0.5, >5% tests drop by >=2.
+  - Example fail thresholds (tunable): suite Farley delta <= -0.25, U or M drop >= -0.5, at least two tests drop by >=2 and those drops represent >5% of evaluated tests.
 - Phase 3 (strict gates + nightly authoritative)
   - Nightly full-suite run using Nebius or self-hosted GPU model produces authoritative baseline.
   - CI blocks merges if soft gate thresholds are exceeded.
@@ -103,4 +103,3 @@ Next steps (immediately actionable)
 If you want, I will also:
 - Add a small `CODE_QUALITY.md` with commands and example outputs.
 - Add a GitHub Action step to post `report.md` as a PR comment when Farley warns/fails.
-

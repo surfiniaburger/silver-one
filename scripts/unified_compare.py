@@ -749,13 +749,13 @@ def main():
         farley_psum = farley_compute_summary(virtual_suite)
         farley_delta = farley_psum["avg_index"] - farley_bsum["avg_index"]
 
-        _, pct_val, _ = compute_drops_and_pct(
+        drops_count, pct_val, _ = compute_drops_and_pct(
             farley_base_cassette.get("tests", []),
             farley_pr_cassette.get("tests", []),
         )
 
         farley_verdict, farley_exit, farley_reasons = farley_determine_verdict(
-            farley_delta, farley_bsum, farley_psum, pct_val
+            farley_delta, farley_bsum, farley_psum, pct_val, drops_count
         )
         farley_regressions = farley_top_regressions(farley_base_cassette, farley_pr_cassette, top_n=10)
 
