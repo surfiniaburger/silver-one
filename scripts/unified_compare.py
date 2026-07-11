@@ -363,7 +363,7 @@ def _coerce_metric_int(value: Any) -> int:
         return 0
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return 0
 
 

@@ -271,6 +271,36 @@ def test_write_unified_report_coerces_malformed_telemetry_counts(tmp_path):
     assert "| Review Coverage | Changed units reviewed by the evaluator | 3/0 unit(s) reviewed across 1 batch(es); 0 skipped | **WARN** |" in content
 
 
+def test_write_unified_report_coerces_infinite_telemetry_counts(tmp_path):
+    content = render_unified_report(
+        tmp_path,
+        review_coverage={
+            "total_extracted_units": float("inf"),
+            "reviewed_units": 1,
+            "skipped_units": 0,
+            "batch_count": 1,
+        },
+        validation_summary={
+            "valid_units": float("inf"),
+            "repaired_units": 0,
+            "normalized_units": 0,
+            "invalid_units": 0,
+            "details": {
+                "structured_output": {
+                    "repair_attempts": float("-inf"),
+                    "validation_retries": 0,
+                    "final_failures": 0,
+                },
+                "provider_error": {"failures": float("inf")},
+            },
+        },
+    )
+
+    assert "0 valid, 0 repaired, 0 normalized, 0 invalid; 0 repair attempt(s), 0 retry/retries, 0 final failure(s)" in content
+    assert "| Provider Runtime | Local model/provider execution health | 0 provider failure(s) | **PASS** |" in content
+    assert "| Review Coverage | Changed units reviewed by the evaluator | 1/0 unit(s) reviewed across 1 batch(es); 0 skipped | **WARN** |" in content
+
+
 def test_write_unified_report_handles_malformed_nested_telemetry_objects(tmp_path):
     content = render_unified_report(
         tmp_path,
