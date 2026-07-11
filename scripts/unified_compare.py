@@ -389,8 +389,12 @@ def _get_structured_output_metric(cr_data: Dict[str, Any]) -> Optional[Tuple[str
     if not isinstance(summary, dict) or not summary:
         return None
 
-    details = summary.get("details") or {}
-    structured = details.get("structured_output") or {}
+    details = summary.get("details")
+    if not isinstance(details, dict):
+        details = {}
+    structured = details.get("structured_output")
+    if not isinstance(structured, dict):
+        structured = {}
 
     valid = _coerce_metric_int(summary.get("valid_units"))
     repaired = _coerce_metric_int(summary.get("repaired_units"))
@@ -414,8 +418,12 @@ def _get_provider_runtime_metric(cr_data: Dict[str, Any]) -> Optional[Tuple[str,
     if not isinstance(summary, dict) or not summary:
         return None
 
-    details = summary.get("details") or {}
-    provider = details.get("provider_error") or {}
+    details = summary.get("details")
+    if not isinstance(details, dict):
+        details = {}
+    provider = details.get("provider_error")
+    if not isinstance(provider, dict):
+        provider = {}
     failures = _coerce_metric_int(provider.get("failures"))
     status = "FAIL" if failures else "PASS"
     return f"{failures} provider failure(s)", status

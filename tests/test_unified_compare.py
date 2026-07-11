@@ -271,6 +271,39 @@ def test_write_unified_report_coerces_malformed_telemetry_counts(tmp_path):
     assert "| Review Coverage | Changed units reviewed by the evaluator | 3/0 unit(s) reviewed across 1 batch(es); 0 skipped | **WARN** |" in content
 
 
+def test_write_unified_report_handles_malformed_nested_telemetry_objects(tmp_path):
+    content = render_unified_report(
+        tmp_path,
+        validation_summary={
+            "valid_units": 1,
+            "repaired_units": 0,
+            "normalized_units": 0,
+            "invalid_units": 0,
+            "details": "not-a-dict",
+        },
+    )
+
+    assert "1 valid, 0 repaired, 0 normalized, 0 invalid" in content
+    assert "| Provider Runtime | Local model/provider execution health | 0 provider failure(s) | **PASS** |" in content
+
+    content = render_unified_report(
+        tmp_path,
+        validation_summary={
+            "valid_units": 1,
+            "repaired_units": 0,
+            "normalized_units": 0,
+            "invalid_units": 0,
+            "details": {
+                "structured_output": "not-a-dict",
+                "provider_error": "not-a-dict",
+            },
+        },
+    )
+
+    assert "1 valid, 0 repaired, 0 normalized, 0 invalid" in content
+    assert "| Provider Runtime | Local model/provider execution health | 0 provider failure(s) | **PASS** |" in content
+
+
 def test_write_unified_report_keeps_legacy_reports_without_validation_summary(tmp_path):
     content = render_unified_report(tmp_path)
 
