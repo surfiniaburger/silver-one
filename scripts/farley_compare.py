@@ -16,6 +16,7 @@ from scripts.path_utils import validate_input_path, validate_output_path
 FAIL_DELTA = 0.25
 FAIL_PROP = 0.5
 FAIL_PERCENT_TESTS = 0.05
+FAIL_MIN_DROPPED_TESTS = 2
 
 # Restrict all file operations to these directories
 CASSETTE_ROOT = Path("./cassettes").resolve()
@@ -191,7 +192,7 @@ def compute_drops_and_pct(base_tests, pr_tests):
     return drops, pct, biggest
 
 
-def determine_verdict_and_reasons(delta, bsum, psum, pct_val):
+def determine_verdict_and_reasons(delta, bsum, psum, pct_val, drops_count=0):
     verdict = "PASS"
     exit_code = 0
     reasons = []
@@ -223,7 +224,7 @@ def determine_verdict_and_reasons(delta, bsum, psum, pct_val):
         exit_code = 2
         reasons.append("Maintainable dropped too much")
 
-    if pct_val > FAIL_PERCENT_TESTS:
+    if drops_count >= FAIL_MIN_DROPPED_TESTS and pct_val > FAIL_PERCENT_TESTS:
         verdict = "FAIL"
         exit_code = 2
         reasons.append(
@@ -359,7 +360,7 @@ def main():
 
     delta = psum["avg_index"] - bsum["avg_index"]
 
-    _, pct_val, _ = compute_drops_and_pct(
+    drops_count, pct_val, _ = compute_drops_and_pct(
         base.get("tests", []),
         pr.get("tests", []),
     )
@@ -369,6 +370,7 @@ def main():
         bsum,
         psum,
         pct_val,
+        drops_count,
     )
 
     write_report(

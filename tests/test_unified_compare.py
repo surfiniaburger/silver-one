@@ -4,6 +4,7 @@ import json
 from scripts.unified_compare import (
     combine_token_spend,
     get_code_review_coverage,
+    get_code_review_validation_summary,
     parse_compatibility_result,
     resolve_farley_baseline,
     write_unified_report,
@@ -41,6 +42,7 @@ def render_unified_report(
     farley_data=None,
     compat_data=None,
     review_coverage=None,
+    validation_summary=None,
 ):
     out_file = tmp_path / "report.md"
     write_unified_report(
@@ -52,6 +54,7 @@ def render_unified_report(
             "units": cr_units or [],
             "verdict": cr_verdict,
             "review_coverage": review_coverage or {},
+            "validation_summary": validation_summary or {},
         },
         farley_data=farley_data or farley_report_data(),
         compat_data=compat_data or compat_report_data(),
@@ -125,6 +128,33 @@ def test_get_code_review_coverage_from_metadata():
     assert result == coverage
 
 
+def test_get_code_review_validation_summary_from_metadata():
+    validation_summary = {
+        "valid_units": 3,
+        "repaired_units": 1,
+        "normalized_units": 0,
+        "invalid_units": 1,
+        "details": {
+            "structured_output": {
+                "repair_attempts": 2,
+                "validation_retries": 1,
+                "final_failures": 1,
+            },
+            "provider_error": {"failures": 0},
+        },
+    }
+
+    result = get_code_review_validation_summary({
+        "__metadata__": {
+            "code_review_usage_summary": {
+                "validation_summary": validation_summary,
+            }
+        }
+    })
+
+    assert result == validation_summary
+
+
 def test_write_unified_report_basic(tmp_path):
     content = render_unified_report(
         tmp_path,
@@ -155,7 +185,174 @@ def test_write_unified_report_displays_code_review_coverage(tmp_path):
         },
     )
 
-    assert "| Code Review Coverage | 33/33 unit(s) reviewed across 2 batch(es); 0 skipped | **PASS** |" in content
+    assert "| Review Coverage | Changed units reviewed by the evaluator | 33/33 unit(s) reviewed across 2 batch(es); 0 skipped | **PASS** |" in content
+
+
+def test_write_unified_report_separates_structured_output_health(tmp_path):
+    content = render_unified_report(
+        tmp_path,
+        unified_verdict="FAIL",
+        reasons=["structured output final failure"],
+        validation_summary={
+            "valid_units": 3,
+            "repaired_units": 1,
+            "normalized_units": 0,
+            "invalid_units": 1,
+            "details": {
+                "structured_output": {
+                    "repair_attempts": 2,
+                    "validation_retries": 1,
+                    "final_failures": 1,
+                },
+                "provider_error": {"failures": 0},
+            },
+        },
+    )
+
+    assert "| Reviewer Quality | Model judgment over reviewed code | N/A (no Python code changes) | **PASS** |" in content
+    assert (
+        "| Structured Output Health | Schema validity, repairs, retries, final failures "
+        "| 3 valid, 1 repaired, 0 normalized, 1 invalid; 2 repair attempt(s), "
+        "1 retry/retries, 1 final failure(s) | **FAIL** |"
+    ) in content
+
+
+def test_write_unified_report_displays_provider_runtime_lane(tmp_path):
+    content = render_unified_report(
+        tmp_path,
+        unified_verdict="FAIL",
+        reasons=["provider failure"],
+        validation_summary={
+            "valid_units": 0,
+            "repaired_units": 0,
+            "normalized_units": 0,
+            "invalid_units": 0,
+            "details": {
+                "structured_output": {
+                    "repair_attempts": 0,
+                    "validation_retries": 0,
+                    "final_failures": 0,
+                },
+                "provider_error": {"failures": 2},
+            },
+        },
+    )
+
+    assert "| Provider Runtime | Local model/provider execution health | 2 provider failure(s) | **FAIL** |" in content
+
+
+def test_write_unified_report_coerces_malformed_telemetry_counts(tmp_path):
+    content = render_unified_report(
+        tmp_path,
+        review_coverage={
+            "total_extracted_units": "bad-total",
+            "reviewed_units": "3",
+            "skipped_units": "bad-skipped",
+            "batch_count": "1",
+        },
+        validation_summary={
+            "valid_units": "bad-valid",
+            "repaired_units": "2",
+            "normalized_units": None,
+            "invalid_units": "bad-invalid",
+            "details": {
+                "structured_output": {
+                    "repair_attempts": "bad-repairs",
+                    "validation_retries": "1",
+                    "final_failures": "bad-failures",
+                },
+                "provider_error": {"failures": "bad-provider"},
+            },
+        },
+    )
+
+    assert "0 valid, 2 repaired, 0 normalized, 0 invalid; 0 repair attempt(s), 1 retry/retries, 0 final failure(s)" in content
+    assert "| Provider Runtime | Local model/provider execution health | 0 provider failure(s) | **PASS** |" in content
+    assert "| Review Coverage | Changed units reviewed by the evaluator | 3/0 unit(s) reviewed across 1 batch(es); 0 skipped | **WARN** |" in content
+
+
+def test_write_unified_report_coerces_infinite_telemetry_counts(tmp_path):
+    content = render_unified_report(
+        tmp_path,
+        review_coverage={
+            "total_extracted_units": float("inf"),
+            "reviewed_units": 1,
+            "skipped_units": 0,
+            "batch_count": 1,
+        },
+        validation_summary={
+            "valid_units": float("inf"),
+            "repaired_units": 0,
+            "normalized_units": 0,
+            "invalid_units": 0,
+            "details": {
+                "structured_output": {
+                    "repair_attempts": float("-inf"),
+                    "validation_retries": 0,
+                    "final_failures": 0,
+                },
+                "provider_error": {"failures": float("inf")},
+            },
+        },
+    )
+
+    assert "0 valid, 0 repaired, 0 normalized, 0 invalid; 0 repair attempt(s), 0 retry/retries, 0 final failure(s)" in content
+    assert "| Provider Runtime | Local model/provider execution health | 0 provider failure(s) | **PASS** |" in content
+    assert "| Review Coverage | Changed units reviewed by the evaluator | 1/0 unit(s) reviewed across 1 batch(es); 0 skipped | **WARN** |" in content
+
+
+def test_write_unified_report_handles_malformed_nested_telemetry_objects(tmp_path):
+    content = render_unified_report(
+        tmp_path,
+        validation_summary={
+            "valid_units": 1,
+            "repaired_units": 0,
+            "normalized_units": 0,
+            "invalid_units": 0,
+            "details": "not-a-dict",
+        },
+    )
+
+    assert "1 valid, 0 repaired, 0 normalized, 0 invalid" in content
+    assert "| Provider Runtime | Local model/provider execution health | 0 provider failure(s) | **PASS** |" in content
+
+    content = render_unified_report(
+        tmp_path,
+        validation_summary={
+            "valid_units": 1,
+            "repaired_units": 0,
+            "normalized_units": 0,
+            "invalid_units": 0,
+            "details": {
+                "structured_output": "not-a-dict",
+                "provider_error": "not-a-dict",
+            },
+        },
+    )
+
+    assert "1 valid, 0 repaired, 0 normalized, 0 invalid" in content
+    assert "| Provider Runtime | Local model/provider execution health | 0 provider failure(s) | **PASS** |" in content
+
+
+def test_write_unified_report_keeps_legacy_reports_without_validation_summary(tmp_path):
+    content = render_unified_report(tmp_path)
+
+    assert "| Reviewer Quality | Model judgment over reviewed code | N/A (no Python code changes) | **PASS** |" in content
+    assert "Structured Output Health" not in content
+    assert "Provider Runtime" not in content
+
+
+def test_write_unified_report_displays_run_context(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_RUN_ID", "123456")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+    monkeypatch.setenv("GITHUB_SHA", "abcdef1234567890")
+
+    content = render_unified_report(tmp_path)
+
+    assert "### Run Context" in content
+    assert "- GitHub run: `123456`" in content
+    assert "- Attempt: `2`" in content
+    assert "- Commit: `abcdef123456`" in content
 
 
 def test_parse_compatibility_result_legacy_pass():
@@ -408,20 +605,20 @@ def test_write_unified_report_marks_invalid_cqi_metric_failed(tmp_path):
         reasons=["INVALID CQI: src/utils.py -> invalid_review: Required CQI dimension 'readability' is missing."],
         cr_units=cr_units,
     )
-    assert "| Code Quality Index (CQI) | INVALID (1/1 unit(s)) | **FAIL** |" in content
+    assert "| Reviewer Quality | Model judgment over reviewed code | INVALID (1/1 unit(s)) | **FAIL** |" in content
     assert "| src/utils.py | invalid_review | INVALID (MISSING_DIMENSION) | **OK** | Incomplete review |" in content
 
 
 def test_write_unified_report_ignores_malformed_cqi_units(tmp_path):
     content = render_unified_report(tmp_path, cr_units=["not-a-unit"])
-    assert "| Code Quality Index (CQI) | N/A (no Python code changes) | **PASS** |" in content
+    assert "| Reviewer Quality | Model judgment over reviewed code | N/A (no Python code changes) | **PASS** |" in content
 
 
 def test_write_unified_report_accepts_legacy_review_payload(tmp_path, valid_review_payload):
     cr_units = get_reviews({"reviews": [valid_review_payload()]})
 
     content = render_unified_report(tmp_path, cr_units=cr_units)
-    assert "| Code Quality Index (CQI) | 8.00/10 (average of 1 unit(s)) | **PASS** |" in content
+    assert "| Reviewer Quality | Model judgment over reviewed code | 8.00/10 (average of 1 unit(s)) | **PASS** |" in content
     assert "| legacy-cassette | legacy_review_1 | 8.00/10 | **OK** | legacy review |" in content
 
 
@@ -443,7 +640,7 @@ def test_write_unified_report_excludes_recoverable_failure_from_cqi(tmp_path, va
 
     content = render_unified_report(tmp_path, cr_units=cr_units)
     assert (
-        "| Code Quality Index (CQI) | 8.00/10 "
+        "| Reviewer Quality | Model judgment over reviewed code | 8.00/10 "
         "(average of 1 unit(s); 1 recoverable failure(s) excluded) | **PASS** |"
     ) in content
     assert "| scripts/code_review_compare.py | &lt;module&gt; | N/A (recoverable failure) | **N/A** | Failed to validate structured output |" in content
@@ -472,7 +669,7 @@ def test_write_unified_report_displays_provider_error_units(tmp_path, valid_revi
 
     content = render_unified_report(tmp_path, cr_units=cr_units)
     assert (
-        "| Code Quality Index (CQI) | 8.00/10 "
+        "| Reviewer Quality | Model judgment over reviewed code | 8.00/10 "
         "(average of 1 unit(s); 1 recoverable failure(s) excluded) | **PASS** |"
     ) in content
     assert (
@@ -550,7 +747,7 @@ def test_write_unified_report_displays_baseline_state(tmp_path):
         compat_data=compat_report_data(state="PASS"),
     )
 
-    assert "| Farley Test Quality | PR avg: 8.00 (baseline missing) | **FAIL** |" in content
+    assert "| Test Quality | Farley comparison against baseline | PR avg: 8.00 (baseline missing) | **FAIL** |" in content
     assert "State: **BASELINE_MISSING**" in content
     assert "missing baseline.json" in content
 
@@ -572,6 +769,6 @@ def test_write_unified_report_displays_compatibility_check_failed(tmp_path):
         ),
     )
 
-    assert "| API Compatibility | CHECK_FAILED (Score: 0.0/10) | **FAIL** |" in content
+    assert "| API Compatibility | Public API compatibility state | CHECK_FAILED (Score: 0.0/10) | **FAIL** |" in content
     assert "State: **CHECK_FAILED**" in content
     assert "bad syntax" in content

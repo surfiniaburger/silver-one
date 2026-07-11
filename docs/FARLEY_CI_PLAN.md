@@ -104,7 +104,8 @@ Notes:
 Fail (exit non-zero) if ANY of the following:
 - Suite Farley Index decreases by >= `0.25` (PR_avg - baseline_avg <= -0.25).
 - Average `Understandable` OR `Maintainable` decreases by >= `0.5`.
-- > `5%` of evaluated tests drop by >= `2.0` points.
+- At least `2` evaluated tests drop by >= `2.0` points and those drops
+  represent > `5%` of evaluated tests.
 
 Warn (pass but annotate) if:
 - Suite delta is between -0.10 and -0.25.

@@ -44,6 +44,8 @@ Common examples:
 - `lines_changed="10"` or another JSON-derived non-integer value
 - missing cassette `__metadata__`
 - malformed `reviews`
+- malformed nested telemetry objects such as `details="..."`,
+  `structured_output=null`, or `provider_error="..."`
 - legacy review payloads without the current wrapper shape
 - optional validation fields set to `null`
 
@@ -85,6 +87,8 @@ Preferred pattern:
 
 - Check container type before reading from it.
 - Check list element type before processing it.
+- Check nested dictionary type at each level before calling `.get(...)` on the
+  nested value.
 - Keep validation close to the boundary where data enters the workflow.
 - Use small helpers when the same shape check appears in several places.
 
@@ -102,6 +106,19 @@ def get_code_review_coverage(cassette: Dict[str, Any]) -> Dict[str, Any]:
         return {}
     coverage = summary.get("review_coverage")
     return coverage if isinstance(coverage, dict) else {}
+```
+
+For nested telemetry, do not rely on `value = parent.get("child") or {}` when
+the child may be a truthy non-dictionary such as a string or list. Normalize the
+shape before reading deeper:
+
+```python
+details = summary.get("details")
+if not isinstance(details, dict):
+    details = {}
+structured = details.get("structured_output")
+if not isinstance(structured, dict):
+    structured = {}
 ```
 
 ## Compatibility Contracts

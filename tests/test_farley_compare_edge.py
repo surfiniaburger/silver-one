@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 from scripts.farley_compare import (
     compute_suite_summary,
+    determine_verdict_and_reasons,
     get_usage_totals,
     top_regressions,
     _write_no_baseline_report,
@@ -28,6 +29,40 @@ def test_compute_suite_summary_empty():
     summary = compute_suite_summary({'tests': []})
     assert summary['avg_index'] == pytest.approx(0.0)
     assert summary['count'] == 0
+
+
+def test_farley_percent_drop_gate_ignores_single_small_sample_drop():
+    baseline = {"avg_index": 8.0, "per_property": {"understandable": 8.0, "maintainable": 8.0}}
+    pr = {"avg_index": 8.0, "per_property": {"understandable": 8.0, "maintainable": 8.0}}
+
+    verdict, exit_code, reasons = determine_verdict_and_reasons(
+        0.0,
+        baseline,
+        pr,
+        pct_val=1 / 15,
+        drops_count=1,
+    )
+
+    assert verdict == "PASS"
+    assert exit_code == 0
+    assert reasons == []
+
+
+def test_farley_percent_drop_gate_fails_multiple_dropped_tests():
+    baseline = {"avg_index": 8.0, "per_property": {"understandable": 8.0, "maintainable": 8.0}}
+    pr = {"avg_index": 8.0, "per_property": {"understandable": 8.0, "maintainable": 8.0}}
+
+    verdict, exit_code, reasons = determine_verdict_and_reasons(
+        0.0,
+        baseline,
+        pr,
+        pct_val=2 / 15,
+        drops_count=2,
+    )
+
+    assert verdict == "FAIL"
+    assert exit_code == 2
+    assert reasons == ["13.3% of tests dropped by >=2 points"]
 
 
 def test_get_usage_totals_reads_farley_metadata():
@@ -164,6 +199,5 @@ async def test_farley_evaluator_saves_tests_to_cassette(tmp_path, monkeypatch):
     assert len(data["tests"]) == 1
     assert data["tests"][0]["test_name"] == "test_dummy_example"
     assert data["tests"][0]["farley_index"] == pytest.approx(8.0)
-
 
 
