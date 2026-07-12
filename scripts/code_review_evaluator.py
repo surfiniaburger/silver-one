@@ -166,6 +166,7 @@ Each finding must include:
 - engineering_consequence
 - impact with correctness, compatibility, security, maintainability, and performance values
 - confidence as a JSON number from 0.0 to 1.0
+- reference_principle as a reusable engineering principle behind the finding
 - recommended_action
 Use concrete names, line ranges, variables, or branches from the reviewed unit when possible.
 </finding_rules>
@@ -230,6 +231,7 @@ Return one JSON object with this exact top-level shape:
       "engineering_consequence": "Unexpected input can produce misleading metrics instead of a clear recoverable failure.",
       "impact": {"correctness": "MEDIUM", "compatibility": "LOW", "security": "NONE", "maintainability": "MEDIUM", "performance": "NONE"},
       "confidence": 0.82,
+      "reference_principle": "Validate JSON-derived object shapes before computing metrics from them.",
       "recommended_action": "Validate input item types before computing the result and add a regression test."
     }
   ]

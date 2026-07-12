@@ -52,6 +52,12 @@ Current successful review units contain:
 structured response has been parsed. `structured_output` describes parser,
 repair, retry, and final-failure behavior before or during schema validation.
 
+Structured findings may include `reference_principle`, a reusable engineering
+principle that explains the broader pattern behind the finding, and
+`confidence`, a numeric 0.0-1.0 estimate of reviewer certainty. Legacy findings
+without `reference_principle` remain valid and are normalized to an empty string
+so old cassettes continue to load.
+
 ### Legacy Review Unit
 
 Older cassettes may store the review payload directly inside `reviews[]`,
@@ -175,6 +181,9 @@ The unified report follows these rules:
 - Recoverable evaluation failures appear as `N/A (recoverable failure)`.
 - CQI averages are computed from valid CQI review units only.
 - Recoverable failures are counted in validation telemetry and excluded from CQI.
+- Structured engineering findings should show confidence and reusable
+  principles when available, but missing legacy principles must not fail report
+  generation.
 
 This separation lets Silver-One answer two different questions:
 

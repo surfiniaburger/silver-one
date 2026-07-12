@@ -559,6 +559,7 @@ def test_pydantic_validators():
         "recommended_action": "Fix it"
     })
     assert finding.confidence == pytest.approx(0.98)
+    assert finding.reference_principle == ""
     assert finding.evidence.path == "main.py"  # path leading slash lstrip
 
     # 3. Test confidence invalid rejections
@@ -587,11 +588,43 @@ def test_pydantic_validators():
         "engineering_rationale": "  ",
         "engineering_consequence": "",
         "confidence": 0.8,
+        "reference_principle": "  Boundary validation  ",
         "recommended_action": ""
     })
     assert finding_empty.engineering_rationale == ""
     assert finding_empty.engineering_consequence == ""
+    assert finding_empty.reference_principle == "Boundary validation"
     assert finding_empty.recommended_action == ""
+
+    finding_null_principle = EngineeringFinding.model_validate({
+        "title": "Test Finding",
+        "category": "Correctness",
+        "severity": "WARN",
+        "evidence": {
+            "location_type": "code",
+            "path": "main.py",
+            "details": {}
+        },
+        "engineering_rationale": "Some rationale",
+        "engineering_consequence": "Some consequence",
+        "confidence": 0.8,
+        "reference_principle": None,
+        "recommended_action": "Fix it"
+    })
+    assert finding_null_principle.reference_principle == ""
+
+    with pytest.raises(ValidationError):
+        EngineeringFinding.model_validate({
+            "title": "Test Finding",
+            "category": "Correctness",
+            "severity": "WARN",
+            "evidence": {"location_type": "code", "path": "main.py", "details": {}},
+            "engineering_rationale": "Some rationale",
+            "engineering_consequence": "Some consequence",
+            "confidence": 0.8,
+            "reference_principle": 123,
+            "recommended_action": "Fix it"
+        })
 
 
 def test_unit_review_artifact():
@@ -652,6 +685,8 @@ def test_unit_review_artifact():
     assert fields["findings[0].confidence"]["status"] == "REPAIRED"
     assert fields["findings[0].confidence"]["raw_value"] == 95
     assert fields["findings[0].confidence"]["repaired_value"] == pytest.approx(0.95)
+    assert fields["findings[0].reference_principle"]["status"] == "REPAIRED"
+    assert fields["findings[0].reference_principle"]["repaired_value"] == ""
     assert fields["findings[0].evidence.path"]["status"] == "NORMALIZED"
     assert fields["findings[0].evidence.path"]["raw_value"] == "/src/foo.py"
     assert fields["findings[0].evidence.path"]["repaired_value"] == "src/foo.py"
@@ -712,6 +747,7 @@ def test_code_review_breakdown_recovers_common_llm_output_mistakes():
     assert fields["findings[0]"].repair_type == "dropped_invalid_finding"
     # Field indexes refer to the original raw findings list, not the filtered parsed findings list.
     assert fields["findings[1].confidence"].status == "REPAIRED"
+    assert fields["findings[1].reference_principle"].status == "REPAIRED"
     assert fields["findings[1].evidence.path"].status == "NORMALIZED"
     assert context.repaired is True
     assert context.normalized is True
@@ -831,6 +867,7 @@ def test_strict_type_coercion_regressions():
             "engineering_rationale": kwargs.get("engineering_rationale", "Some rationale"),
             "engineering_consequence": kwargs.get("engineering_consequence", "Some consequence"),
             "confidence": confidence_val,
+            "reference_principle": kwargs.get("reference_principle", "Validate inputs at boundaries."),
             "recommended_action": kwargs.get("recommended_action", "Fix it"),
         }
 
@@ -862,6 +899,19 @@ def test_strict_type_coercion_regressions():
     payload_f5 = make_finding_dict(0.8, engineering_rationale="   text   ")
     f5 = EngineeringFinding.model_validate(payload_f5)
     assert f5.engineering_rationale == "text"
+
+    payload_principle = make_finding_dict(0.8, reference_principle="   Boundary validation   ")
+    principle_finding = EngineeringFinding.model_validate(payload_principle)
+    assert principle_finding.reference_principle == "Boundary validation"
+
+    payload_empty_principle = make_finding_dict(0.8, reference_principle=None)
+    empty_principle_finding = EngineeringFinding.model_validate(payload_empty_principle)
+    assert empty_principle_finding.reference_principle == ""
+
+    for invalid in [{}, [], 123, True]:
+        payload_principle_invalid = make_finding_dict(0.8, reference_principle=invalid)
+        with pytest.raises(ValidationError):
+            EngineeringFinding.model_validate(payload_principle_invalid)
 
     # Reject None, {}, [], 123, True for engineering_rationale
     for invalid in [None, {}, [], 123, True]:
@@ -964,6 +1014,11 @@ def test_provenance_consistency():
     assert fields["findings[0].confidence"]["status"] == "REPAIRED"
     assert fields["findings[0].confidence"]["raw_value"] == 95
     assert fields["findings[0].confidence"]["repaired_value"] == pytest.approx(0.95)
+
+    # Verify missing reference principle was repaired to the legacy-compatible default
+    assert fields["findings[0].reference_principle"]["status"] == "REPAIRED"
+    assert fields["findings[0].reference_principle"]["raw_value"] is None
+    assert fields["findings[0].reference_principle"]["repaired_value"] == ""
     
     # Verify path was normalized
     assert fields["findings[0].evidence.path"]["status"] == "NORMALIZED"

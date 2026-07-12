@@ -429,6 +429,16 @@ def _get_provider_runtime_metric(cr_data: Dict[str, Any]) -> Optional[Tuple[str,
     return f"{failures} provider failure(s)", status
 
 
+def _format_finding_confidence(value: Any) -> str:
+    try:
+        confidence = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return "N/A"
+    if confidence < 0.0 or confidence > 1.0:
+        return "N/A"
+    return f"{confidence:.2f}"
+
+
 def _write_metrics_overview(
     f,
     cr_data: Dict[str, Any],
@@ -556,17 +566,23 @@ def _write_cr_findings_table(f, findings: List[Dict[str, Any]]) -> None:
     if not findings:
         return
     f.write("\n##### Structured Engineering Findings\n\n")
-    f.write("| Category | Severity | Finding | Location | Consequence | Recommendation |\n")
-    f.write("|---|---|---|---|---|---|\n")
+    f.write("| Category | Severity | Confidence | Finding | Location | Principle | Consequence | Recommendation |\n")
+    f.write("|---|---|---:|---|---|---|---|---|\n")
     for finding in findings:
         title = _esc(finding.get("title", ""))
         cat = _esc(finding.get("category", ""))
         sev = _esc(finding.get("severity", "INFO"))
+        confidence = _esc(_format_finding_confidence(finding.get("confidence")))
+        principle = _esc(finding.get("reference_principle", ""))
         conseq = _esc(finding.get("engineering_consequence", ""))
         recom = _esc(finding.get("recommended_action", ""))
-        
-        evidence = finding.get("evidence") or {}
-        details = evidence.get("details") or {}
+
+        evidence = finding.get("evidence")
+        if not isinstance(evidence, dict):
+            evidence = {}
+        details = evidence.get("details")
+        if not isinstance(details, dict):
+            details = {}
         start_line = details.get("start_line")
         end_line = details.get("end_line")
         loc = "General"
@@ -574,8 +590,11 @@ def _write_cr_findings_table(f, findings: List[Dict[str, Any]]) -> None:
             loc = f"Lines {start_line}-{end_line}"
         elif start_line is not None:
             loc = f"Line {start_line}"
-            
-        f.write(f"| {cat} | **{sev}** | {title} | {_esc(loc)} | {conseq} | {recom} |\n")
+
+        f.write(
+            f"| {cat} | **{sev}** | {confidence} | {title} | {_esc(loc)} "
+            f"| {principle} | {conseq} | {recom} |\n"
+        )
     f.write("\n")
 
 

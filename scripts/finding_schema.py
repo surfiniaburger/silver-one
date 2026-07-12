@@ -70,6 +70,10 @@ class EngineeringFinding(BaseModel):
         le=1.0,
         description="LLM confidence score from 0.0 to 1.0."
     )
+    reference_principle: str = Field(
+        "",
+        description="Reusable engineering principle that explains the general pattern behind the finding."
+    )
     recommended_action: str = Field(..., description="Concrete steps to resolve the issue.")
 
     @field_validator("confidence", mode="before")
@@ -90,6 +94,15 @@ class EngineeringFinding(BaseModel):
             return val / 100.0
         else:
             raise ValueError("Confidence score is out of bounds.")
+
+    @field_validator("reference_principle", mode="before")
+    @classmethod
+    def validate_reference_principle(cls, v):
+        if v is None:
+            return ""
+        if not isinstance(v, str):
+            raise ValueError("Field must be a string.")
+        return v.strip()
 
     @field_validator("title", "category", "engineering_rationale", "engineering_consequence", "recommended_action", mode="before")
     @classmethod
@@ -256,6 +269,26 @@ def _validate_finding_strings(idx: int, raw_find: Dict[str, Any], parsed_find: A
             status="NORMALIZED",
             raw_value=raw_recom,
             repaired_value=parsed_recom
+        ))
+
+    # Reference principle
+    raw_principle = raw_find.get("reference_principle")
+    parsed_principle = getattr(parsed_find, "reference_principle", "")
+    if raw_principle is None:
+        fields.append(FieldValidation(
+            field_name=f"findings[{idx}].reference_principle",
+            status="REPAIRED",
+            raw_value=None,
+            repaired_value=parsed_principle,
+            repair_type="missing_default",
+            repair_reason="missing reference principle repaired to empty string"
+        ))
+    elif str(raw_principle).strip() != str(raw_principle):
+        fields.append(FieldValidation(
+            field_name=f"findings[{idx}].reference_principle",
+            status="NORMALIZED",
+            raw_value=raw_principle,
+            repaired_value=parsed_principle
         ))
 
 

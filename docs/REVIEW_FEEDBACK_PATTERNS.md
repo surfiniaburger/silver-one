@@ -179,6 +179,9 @@ Preferred pattern:
   labels.
 - Require non-empty summaries.
 - Require `findings: []` when there are no findings.
+- Ask structured findings to include a reusable `reference_principle` when a
+  finding represents a general engineering pattern, not only a one-off local
+  defect.
 - Include complete JSON examples for normal and edge cases.
 - Test prompt examples by parsing them and validating them against the schema.
 
@@ -187,6 +190,8 @@ Avoid:
 - substring-only tests for examples that are meant to be schema contracts,
 - prompt examples that are almost JSON but not valid JSON,
 - adding hidden reasoning fields unless the schema actually supports them.
+- making new finding metadata mandatory for legacy cassettes unless the loader
+  supplies a compatibility default.
 
 ## Test Design
 
