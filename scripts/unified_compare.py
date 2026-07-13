@@ -571,6 +571,8 @@ def _write_cr_findings_table(f, findings: List[Dict[str, Any]]) -> None:
     f.write("| Category | Severity | Confidence | Finding | Location | Principle | Consequence | Recommendation |\n")
     f.write("|---|---|---:|---|---|---|---|---|\n")
     for finding in findings:
+        if not isinstance(finding, dict):
+            continue
         title = _esc(finding.get("title", ""))
         cat = _esc(finding.get("category", ""))
         sev = _esc(finding.get("severity", "INFO"))
