@@ -544,6 +544,7 @@ def test_write_unified_report_with_findings(tmp_path):
                         "engineering_consequence": "Uncaught exceptions will crash the program.",
                         "impact": {"correctness": "MEDIUM"},
                         "confidence": 0.9,
+                        "reference_principle": "Catch parser errors at the boundary before parsing raw strings.",
                         "recommended_action": "Wrap statement in a try-except block."
                     }
                 ]
@@ -563,8 +564,11 @@ def test_write_unified_report_with_findings(tmp_path):
         ),
     )
     assert "##### Structured Engineering Findings" in content
+    assert "| Category | Severity | Confidence | Finding | Location | Principle | Consequence | Recommendation |" in content
     assert "Uncaught ValueError" in content
+    assert "0.90" in content
     assert "Lines 15-20" in content
+    assert "Catch parser errors at the boundary before parsing raw strings." in content
     assert "Uncaught exceptions will crash the program." in content
     assert "Wrap statement in a try-except block." in content
 
