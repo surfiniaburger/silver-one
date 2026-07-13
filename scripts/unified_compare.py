@@ -430,6 +430,8 @@ def _get_provider_runtime_metric(cr_data: Dict[str, Any]) -> Optional[Tuple[str,
 
 
 def _format_finding_confidence(value: Any) -> str:
+    if isinstance(value, bool):
+        return "N/A"
     try:
         confidence = float(value)
     except (TypeError, ValueError, OverflowError):
