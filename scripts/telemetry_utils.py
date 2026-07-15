@@ -129,3 +129,25 @@ def persist_usage_artifacts(
         rel_metrics = metrics_path
     print(f"\033[92mSaved token spend metrics to {rel_metrics}\033[0m")
     return payload
+
+
+def coerce_int(value: Any) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, bool):
+        return 0
+    try:
+        return int(float(value)) if isinstance(value, str) else int(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def coerce_float(value: Any) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, bool):
+        return 0.0
+    try:
+        return float(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0.0

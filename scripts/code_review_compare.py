@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from scripts.path_utils import validate_input_path, validate_output_path
 from scripts.finding_schema import CQIResult
+from scripts.telemetry_utils import coerce_int, coerce_float
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -266,34 +267,12 @@ def determine_verdict(
     return verdict, exit_code, reasons
 
 
-def _coerce_int(value: Any) -> int:
-    if value is None:
-        return 0
-    if isinstance(value, bool):
-        return 0
-    try:
-        return int(float(value)) if isinstance(value, str) else int(value)
-    except (TypeError, ValueError, OverflowError):
-        return 0
-
-
-def _coerce_float(value: Any) -> float:
-    if value is None:
-        return 0.0
-    if isinstance(value, bool):
-        return 0.0
-    try:
-        return float(value)
-    except (TypeError, ValueError, OverflowError):
-        return 0.0
-
-
 def format_token_spend(usage_totals: Dict[str, Any]) -> str:
-    total_tokens = _coerce_int(usage_totals.get("total_tokens"))
-    prompt_tokens = _coerce_int(usage_totals.get("prompt_tokens"))
-    comp_tokens = _coerce_int(usage_totals.get("completion_tokens"))
-    calls = _coerce_int(usage_totals.get("calls"))
-    cost = _coerce_float(usage_totals.get("cost_usd"))
+    total_tokens = coerce_int(usage_totals.get("total_tokens"))
+    prompt_tokens = coerce_int(usage_totals.get("prompt_tokens"))
+    comp_tokens = coerce_int(usage_totals.get("completion_tokens"))
+    calls = coerce_int(usage_totals.get("calls"))
+    cost = coerce_float(usage_totals.get("cost_usd"))
 
     return (
         "**Token spend**: "
