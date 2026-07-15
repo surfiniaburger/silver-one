@@ -430,71 +430,18 @@ def _get_provider_runtime_metric(cr_data: Dict[str, Any]) -> Optional[Tuple[str,
     return f"{failures} provider failure(s)", status
 
 
-def _parse_numeric_confidence_to_literal(val: float) -> str:
-    import math
-    if math.isnan(val):
-        return "MEDIUM"
-    if val > 1.0:
-        val = val / 100.0 if val > 5.0 else val / 5.0
-    if val >= 0.8:
-        return "HIGH"
-    if val >= 0.4:
-        return "MEDIUM"
-    return "LOW"
-
-
-def _parse_fraction_confidence(val_clean: str) -> Optional[float]:
-    import math
-    if "/" not in val_clean:
-        return None
-    parts = val_clean.split("/")
-    if len(parts) != 2:
-        return None
-    try:
-        num = float(parts[0].strip())
-        den = float(parts[1].strip())
-        if not math.isclose(den, 0.0, abs_tol=1e-9):
-            return num / den
-    except ValueError:
-        pass
-    return None
-
-
-def _parse_string_confidence_to_literal(v: str) -> str:
-    val_clean = v.strip().upper()
-    if val_clean in {"LOW", "MEDIUM", "HIGH"}:
-        return val_clean
-    if val_clean in {"CERTAIN", "CRITICAL", "5", "4"}:
-        return "HIGH"
-    if val_clean in {"MEDIUM", "MODERATE", "NORMAL", "3"}:
-        return "MEDIUM"
-    if val_clean in {"WEAK", "POOR", "2", "1"}:
-        return "LOW"
-
-    if val_clean.endswith("%"):
-        val_clean = val_clean[:-1].strip()
-
-    frac = _parse_fraction_confidence(val_clean)
-    if frac is not None:
-        return _parse_numeric_confidence_to_literal(frac)
-
-    try:
-        return _parse_numeric_confidence_to_literal(float(val_clean))
-    except ValueError:
-        return val_clean
-
-
 def _format_finding_confidence(value: Any) -> str:
     if value is None or isinstance(value, bool):
         return "N/A"
 
+    from scripts.finding_schema import _parse_numeric_confidence, _parse_string_confidence
     if isinstance(value, (int, float)):
-        return _parse_numeric_confidence_to_literal(float(value))
+        return _parse_numeric_confidence(float(value))
 
     if isinstance(value, str):
-        return _parse_string_confidence_to_literal(value)
+        return _parse_string_confidence(value)
 
-    return str(value)
+    return "MEDIUM"
 
 
 def _write_metrics_overview(
