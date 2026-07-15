@@ -360,6 +360,23 @@ Boundary examples:
 - Internal programming error: raise a clear exception.
 - Report rendering: degrade gracefully and explain missing data.
 
+## Floating Point Comparisons
+
+Sonar flags direct equality checks on floating point numbers (e.g., `val == 0.0` or `val != 0.0`) due to precision limits in IEEE 754 representations.
+
+Preferred pattern:
+
+- Use `math.isclose` with a defined tolerance when checking for float closeness/equality.
+
+Example:
+
+```python
+import math
+
+if not math.isclose(den, 0.0, abs_tol=1e-9):
+    val = num / den
+```
+
 ## When Not To Apply Feedback
 
 Some automated comments are useful but generic. Others are simply wrong for the
@@ -391,3 +408,4 @@ Before merging evaluator, report, or structured-output changes, ask:
 - Are repeated lookups indexed where scale matters?
 - Is policy separate from calculation?
 - Is any regex parsing something that should be delimiter-based or schema-based?
+- Are floating point equality checks avoided by using `math.isclose`?

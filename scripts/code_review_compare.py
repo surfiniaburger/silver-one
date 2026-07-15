@@ -266,14 +266,42 @@ def determine_verdict(
     return verdict, exit_code, reasons
 
 
+def _coerce_int(value: Any) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, bool):
+        return 0
+    try:
+        return int(float(value)) if isinstance(value, str) else int(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def _coerce_float(value: Any) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, bool):
+        return 0.0
+    try:
+        return float(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0.0
+
+
 def format_token_spend(usage_totals: Dict[str, Any]) -> str:
+    total_tokens = _coerce_int(usage_totals.get("total_tokens"))
+    prompt_tokens = _coerce_int(usage_totals.get("prompt_tokens"))
+    comp_tokens = _coerce_int(usage_totals.get("completion_tokens"))
+    calls = _coerce_int(usage_totals.get("calls"))
+    cost = _coerce_float(usage_totals.get("cost_usd"))
+
     return (
         "**Token spend**: "
-        f"{int(usage_totals.get('total_tokens') or 0)} total tokens "
-        f"({int(usage_totals.get('prompt_tokens') or 0)} prompt, "
-        f"{int(usage_totals.get('completion_tokens') or 0)} completion) "
-        f"across {int(usage_totals.get('calls') or 0)} LLM call(s); "
-        f"estimated cost ${float(usage_totals.get('cost_usd') or 0.0):.6f}\n\n"
+        f"{total_tokens} total tokens "
+        f"({prompt_tokens} prompt, "
+        f"{comp_tokens} completion) "
+        f"across {calls} LLM call(s); "
+        f"estimated cost ${cost:.6f}\n\n"
     )
 
 

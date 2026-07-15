@@ -543,7 +543,7 @@ def test_pydantic_validators():
     prop_percent = PropertyEvaluation.model_validate({"score": 85, "rationale": "Ok"})
     assert prop_percent.score == pytest.approx(8.5)
 
-    # 2. Test confidence parsing (98 -> 0.98)
+    # 2. Test confidence parsing (98 -> "HIGH")
     finding = EngineeringFinding.model_validate({
         "title": "Test Finding",
         "category": "Correctness",
@@ -558,22 +558,22 @@ def test_pydantic_validators():
         "confidence": 98,
         "recommended_action": "Fix it"
     })
-    assert finding.confidence == pytest.approx(0.98)
+    assert finding.confidence == "HIGH"
     assert finding.reference_principle == ""
     assert finding.evidence.path == "main.py"  # path leading slash lstrip
 
-    # 3. Test confidence invalid rejections
-    with pytest.raises(ValidationError):
-        EngineeringFinding.model_validate({
-            "title": "Test Finding",
-            "category": "Correctness",
-            "severity": "WARN",
-            "evidence": {"location_type": "code", "path": "main.py", "details": {}},
-            "engineering_rationale": "Some rationale",
-            "engineering_consequence": "Some consequence",
-            "confidence": "banana",
-            "recommended_action": "Fix it"
-        })
+    # 3. Test confidence fallback/repairs (returns MEDIUM)
+    finding_banana = EngineeringFinding.model_validate({
+        "title": "Test Finding",
+        "category": "Correctness",
+        "severity": "WARN",
+        "evidence": {"location_type": "code", "path": "main.py", "details": {}},
+        "engineering_rationale": "Some rationale",
+        "engineering_consequence": "Some consequence",
+        "confidence": "banana",
+        "recommended_action": "Fix it"
+    })
+    assert finding_banana.confidence == "MEDIUM"
 
     # 4. Test empty strings are preserved (not fabricated)
     finding_empty = EngineeringFinding.model_validate({
@@ -587,7 +587,7 @@ def test_pydantic_validators():
         },
         "engineering_rationale": "  ",
         "engineering_consequence": "",
-        "confidence": 0.8,
+        "confidence": "MEDIUM",
         "reference_principle": "  Boundary validation  ",
         "recommended_action": ""
     })
@@ -607,7 +607,7 @@ def test_pydantic_validators():
         },
         "engineering_rationale": "Some rationale",
         "engineering_consequence": "Some consequence",
-        "confidence": 0.8,
+        "confidence": "MEDIUM",
         "reference_principle": None,
         "recommended_action": "Fix it"
     })
@@ -621,7 +621,7 @@ def test_pydantic_validators():
             "evidence": {"location_type": "code", "path": "main.py", "details": {}},
             "engineering_rationale": "Some rationale",
             "engineering_consequence": "Some consequence",
-            "confidence": 0.8,
+            "confidence": "MEDIUM",
             "reference_principle": 123,
             "recommended_action": "Fix it"
         })
@@ -684,7 +684,7 @@ def test_unit_review_artifact():
     fields = {f["field_name"]: f for f in dumped["validation"]["fields"]}
     assert fields["findings[0].confidence"]["status"] == "REPAIRED"
     assert fields["findings[0].confidence"]["raw_value"] == 95
-    assert fields["findings[0].confidence"]["repaired_value"] == pytest.approx(0.95)
+    assert fields["findings[0].confidence"]["repaired_value"] == "HIGH"
     assert fields["findings[0].reference_principle"]["status"] == "REPAIRED"
     assert fields["findings[0].reference_principle"]["repaired_value"] == ""
     assert fields["findings[0].evidence.path"]["status"] == "NORMALIZED"
@@ -799,7 +799,7 @@ def test_code_review_breakdown_preserves_prebuilt_findings():
     assert breakdown.findings[0] == prebuilt_finding
     assert isinstance(breakdown.findings[1], EngineeringFinding)
     assert breakdown.findings[1].title == "Dictionary finding"
-    assert breakdown.findings[1].confidence == pytest.approx(0.9)
+    assert breakdown.findings[1].confidence == "HIGH"
 
     context = build_validation_context(raw_dict, breakdown)
     dropped_fields = [
@@ -874,21 +874,21 @@ def test_strict_type_coercion_regressions():
     # Accept 0.7, "0.7", 95
     payload_f1 = make_finding_dict(0.7)
     f1 = EngineeringFinding.model_validate(payload_f1)
-    assert f1.confidence == pytest.approx(0.7)
+    assert f1.confidence == "MEDIUM"
     
     payload_f2 = make_finding_dict("0.7")
     f2 = EngineeringFinding.model_validate(payload_f2)
-    assert f2.confidence == pytest.approx(0.7)
+    assert f2.confidence == "MEDIUM"
     
     payload_f3 = make_finding_dict(95)
     f3 = EngineeringFinding.model_validate(payload_f3)
-    assert f3.confidence == pytest.approx(0.95)
+    assert f3.confidence == "HIGH"
 
-    # Reject True, False, None, [], {}, "banana"
+    # Coerce/repair True, False, None, [], {}, "banana" to MEDIUM
     for invalid in [True, False, None, [], {}, "banana"]:
         payload_invalid = make_finding_dict(invalid)
-        with pytest.raises(ValidationError):
-            EngineeringFinding.model_validate(payload_invalid)
+        f_invalid = EngineeringFinding.model_validate(payload_invalid)
+        assert f_invalid.confidence == "MEDIUM"
 
     # --- Engineering text fields tests ---
     # Accept "" and "   text   " -> "text"
@@ -998,8 +998,8 @@ def test_provenance_consistency():
     dumped = artifact.model_dump()
     assert dumped["raw_response"] == raw_json_str
     
-    # Check that confidence was repaired to 0.95
-    assert dumped["review"]["findings"][0]["confidence"] == pytest.approx(0.95)
+    # Check that confidence was repaired to HIGH
+    assert dumped["review"]["findings"][0]["confidence"] == "HIGH"
     
     # Check that evidence path was normalized
     assert dumped["review"]["findings"][0]["evidence"]["path"] == "src/foo.py"
@@ -1013,7 +1013,7 @@ def test_provenance_consistency():
     # Verify confidence was repaired
     assert fields["findings[0].confidence"]["status"] == "REPAIRED"
     assert fields["findings[0].confidence"]["raw_value"] == 95
-    assert fields["findings[0].confidence"]["repaired_value"] == pytest.approx(0.95)
+    assert fields["findings[0].confidence"]["repaired_value"] == "HIGH"
 
     # Verify missing reference principle was repaired to the legacy-compatible default
     assert fields["findings[0].reference_principle"]["status"] == "REPAIRED"
@@ -1046,7 +1046,7 @@ def test_telemetry_aggregation():
                 "repaired": True,
                 "normalized": True,
                 "fields": [
-                    {"field_name": "findings[0].confidence", "status": "REPAIRED", "raw_value": 95, "repaired_value": 0.95},
+                    {"field_name": "findings[0].confidence", "status": "REPAIRED", "raw_value": 95, "repaired_value": "HIGH"},
                     {"field_name": "findings[0].evidence.path", "status": "NORMALIZED", "raw_value": "/a.py", "repaired_value": "a.py"},
                     {"field_name": "readability.rationale", "status": "NORMALIZED", "raw_value": "  foo  ", "repaired_value": "foo"},
                     {
@@ -1116,7 +1116,7 @@ def test_validation_summary_terminal_states_are_exclusive():
         "field_name": "findings[0].confidence",
         "status": "REPAIRED",
         "raw_value": 95,
-        "repaired_value": 0.95,
+        "repaired_value": "HIGH",
     }
     normalized_field = {
         "field_name": "findings[0].evidence.path",
@@ -1291,3 +1291,93 @@ async def test_evaluate_units_marks_provider_error_recoverable(monkeypatch):
     assert results[0]["provider_error"]["recoverable"] is True
     assert results[0]["recoverable_failure"]["type"] == "provider_error"
     assert "llama-server process has terminated" in results[0]["provider_error"]["message"]
+
+
+def test_build_validation_context_handles_non_dict_defensively():
+    from scripts.finding_schema import build_validation_context
+    from scripts.code_review_evaluator import CodeReviewBreakdown
+    # Create a simple valid breakdown
+    breakdown = CodeReviewBreakdown.model_validate({
+        "readability": {"score": 8, "rationale": "ok"},
+        "maintainability": {"score": 8, "rationale": "ok"},
+        "correctness": {"score": 8, "rationale": "ok"},
+        "complexity": {"score": 8, "rationale": "ok"},
+        "security": {"score": 8, "rationale": "ok"},
+        "test_coverage": {"score": 8, "rationale": "ok"},
+        "summary": "ok",
+        "severity": "OK",
+    })
+    
+    # Verify non-dict inputs do not raise Exceptions
+    for invalid in [None, [], "string", 123]:
+        context = build_validation_context(invalid, breakdown)
+        assert context.repaired is True  # Since summary/severity are repaired from default
+        assert len(context.fields) > 0
+
+
+def test_confidence_advanced_parsing_rules():
+    from scripts.finding_schema import EngineeringFinding
+    
+    # 1. Percentages
+    f_percent = EngineeringFinding.model_validate({
+        "title": "Test Finding",
+        "category": "Correctness",
+        "severity": "WARN",
+        "evidence": {"location_type": "code", "path": "main.py", "details": {}},
+        "engineering_rationale": "Some rationale",
+        "engineering_consequence": "Some consequence",
+        "confidence": "85%",
+        "recommended_action": "Fix it"
+    })
+    assert f_percent.confidence == "HIGH"
+
+    # 2. Fractions
+    f_fraction = EngineeringFinding.model_validate({
+        "title": "Test Finding",
+        "category": "Correctness",
+        "severity": "WARN",
+        "evidence": {"location_type": "code", "path": "main.py", "details": {}},
+        "engineering_rationale": "Some rationale",
+        "engineering_consequence": "Some consequence",
+        "confidence": "4/5",
+        "recommended_action": "Fix it"
+    })
+    assert f_fraction.confidence == "HIGH"
+    
+    # 3. NaN values
+    f_nan_str = EngineeringFinding.model_validate({
+        "title": "Test Finding",
+        "category": "Correctness",
+        "severity": "WARN",
+        "evidence": {"location_type": "code", "path": "main.py", "details": {}},
+        "engineering_rationale": "Some rationale",
+        "engineering_consequence": "Some consequence",
+        "confidence": "nan",
+        "recommended_action": "Fix it"
+    })
+    assert f_nan_str.confidence == "MEDIUM"
+
+    f_nan_float = EngineeringFinding.model_validate({
+        "title": "Test Finding",
+        "category": "Correctness",
+        "severity": "WARN",
+        "evidence": {"location_type": "code", "path": "main.py", "details": {}},
+        "engineering_rationale": "Some rationale",
+        "engineering_consequence": "Some consequence",
+        "confidence": float("nan"),
+        "recommended_action": "Fix it"
+    })
+    assert f_nan_float.confidence == "MEDIUM"
+
+
+def test_format_unit_handles_missing_keys_defensively():
+    # Empty unit dict
+    res = code_review_evaluator.format_unit({})
+    assert "File: unknown" in res
+    assert "Unit: unknown" in res
+    assert "Line range: 0 - 0" in res
+    assert "Lines changed: 0" in res
+
+    # None input
+    res_none = code_review_evaluator.format_unit(None)
+    assert "File: unknown" in res_none

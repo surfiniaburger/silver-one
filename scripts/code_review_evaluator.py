@@ -165,7 +165,7 @@ Each finding must include:
 - engineering_rationale
 - engineering_consequence
 - impact with correctness, compatibility, security, maintainability, and performance values
-- confidence as a JSON number from 0.0 to 1.0
+- confidence as a JSON string: "LOW", "MEDIUM", or "HIGH" (representing reviewer certainty in the finding)
 - reference_principle as a reusable engineering principle behind the finding
 - recommended_action
 Use concrete names, line ranges, variables, or branches from the reviewed unit when possible.
@@ -230,7 +230,7 @@ Return one JSON object with this exact top-level shape:
       "engineering_rationale": "The function computes a result without first proving that each input item has the expected shape.",
       "engineering_consequence": "Unexpected input can produce misleading metrics instead of a clear recoverable failure.",
       "impact": {"correctness": "MEDIUM", "compatibility": "LOW", "security": "NONE", "maintainability": "MEDIUM", "performance": "NONE"},
-      "confidence": 0.82,
+      "confidence": "HIGH",
       "reference_principle": "Validate JSON-derived object shapes before computing metrics from them.",
       "recommended_action": "Validate input item types before computing the result and add a regression test."
     }
@@ -351,15 +351,23 @@ def build_review_coverage(
 
 
 def format_unit(unit: Dict[str, Any]) -> str:
+    if not isinstance(unit, dict):
+        unit = {}
     class_info = f" (in Class {unit['class_name']})" if unit.get("class_name") else ""
-    return f"""File: {unit['file_path']}
-Unit: {unit['name']}{class_info}
-Line range: {unit['start_line']} - {unit['end_line']}
-Lines changed: {unit['lines_changed']}
+    file_path = unit.get("file_path", "unknown")
+    name = unit.get("name", "unknown")
+    start_line = unit.get("start_line", 0)
+    end_line = unit.get("end_line", 0)
+    lines_changed = unit.get("lines_changed", 0)
+    code = unit.get("code", "")
+    return f"""File: {file_path}
+Unit: {name}{class_info}
+Line range: {start_line} - {end_line}
+Lines changed: {lines_changed}
 
 Code:
 ```python
-{unit['code']}
+{code}
 ```
 """
 
@@ -571,8 +579,10 @@ async def evaluate_units(
     print(f"\033[94mEvaluating {len(units)} code units...\033[0m")
 
     for i, unit in enumerate(units, 1):
-        name = unit["name"]
-        file_path = unit["file_path"]
+        if not isinstance(unit, dict):
+            unit = {}
+        name = unit.get("name", "unknown")
+        file_path = unit.get("file_path", "unknown")
         class_name = unit.get("class_name")
         print(f"[{i}/{len(units)}] Reviewing {name} in {file_path}")
 

@@ -225,16 +225,38 @@ def get_code_review_validation_summary(cassette: Dict[str, Any]) -> Dict[str, An
     return validation
 
 
+def _coerce_int(value: Any) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, bool):
+        return 0
+    try:
+        return int(float(value)) if isinstance(value, str) else int(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def _coerce_float(value: Any) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, bool):
+        return 0.0
+    try:
+        return float(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0.0
+
+
 def combine_token_spend(cr_cassette: Dict[str, Any], farley_cassette: Dict[str, Any]) -> str:
     """Summarize total token spend across both Code Review and Farley runs."""
     cr_totals = get_token_totals(cr_cassette, "code_review_usage_summary")
     farley_totals = get_token_totals(farley_cassette, "farley_usage_summary")
 
-    total_tokens = int((cr_totals.get("total_tokens") or 0) + (farley_totals.get("total_tokens") or 0))
-    prompt_tokens = int((cr_totals.get("prompt_tokens") or 0) + (farley_totals.get("prompt_tokens") or 0))
-    comp_tokens = int((cr_totals.get("completion_tokens") or 0) + (farley_totals.get("completion_tokens") or 0))
-    calls = int((cr_totals.get("calls") or 0) + (farley_totals.get("calls") or 0))
-    cost = float((cr_totals.get("cost_usd") or 0.0) + (farley_totals.get("cost_usd") or 0.0))
+    total_tokens = _coerce_int(cr_totals.get("total_tokens")) + _coerce_int(farley_totals.get("total_tokens"))
+    prompt_tokens = _coerce_int(cr_totals.get("prompt_tokens")) + _coerce_int(farley_totals.get("prompt_tokens"))
+    comp_tokens = _coerce_int(cr_totals.get("completion_tokens")) + _coerce_int(farley_totals.get("completion_tokens"))
+    calls = _coerce_int(cr_totals.get("calls")) + _coerce_int(farley_totals.get("calls"))
+    cost = _coerce_float(cr_totals.get("cost_usd")) + _coerce_float(farley_totals.get("cost_usd"))
 
     if total_tokens == 0:
         return "**Token spend**: 0 total tokens (all replayed via cassettes)\n\n"
@@ -429,16 +451,71 @@ def _get_provider_runtime_metric(cr_data: Dict[str, Any]) -> Optional[Tuple[str,
     return f"{failures} provider failure(s)", status
 
 
-def _format_finding_confidence(value: Any) -> str:
-    if isinstance(value, bool):
-        return "N/A"
+def _parse_numeric_confidence_to_literal(val: float) -> str:
+    import math
+    if math.isnan(val):
+        return "MEDIUM"
+    if val > 1.0:
+        val = val / 100.0 if val > 5.0 else val / 5.0
+    if val >= 0.8:
+        return "HIGH"
+    if val >= 0.4:
+        return "MEDIUM"
+    return "LOW"
+
+
+def _parse_fraction_confidence(val_clean: str) -> Optional[float]:
+    import math
+    if "/" not in val_clean:
+        return None
+    parts = val_clean.split("/")
+    if len(parts) != 2:
+        return None
     try:
-        confidence = float(value)
-    except (TypeError, ValueError, OverflowError):
+        num = float(parts[0].strip())
+        den = float(parts[1].strip())
+        if not math.isclose(den, 0.0, abs_tol=1e-9):
+            return num / den
+    except ValueError:
+        pass
+    return None
+
+
+def _parse_string_confidence_to_literal(v: str) -> str:
+    val_clean = v.strip().upper()
+    if val_clean in {"LOW", "MEDIUM", "HIGH"}:
+        return val_clean
+    if val_clean in {"CERTAIN", "CRITICAL", "5", "4"}:
+        return "HIGH"
+    if val_clean in {"MEDIUM", "MODERATE", "NORMAL", "3"}:
+        return "MEDIUM"
+    if val_clean in {"WEAK", "POOR", "2", "1"}:
+        return "LOW"
+
+    if val_clean.endswith("%"):
+        val_clean = val_clean[:-1].strip()
+
+    frac = _parse_fraction_confidence(val_clean)
+    if frac is not None:
+        return _parse_numeric_confidence_to_literal(frac)
+
+    try:
+        return _parse_numeric_confidence_to_literal(float(val_clean))
+    except ValueError:
+        return val_clean
+
+
+def _format_finding_confidence(value: Any) -> str:
+    if value is None or isinstance(value, bool):
         return "N/A"
-    if confidence < 0.0 or confidence > 1.0:
-        return "N/A"
-    return f"{confidence:.2f}"
+
+    if isinstance(value, (int, float)):
+        return _parse_numeric_confidence_to_literal(float(value))
+
+    if isinstance(value, str):
+        return _parse_string_confidence_to_literal(value)
+
+    return str(value)
 
 
 def _write_metrics_overview(
