@@ -170,12 +170,16 @@ def calculate_confidence_distribution(cr_units: List[Dict[str, Any]]) -> Dict[st
             if not isinstance(finding, dict):
                 continue
             conf = finding.get("confidence")
-            formatted_conf = _format_finding_confidence(conf)
-            if formatted_conf in {"HIGH", "MEDIUM", "LOW"}:
-                counts[formatted_conf] += 1
+            if isinstance(conf, (str, int, float)) and not isinstance(conf, bool):
+                formatted_conf = _format_finding_confidence(conf)
+                if formatted_conf in {"HIGH", "MEDIUM", "LOW"}:
+                    counts[formatted_conf] += 1
+                else:
+                    counts["UNKNOWN"] += 1
             else:
                 counts["UNKNOWN"] += 1
     return counts
+
 
 ```
 

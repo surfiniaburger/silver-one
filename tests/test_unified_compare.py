@@ -919,7 +919,7 @@ def test_calculate_confidence_distribution_malformed_and_non_confidence():
 
     # "banana" is a malformed string confidence, normalized to "MEDIUM"
     # "85%" is normalized to "HIGH"
-    # None and True/False are non-confidence values, counted as UNKNOWN
+    # None, True/False, and non-scalar types (dict, list) are counted as UNKNOWN
     units = [
         {
             "review": {
@@ -928,6 +928,8 @@ def test_calculate_confidence_distribution_malformed_and_non_confidence():
                     {"confidence": "85%"},     # -> HIGH (normalized)
                     {"confidence": None},      # -> N/A (UNKNOWN)
                     {"confidence": False},     # -> N/A (UNKNOWN)
+                    {"confidence": {"nested": "value"}},  # -> UNKNOWN (non-scalar type)
+                    {"confidence": [1, 2]},               # -> UNKNOWN (non-scalar type)
                 ]
             }
         }
@@ -937,9 +939,10 @@ def test_calculate_confidence_distribution_malformed_and_non_confidence():
         "HIGH": 1,
         "MEDIUM": 1,
         "LOW": 0,
-        "UNKNOWN": 2
+        "UNKNOWN": 4
     }
     assert calculate_confidence_distribution(units) == expected
+
 
 
 
