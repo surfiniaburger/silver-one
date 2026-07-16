@@ -454,6 +454,15 @@ def _extract_unit_findings(unit: Dict[str, Any]) -> List[Dict[str, Any]]:
     return findings if isinstance(findings, list) else []
 
 
+def _classify_finding_confidence(finding: Dict[str, Any]) -> str:
+    conf = finding.get("confidence")
+    if isinstance(conf, (str, int, float)) and not isinstance(conf, bool):
+        formatted_conf = _format_finding_confidence(conf)
+        if formatted_conf in {"HIGH", "MEDIUM", "LOW"}:
+            return formatted_conf
+    return "UNKNOWN"
+
+
 def calculate_confidence_distribution(cr_units: List[Dict[str, Any]]) -> Dict[str, int]:
     counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0, "UNKNOWN": 0}
     if not isinstance(cr_units, list):
@@ -463,16 +472,10 @@ def calculate_confidence_distribution(cr_units: List[Dict[str, Any]]) -> Dict[st
         for finding in findings:
             if not isinstance(finding, dict):
                 continue
-            conf = finding.get("confidence")
-            if isinstance(conf, (str, int, float)) and not isinstance(conf, bool):
-                formatted_conf = _format_finding_confidence(conf)
-                if formatted_conf in {"HIGH", "MEDIUM", "LOW"}:
-                    counts[formatted_conf] += 1
-                else:
-                    counts["UNKNOWN"] += 1
-            else:
-                counts["UNKNOWN"] += 1
+            category = _classify_finding_confidence(finding)
+            counts[category] += 1
     return counts
+
 
 
 
