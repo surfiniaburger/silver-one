@@ -15,7 +15,7 @@ graph TD
 ```
 
 - **PR 1 (Completed)**: Added `reference_principle` to `EngineeringFinding`, ensuring backward-compatible parsing and schema validation.
-- **PR 2 (Next)**: Transition the `confidence` field in `EngineeringFinding` to a structured categorical type (`"LOW" | "MEDIUM" | "HIGH"`), and implement robust normalization/repair logic.
+- **PR 2 (Completed)**: Transitioned the `confidence` field in `EngineeringFinding` to a structured categorical type (`"LOW" | "MEDIUM" | "HIGH"`), and implemented robust normalization/repair logic.
 - **PR 3**: Aggregate and report the distribution of finding confidence levels in the unified quality report.
 - **PR 4**: Map finding confidence to human developer outcomes (acceptance/rejection) and compute empirical calibration metrics.
 
@@ -25,6 +25,23 @@ graph TD
 
 ### Goal
 Define confidence as a categorical label (`Literal["LOW", "MEDIUM", "HIGH"]`) and implement validators to clean up numeric values, non-standard strings, and null inputs.
+
+### Current Status
+
+Implemented in `scripts/finding_schema.py` and reused by
+`scripts/unified_compare.py` during report rendering. The parser accepts:
+
+- categorical labels: `LOW`, `MEDIUM`, `HIGH`
+- synonyms such as `certain`, `moderate`, `weak`
+- numeric scores on 0.0-1.0, 1-5, and percentage-like scales
+- percentage strings such as `85%`
+- fraction strings such as `4/5`
+- malformed or missing values, which fall back to `MEDIUM`
+
+Validation telemetry records missing, boolean, numeric, non-categorical string,
+and invalid-type confidence values as repaired fields. Categorical values that
+only differ by surrounding whitespace or case are normalized rather than treated
+as invalid review output.
 
 ### 1. Schema Modifications
 

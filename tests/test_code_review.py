@@ -116,6 +116,7 @@ def test_code_review_system_prompt_uses_structured_contract_sections():
         "task",
         "context",
         "dimensions",
+        "review_rubric",
         "scoring_rules",
         "severity_rules",
         "finding_rules",
@@ -155,6 +156,41 @@ def test_code_review_system_prompt_reinforces_schema_compliance():
     assert "summary MUST be a non-empty string" in prompt
     assert "Output ONLY the JSON object for CodeReviewBreakdown." in prompt
     assert "Do not wrap the JSON in markdown." in prompt
+
+
+def test_code_review_system_prompt_calibrates_block_severity_to_merge_blockers():
+    severity_rules = code_review_evaluator.SYSTEM_PROMPT[
+        code_review_evaluator.SYSTEM_PROMPT.index("<severity_rules>"):
+        code_review_evaluator.SYSTEM_PROMPT.index("</severity_rules>")
+    ]
+
+    assert "Use BLOCK only for concrete merge-blocking issues" in severity_rules
+    assert "correctness bug" in severity_rules
+    assert "false CI result" in severity_rules
+    assert "broken schema or report contract" in severity_rules
+    assert "unsafe behavior" in severity_rules
+    assert "missing validation at a real input boundary" in severity_rules
+    assert "Coupling, missing docstrings, helper extraction, and repeated literals are WARN" in severity_rules
+
+
+def test_code_review_system_prompt_embeds_boundary_first_review_rubric():
+    prompt = code_review_evaluator.SYSTEM_PROMPT
+    rubric = prompt[
+        prompt.index("<review_rubric>"):
+        prompt.index("</review_rubric>")
+    ]
+
+    assert "REVIEW_FEEDBACK_PATTERNS.md" not in prompt
+    assert "input boundaries" in rubric
+    assert "compatibility contracts" in rubric
+    assert "structured-output reliability" in rubric
+    assert "telemetry" in rubric
+    assert "recoverability" in rubric
+    assert "security" in rubric
+    assert "proven test fragility" in rubric
+    assert "Downgrade generic style, docstring-only, helper-extraction, repeated-literal, or broad coupling feedback" in rubric
+    assert "exact string assertions" in rubric
+    assert "public report output" in rubric
 
 
 def test_code_review_system_prompt_includes_complete_json_examples():
@@ -420,7 +456,7 @@ def test_code_review_block_requires_structured_block_finding():
         "review": {
             "severity": "BLOCK",
             "summary": "Critical issue",
-            "findings": [{"severity": "BLOCK"}],
+            "findings": [block_finding()],
         }
     }
 
@@ -431,6 +467,133 @@ def test_code_review_block_requires_structured_block_finding():
 
     assert block_units == [supported_block]
     assert warn_units == [unsupported_block]
+    assert ok_units == []
+
+
+def block_finding(**overrides):
+    finding = {
+        "title": "Merge-blocking issue",
+        "category": "Correctness",
+        "severity": "BLOCK",
+        "evidence": {
+            "location_type": "code",
+            "path": "provided unit",
+            "details": {"function_name": "reviewed_unit"},
+        },
+        "engineering_rationale": "The unit can produce a false CI result.",
+        "engineering_consequence": "The quality gate can pass broken report output.",
+        "impact": {
+            "correctness": "HIGH",
+            "compatibility": "NONE",
+            "security": "NONE",
+            "maintainability": "LOW",
+            "performance": "NONE",
+        },
+        "confidence": "HIGH",
+        "reference_principle": "Do not let malformed CI artifacts produce false quality results.",
+        "recommended_action": "Validate the input before rendering the report lane.",
+    }
+    finding.update(overrides)
+    return finding
+
+
+def review_with_block_finding(finding):
+    return {"review": {"severity": "BLOCK", "summary": "Issue found", "findings": [finding]}}
+
+
+def test_missing_docstring_only_is_warn_not_block():
+    unit = review_with_block_finding(block_finding(
+        title="Missing docstring on helper",
+        category="Readability",
+        engineering_rationale="The helper would be easier to understand with a short docstring.",
+        engineering_consequence="New contributors may need to read the helper body.",
+        impact={
+            "correctness": "NONE",
+            "compatibility": "NONE",
+            "security": "NONE",
+            "maintainability": "LOW",
+            "performance": "NONE",
+        },
+        reference_principle="Document non-obvious helpers when the contract is not clear.",
+        recommended_action="Add a short docstring.",
+    ))
+
+    block_units, warn_units, ok_units = code_review_compare.group_units_by_severity([unit])
+
+    assert block_units == []
+    assert warn_units == [unit]
+    assert ok_units == []
+
+
+def test_report_contract_string_assertions_are_warn_not_block():
+    unit = review_with_block_finding(block_finding(
+        title="Exact string assertions couple the test to report wording",
+        category="Maintainability",
+        engineering_rationale="The test checks rendered markdown strings from the report contract.",
+        engineering_consequence="Future wording changes may require updating assertions.",
+        impact={
+            "correctness": "NONE",
+            "compatibility": "NONE",
+            "security": "NONE",
+            "maintainability": "MEDIUM",
+            "performance": "NONE",
+        },
+        reference_principle="Exact report assertions are acceptable when they protect public markdown behavior.",
+        recommended_action="Keep exact assertions for public lane output and avoid asserting incidental formatting.",
+    ))
+
+    block_units, warn_units, ok_units = code_review_compare.group_units_by_severity([unit])
+
+    assert block_units == []
+    assert warn_units == [unit]
+    assert ok_units == []
+
+
+def test_malformed_cassette_handling_bug_is_block():
+    unit = review_with_block_finding(block_finding(
+        title="Malformed cassette can produce a false CI result",
+        category="Correctness",
+        engineering_rationale="The report reads nested cassette fields without validating the object shape.",
+        engineering_consequence="A malformed cassette can make the unified report show a passing lane incorrectly.",
+        impact={
+            "correctness": "HIGH",
+            "compatibility": "LOW",
+            "security": "NONE",
+            "maintainability": "MEDIUM",
+            "performance": "NONE",
+        },
+        reference_principle="Validate JSON-derived object shapes before computing CI metrics.",
+        recommended_action="Reject or default malformed cassette fields before computing the lane status.",
+    ))
+
+    block_units, warn_units, ok_units = code_review_compare.group_units_by_severity([unit])
+
+    assert block_units == [unit]
+    assert warn_units == []
+    assert ok_units == []
+
+
+def test_broken_report_lane_status_is_block():
+    unit = review_with_block_finding(block_finding(
+        title="Broken report lane status can fail the wrong gate",
+        category="Report Contract",
+        engineering_rationale="The unified report maps final structured-output failures to PASS.",
+        engineering_consequence="The PR can display a false CI result and merge despite a failed evaluator lane.",
+        impact={
+            "correctness": "HIGH",
+            "compatibility": "MEDIUM",
+            "security": "NONE",
+            "maintainability": "MEDIUM",
+            "performance": "NONE",
+        },
+        reference_principle="Report lanes must preserve evaluator failure states exactly.",
+        recommended_action="Render final structured-output failures as a failing lane status.",
+    ))
+
+    block_units, warn_units, ok_units = code_review_compare.group_units_by_severity([unit])
+
+    assert block_units == [unit]
+    assert warn_units == []
     assert ok_units == []
 
 

@@ -44,6 +44,7 @@ def render_unified_report(
     review_coverage=None,
     validation_summary=None,
 ):
+    """Render the public unified report markdown with explicit test defaults."""
     out_file = tmp_path / "report.md"
     write_unified_report(
         out_path=out_file,

@@ -220,6 +220,37 @@ def test_write_unified_report_displays_baseline_state(tmp_path):
     )
 ```
 
+## Unified Report Test Fixtures
+
+The unified report is a public markdown contract, so exact string assertions
+are appropriate when they protect lane names, metric wording, table columns, or
+fallback labels. The brittle part is not the presence of string assertions; it
+is repeating setup and expected phrases without naming the report behavior under
+test.
+
+Preferred pattern:
+
+- Keep one local helper, such as `render_unified_report(...)`, for constructing
+  report fixtures with explicit default cassettes.
+- Give that helper a docstring that states it renders the public markdown
+  contract and returns the file content for assertions.
+- Name important expected report fragments once in the test when a phrase is
+  reused or represents a domain rule.
+- Use exact table-row assertions for public lane output.
+- Use focused substring assertions for detailed sections where the surrounding
+  markdown is not the behavior under test.
+- Add malformed-input cases to the helper defaults instead of creating separate
+  ad hoc report writers.
+
+Avoid:
+
+- mocking `write_unified_report(...)` in tests whose purpose is to verify the
+  rendered report,
+- extracting all report strings into global constants before they represent a
+  stable public contract,
+- relying on incidental formatting outside the lane, table, or fallback being
+  tested.
+
 ## Avoid Incidental Constants
 
 Prompt size, token estimates, and fixture text lengths are easy to bake into
@@ -420,3 +451,5 @@ Before merging evaluator, report, or structured-output changes, ask:
 - Is any regex parsing something that should be delimiter-based or schema-based?
 - Are floating point equality checks avoided by using `math.isclose`?
 - Are duplicate utility helpers avoided by centralizing them into shared modules (like `telemetry_utils`) or importing them from the source schema?
+- Do report-rendering tests document the helper contract and reserve exact
+  string assertions for public markdown behavior?
