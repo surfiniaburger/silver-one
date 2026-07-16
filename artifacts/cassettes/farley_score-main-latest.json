@@ -6700,6 +6700,194 @@
       }
     },
     {
+      "id": "tests/test_unified_compare.py::test_calculate_confidence_distribution",
+      "file_path": "tests/test_unified_compare.py",
+      "test_name": "test_calculate_confidence_distribution",
+      "class_name": null,
+      "farley_index": 6.875,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 6,
+          "rationale": "The test logic is understandable but the business rule for 'recoverable failure' and parsing of non-standard confidence strings ('banana') lacks clear documentation. The intent to handle edge cases exists but could be more explicit.",
+          "suggestions": [
+            "Increase code comments explaining why `None` triggers a default distribution, as this contradicts typical TDD principles where tests should reflect the intended behavior without hidden assumptions."
+          ]
+        },
+        "maintainable": {
+          "score": 7,
+          "rationale": "The test is decoupled from implementation details and does not rely on external state. However, it assumes specific parsing logic that may break if `calculate_confidence_distribution` changes its internal behavior.",
+          "suggestions": [
+            "The test should explicitly assert the *expected* output of a hypothetical function rather than relying solely on an existing one with potential side effects."
+          ]
+        },
+        "repeatable": {
+          "score": 8,
+          "rationale": "The test is deterministic and self-contained. It does not rely on external shared state or network timing.",
+          "suggestions": [
+            "N/A - The code passes all criteria for repeatability."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "Each assertion verifies exactly one behavior: handling empty lists and specific input types. If a test fails, the cause is instantly obvious.",
+          "suggestions": [
+            "N/A - The code passes all criteria for atomicity."
+          ]
+        },
+        "necessary": {
+          "score": 5,
+          "rationale": "The tests cover edge cases (empty list) and parsing logic but do not verify core business rules like the calculation algorithm itself. They test *how* to handle inputs rather than *what* should happen in a production scenario.",
+          "suggestions": [
+            "The first TDD property is violated: these tests are likely written after implementation, focusing on edge cases instead of verifying the primary design goal (calculating confidence distributions correctly)."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The test isolates specific input types and parsing logic. However, it mixes unit testing with integration-like behavior by relying on a single function call.",
+          "suggestions": [
+            "The tests should be split into smaller units: one for the empty list case, another for `None`, and finally one that verifies the calculation algorithm directly."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes rapidly with no artificial delays or heavy I/O operations.",
+          "suggestions": [
+            "N/A - The code passes all criteria for speed."
+          ]
+        },
+        "first_tdd": {
+          "score": 4,
+          "rationale": "This is the most critical failure. Tests are written in a 'how' manner (testing edge cases of an existing function) rather than first principles ('what'). They do not demonstrate design properties like Arrange-Act-Assert separation or verifying core business rules.",
+          "suggestions": [
+            "Rewrite this test to: 1) Define the expected distribution logic explicitly. 2) Use a mock object for `calculate_confidence_distribution` that returns only valid inputs (no edge cases). 3) Assert specific values based on input types, not just 'is it an error'. This aligns with TDD by designing behavior before implementation."
+          ]
+        },
+        "summary": "The test demonstrates strong adherence to repeatability and atomicity but fails significantly in understandability, necessity, granularity (due to mixing unit/integration), and most critically first_tdd. It tests edge cases of an existing function rather than verifying the core business logic through design-first principles."
+      }
+    },
+    {
+      "id": "tests/test_unified_compare.py::test_render_unified_report_confidence_distribution_empty",
+      "file_path": "tests/test_unified_compare.py",
+      "test_name": "test_render_unified_report_confidence_distribution_empty",
+      "class_name": null,
+      "farley_index": 8.125,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test name and assertions clearly describe the business rule: an empty input list (`cr_units=[]`) should produce a specific output message. The language is domain-appropriate.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "The test relies on `render_unified_report` and the temporary directory (`tmp_path`). It does not hardcode system details or brittle assumptions about how that function behaves.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is self-contained but relies on `render_unified_report` which likely involves file I/O. If the underlying implementation changes or adds slow operations (e.g., network calls), this specific test will fail unpredictably.",
+          "suggestions": [
+            "Ensure `render_unified_report` does not perform external I/O, database queries, or heavy computations in unit tests unless explicitly mocked and isolated within a fixture."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: the presence of two specific strings. If it fails, the cause is immediately obvious (missing string or incorrect assertion).",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test likely duplicates coverage already provided by other tests in `test_unified_compare.py` that handle empty lists. It should be removed if the existing suite covers this scenario.",
+          "suggestions": [
+            "Review all other tests for similar scenarios (empty inputs). If they cover 'No structured engineering findings reported', remove or refactor this test to avoid redundancy."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The assertion targets a specific string literal within the generated report. It isolates one precise behavior without testing side effects like file creation errors.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "There are no artificial sleeps or heavy setups in this test body itself; it is purely logic-driven and assertion-based.",
+          "suggestions": [
+            "Ensure `render_unified_report` does not perform slow I/O operations (e.g., writing to disk) inside the function being tested, as that would make this specific unit test artificially slow."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The code follows a clean Arrange-Act-Assert pattern. The 'Arrange' (empty list) is isolated from the Act and Assert logic in separate lines.",
+          "suggestions": []
+        },
+        "summary": "{\"understandable\":8,\"maintainable\":9,\"repeatable\":7,\"atomic\":9,\"necessary\":6,\"granular\":8,\"fast\":9,\"first_tdd\":9}"
+      }
+    },
+    {
+      "id": "tests/test_unified_compare.py::test_render_unified_report_confidence_distribution_with_findings",
+      "file_path": "tests/test_unified_compare.py",
+      "test_name": "test_render_unified_report_confidence_distribution_with_findings",
+      "class_name": null,
+      "farley_index": 7.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the input structure (`cr_units`) and expected output assertions regarding confidence distribution percentages. However, it lacks a clear 'business rule' explanation of *why* these specific counts matter beyond what is visually present in the report.",
+          "suggestions": [
+            "Increase score to 9 by adding a comment block explaining that this test validates the aggregation logic for finding severity levels as defined in `cr_units`."
+          ]
+        },
+        "maintainable": {
+          "score": 7,
+          "rationale": "The test is decoupled from implementation details (no mocking of external services), but it relies on a specific function call (`render_unified_report`) which may be fragile if the underlying logic changes. It does not explicitly isolate side effects like file system writes or network calls.",
+          "suggestions": [
+            "Score remains 7 as no explicit isolation is shown, but ensure `tmp_path` usage doesn't imply shared state issues in other parts of the suite."
+          ]
+        },
+        "repeatable": {
+          "score": 9,
+          "rationale": "The test is fully self-contained within a single function. It does not rely on external databases, network calls, or timing-dependent behavior (e.g., `time.sleep`). The input data structure and expected output are deterministic.",
+          "suggestions": [
+            "N/A - Test meets all criteria for repeatability."
+          ]
+        },
+        "atomic": {
+          "score": 8,
+          "rationale": "The test verifies exactly one business rule: the presence of specific confidence distribution strings in a generated report. If this assertion fails, it immediately indicates an issue with that specific rendering logic.",
+          "suggestions": [
+            "N/A - Test is atomic."
+          ]
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test covers the 'findings' aggregation for a single report type. However, without seeing other tests in this file or surrounding context, it's unclear if there are existing tests covering different confidence levels (e.g., mixed findings) to avoid duplication.",
+          "suggestions": [
+            "Increase score to 8 by verifying that no similar test exists elsewhere in the codebase for 'mixed' finding distributions."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The test is granular enough to verify specific string matches and percentage calculations. However, it could be more precise by asserting exact counts (e.g., `assert len(findings) == 5`) rather than just the presence of strings.",
+          "suggestions": [
+            "Increase score to 8 by adding assertions like `len(cr_units[0]['review']['findings'])` and explicit percentage validation."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes rapidly. It uses a single function call with minimal setup (just one fixture) and no artificial delays or heavy I/O operations.",
+          "suggestions": [
+            "N/A - Test is fast."
+          ]
+        },
+        "first_tdd": {
+          "score": 8,
+          "rationale": "The test follows the Arrange-Act-Assert pattern implicitly. It arranges a specific input structure (`cr_units`), acts by calling `render_unified_report`, and asserts clean business rules (presence of strings).",
+          "suggestions": [
+            "Increase score to 9 by explicitly separating concerns: move fixture setup outside or ensure it's clearly marked as 'Arrange' logic."
+          ]
+        },
+        "summary": "The test is highly repeatable, atomic, fast, and follows TDD principles. It scores well on understandability (8) due to clear intent but could be improved with more explicit assertions for granularity (7->8). The main risk lies in maintainability if the `render_unified_report` function changes without updating this specific test."
+      }
+    },
+    {
       "id": "tests/test_extractor_async.py::test_async_test_is_extracted",
       "file_path": "tests/test_extractor_async.py",
       "test_name": "test_async_test_is_extracted",
@@ -8271,32 +8459,32 @@
     "farley_usage_summary": {
       "run_id": "main-baseline",
       "model": "ollama/qwen3.5:2b",
-      "reviewed_test_cases": 124,
+      "reviewed_test_cases": 127,
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 160,
-          "prompt_tokens": 139608,
-          "completion_tokens": 132102,
-          "total_tokens": 271710,
+          "calls": 163,
+          "prompt_tokens": 141346,
+          "completion_tokens": 134410,
+          "total_tokens": 275756,
           "cost_usd": 0.0,
           "missing_usage_calls": 0
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 160,
-            "prompt_tokens": 139608,
-            "completion_tokens": 132102,
-            "total_tokens": 271710,
+            "calls": 163,
+            "prompt_tokens": 141346,
+            "completion_tokens": 134410,
+            "total_tokens": 275756,
             "cost_usd": 0.0
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 160,
-            "prompt_tokens": 139608,
-            "completion_tokens": 132102,
-            "total_tokens": 271710,
+            "calls": 163,
+            "prompt_tokens": 141346,
+            "completion_tokens": 134410,
+            "total_tokens": 275756,
             "cost_usd": 0.0
           }
         },
@@ -8388,7 +8576,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 658,
             "completion_tokens": 820,
@@ -8412,7 +8600,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 546,
             "completion_tokens": 951,
@@ -8424,7 +8612,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 581,
             "completion_tokens": 650,
@@ -8712,7 +8900,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 539,
             "completion_tokens": 737,
@@ -8724,7 +8912,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 583,
             "completion_tokens": 602,
@@ -8736,7 +8924,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 594,
             "completion_tokens": 1002,
@@ -8748,7 +8936,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 599,
             "completion_tokens": 873,
@@ -8760,7 +8948,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 593,
             "completion_tokens": 592,
@@ -9797,6 +9985,42 @@
             "prompt_tokens": 476,
             "completion_tokens": 981,
             "total_tokens": 1457,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 737,
+            "completion_tokens": 794,
+            "total_tokens": 1531,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 437,
+            "completion_tokens": 684,
+            "total_tokens": 1121,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 564,
+            "completion_tokens": 830,
+            "total_tokens": 1394,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -16418,6 +16642,87 @@
       "completion_tokens": 592,
       "prompt_tokens": 593,
       "total_tokens": 1185,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "7acc8b4338125e125df5a384f304565fa732caaed82d8d02d90c9b8782b64025": {
+    "id": "chatcmpl-1411222e-e137-43b6-bf9c-28451fc22c05",
+    "created": 1784239414,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n\"understandable\": {\n\"score\": 6,\n\"rationale\": \"The test logic is understandable but the business rule for 'recoverable failure' and parsing of non-standard confidence strings ('banana') lacks clear documentation. The intent to handle edge cases exists but could be more explicit.\",\n\"suggestions\": [\n\"Increase code comments explaining why `None` triggers a default distribution, as this contradicts typical TDD principles where tests should reflect the intended behavior without hidden assumptions.\"\n]\n},\n\"maintainable\": {\n\"score\": 7,\n\"rationale\": \"The test is decoupled from implementation details and does not rely on external state. However, it assumes specific parsing logic that may break if `calculate_confidence_distribution` changes its internal behavior.\",\n\"suggestions\": [\n\"The test should explicitly assert the *expected* output of a hypothetical function rather than relying solely on an existing one with potential side effects.\"\n]\n},\n\"repeatable\": {\n\"score\": 8,\n\"rationale\": \"The test is deterministic and self-contained. It does not rely on external shared state or network timing.\",\n\"suggestions\": [\n\"N/A - The code passes all criteria for repeatability.\"\n]\n},\n\"atomic\": {\n\"score\": 9,\n\"rationale\": \"Each assertion verifies exactly one behavior: handling empty lists and specific input types. If a test fails, the cause is instantly obvious.\",\n\"suggestions\": [\n\"N/A - The code passes all criteria for atomicity.\"\n]\n},\n\"necessary\": {\n\"score\": 5,\n\"rationale\": \"The tests cover edge cases (empty list) and parsing logic but do not verify core business rules like the calculation algorithm itself. They test *how* to handle inputs rather than *what* should happen in a production scenario.\",\n\"suggestions\": [\n\"The first TDD property is violated: these tests are likely written after implementation, focusing on edge cases instead of verifying the primary design goal (calculating confidence distributions correctly).\"\n]\n},\n\"granular\": {\n\"score\": 7,\n\"rationale\": \"The test isolates specific input types and parsing logic. However, it mixes unit testing with integration-like behavior by relying on a single function call.\",\n\"suggestions\": [\n\"The tests should be split into smaller units: one for the empty list case, another for `None`, and finally one that verifies the calculation algorithm directly.\"\n]\n},\n\"fast\": {\n\"score\": 9,\n\"rationale\": \"The test executes rapidly with no artificial delays or heavy I/O operations.\",\n\"suggestions\": [\n\"N/A - The code passes all criteria for speed.\"\n]\n},\"first_tdd\": {\n\"score\": 4,\n\"rationale\": \"This is the most critical failure. Tests are written in a 'how' manner (testing edge cases of an existing function) rather than first principles ('what'). They do not demonstrate design properties like Arrange-Act-Assert separation or verifying core business rules.\",\n\"suggestions\": [\n\"Rewrite this test to: 1) Define the expected distribution logic explicitly. 2) Use a mock object for `calculate_confidence_distribution` that returns only valid inputs (no edge cases). 3) Assert specific values based on input types, not just 'is it an error'. This aligns with TDD by designing behavior before implementation.\"\n]\n},\"summary\": \"The test demonstrates strong adherence to repeatability and atomicity but fails significantly in understandability, necessity, granularity (due to mixing unit/integration), and most critically first_tdd. It tests edge cases of an existing function rather than verifying the core business logic through design-first principles.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 794,
+      "prompt_tokens": 737,
+      "total_tokens": 1531,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "0a1835594d81c858c6f421923acfd72e2b3c7da7c6b22be44c8f4140c14df6a5": {
+    "id": "chatcmpl-c902400c-c0b1-4f67-8851-8e61f927fa69",
+    "created": 1784239472,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and assertions clearly describe the business rule: an empty input list (`cr_units=[]`) should produce a specific output message. The language is domain-appropriate.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"The test relies on `render_unified_report` and the temporary directory (`tmp_path`). It does not hardcode system details or brittle assumptions about how that function behaves.\",\n    \"suggestions\": []\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is self-contained but relies on `render_unified_report` which likely involves file I/O. If the underlying implementation changes or adds slow operations (e.g., network calls), this specific test will fail unpredictably.\",\n    \"suggestions\": [\n      \"Ensure `render_unified_report` does not perform external I/O, database queries, or heavy computations in unit tests unless explicitly mocked and isolated within a fixture.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: the presence of two specific strings. If it fails, the cause is immediately obvious (missing string or incorrect assertion).\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test likely duplicates coverage already provided by other tests in `test_unified_compare.py` that handle empty lists. It should be removed if the existing suite covers this scenario.\",\n    \"suggestions\": [\n      \"Review all other tests for similar scenarios (empty inputs). If they cover 'No structured engineering findings reported', remove or refactor this test to avoid redundancy.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The assertion targets a specific string literal within the generated report. It isolates one precise behavior without testing side effects like file creation errors.\",\n    \"suggestions\": []\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"There are no artificial sleeps or heavy setups in this test body itself; it is purely logic-driven and assertion-based.\",\n    \"suggestions\": [\n      \"Ensure `render_unified_report` does not perform slow I/O operations (e.g., writing to disk) inside the function being tested, as that would make this specific unit test artificially slow.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 9,\n    \"rationale\": \"The code follows a clean Arrange-Act-Assert pattern. The 'Arrange' (empty list) is isolated from the Act and Assert logic in separate lines.\",\n    \"suggestions\": []\n  },\"summary\":\"{\\\"understandable\\\":8,\\\"maintainable\\\":9,\\\"repeatable\\\":7,\\\"atomic\\\":9,\\\"necessary\\\":6,\\\"granular\\\":8,\\\"fast\\\":9,\\\"first_tdd\\\":9}\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 684,
+      "prompt_tokens": 437,
+      "total_tokens": 1121,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "a6136beeeec3ade9f63cd1d5f2f3ebbeb00accfc03a3262bb4577e5e47ce3374": {
+    "id": "chatcmpl-759c6e93-c42f-4f46-9e50-e3107091d37b",
+    "created": 1784239547,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n\"understandable\": {\n\"score\": 8,\n\"rationale\": \"The test clearly defines the input structure (`cr_units`) and expected output assertions regarding confidence distribution percentages. However, it lacks a clear 'business rule' explanation of *why* these specific counts matter beyond what is visually present in the report.\",\n\"suggestions\": [\n\"Increase score to 9 by adding a comment block explaining that this test validates the aggregation logic for finding severity levels as defined in `cr_units`.\"\n]\n},\n\"maintainable\": {\n\"score\": 7,\n\"rationale\": \"The test is decoupled from implementation details (no mocking of external services), but it relies on a specific function call (`render_unified_report`) which may be fragile if the underlying logic changes. It does not explicitly isolate side effects like file system writes or network calls.\",\n\"suggestions\": [\n\"Score remains 7 as no explicit isolation is shown, but ensure `tmp_path` usage doesn't imply shared state issues in other parts of the suite.\"\n]\n},\n\"repeatable\": {\n\"score\": 9,\n\"rationale\": \"The test is fully self-contained within a single function. It does not rely on external databases, network calls, or timing-dependent behavior (e.g., `time.sleep`). The input data structure and expected output are deterministic.\",\n\"suggestions\": [\n\"N/A - Test meets all criteria for repeatability.\"\n]\n},\n\"atomic\": {\n\"score\": 8,\n\"rationale\": \"The test verifies exactly one business rule: the presence of specific confidence distribution strings in a generated report. If this assertion fails, it immediately indicates an issue with that specific rendering logic.\",\n\"suggestions\": [\n\"N/A - Test is atomic.\"\n]\n},\n\"necessary\": {\n\"score\": 6,\n\"rationale\": \"This test covers the 'findings' aggregation for a single report type. However, without seeing other tests in this file or surrounding context, it's unclear if there are existing tests covering different confidence levels (e.g., mixed findings) to avoid duplication.\",\n\"suggestions\": [\n\"Increase score to 8 by verifying that no similar test exists elsewhere in the codebase for 'mixed' finding distributions.\"\n]\n},\n\"granular\": {\n\"score\": 7,\n\"rationale\": \"The test is granular enough to verify specific string matches and percentage calculations. However, it could be more precise by asserting exact counts (e.g., `assert len(findings) == 5`) rather than just the presence of strings.\",\n\"suggestions\": [\n\"Increase score to 8 by adding assertions like `len(cr_units[0]['review']['findings'])` and explicit percentage validation.\"\n]\n},\n\"fast\": {\n\"score\": 9,\n\"rationale\": \"The test executes rapidly. It uses a single function call with minimal setup (just one fixture) and no artificial delays or heavy I/O operations.\",\n\"suggestions\": [\n\"N/A - Test is fast.\"\n]\n},\"first_tdd\": {\n\"score\": 8,\n\"rationale\": \"The test follows the Arrange-Act-Assert pattern implicitly. It arranges a specific input structure (`cr_units`), acts by calling `render_unified_report`, and asserts clean business rules (presence of strings).\",\n\"suggestions\": [\n\"Increase score to 9 by explicitly separating concerns: move fixture setup outside or ensure it's clearly marked as 'Arrange' logic.\"\n]\n},\"summary\": \"The test is highly repeatable, atomic, fast, and follows TDD principles. It scores well on understandability (8) due to clear intent but could be improved with more explicit assertions for granularity (7->8). The main risk lies in maintainability if the `render_unified_report` function changes without updating this specific test.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 830,
+      "prompt_tokens": 564,
+      "total_tokens": 1394,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
