@@ -418,6 +418,35 @@ import math
 if not math.isclose(den, 0.0, abs_tol=1e-9):
     val = num / den
 ```
+## Inconsistent Classification and Defaulting
+
+When aggregating metrics or calculating distributions into discrete categories (e.g., confidence distributions, severity counts), fallback logic in loops can silently misclassify invalid or "N/A" values.
+
+Rule:
+
+- Do not use a broad `else` block to assign unrecognized, fallback, or non-applicable values to a valid classification bucket (like counting `"N/A"` or unknown confidence values as `"MEDIUM"`).
+- Explicitly check membership in the target categories and exclude or handle unrecognized/fallback values specifically.
+- Ensure that the classification logic in metrics aggregation matches the formatting logic in detailed tables/views.
+
+Example:
+
+```python
+# Avoid:
+for finding in findings:
+    conf = finding.get("confidence")
+    formatted = _format_confidence(conf)
+    if formatted in counts:
+        counts[formatted] += 1
+    else:
+        counts["MEDIUM"] += 1  # Silently counts "N/A", None, or invalid values as "MEDIUM"
+
+# Preferred:
+for finding in findings:
+    conf = finding.get("confidence")
+    formatted = _format_confidence(conf)
+    if formatted in counts:
+        counts[formatted] += 1
+```
 
 ## When Not To Apply Feedback
 
@@ -455,3 +484,5 @@ Before merging evaluator, report, or structured-output changes, ask:
 - Do report-rendering tests document the helper contract and reserve exact
   string assertions for public markdown behavior?
 - Is Cognitive Complexity kept below 15 by extracting nested loops or nested-object extraction steps into clean helper functions?
+- Do classification and aggregation counts exclude unrecognized, None, or fallback "N/A" values instead of silently counting them in a default bucket?
+

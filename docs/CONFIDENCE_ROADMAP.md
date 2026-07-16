@@ -160,32 +160,30 @@ Modify [unified_compare.py](file:///Users/surfiniaburger/Desktop/modular-metacog
 ```python
 # scripts/unified_compare.py
 
+def _classify_finding_confidence(finding: Dict[str, Any]) -> str:
+    conf = finding.get("confidence")
+    if isinstance(conf, (str, int, float)) and not isinstance(conf, bool):
+        formatted_conf = _format_finding_confidence(conf)
+        if formatted_conf in {"HIGH", "MEDIUM", "LOW"}:
+            return formatted_conf
+    return "UNKNOWN"
+
+
 def calculate_confidence_distribution(cr_units: List[Dict[str, Any]]) -> Dict[str, int]:
-    counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
+    counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0, "UNKNOWN": 0}
+    if not isinstance(cr_units, list):
+        return counts
     for unit in cr_units:
-        if is_recoverable_review_failure(unit):
-            continue
-        review = unit.get("review") or {}
-        findings = review.get("findings") or []
+        findings = _extract_unit_findings(unit)
         for finding in findings:
             if not isinstance(finding, dict):
                 continue
-            conf = finding.get("confidence", "MEDIUM")
-            if conf in counts:
-                counts[conf] += 1
-            else:
-                # Handle legacy float values from un-migrated cassettes
-                try:
-                    val = float(conf)
-                    if val >= 0.8:
-                        counts["HIGH"] += 1
-                    elif val >= 0.4:
-                        counts["MEDIUM"] += 1
-                    else:
-                        counts["LOW"] += 1
-                except (ValueError, TypeError):
-                    counts["MEDIUM"] += 1
+            category = _classify_finding_confidence(finding)
+            counts[category] += 1
     return counts
+
+
+
 ```
 
 ### 2. Rendering in the Unified Report
@@ -219,7 +217,9 @@ def _write_metrics_overview(
     else:
         f.write(f"- **HIGH Confidence**: {dist['HIGH']} finding(s) ({dist['HIGH']/total_findings:.1%})\n")
         f.write(f"- **MEDIUM Confidence**: {dist['MEDIUM']} finding(s) ({dist['MEDIUM']/total_findings:.1%})\n")
-        f.write(f"- **LOW Confidence**: {dist['LOW']} finding(s) ({dist['LOW']/total_findings:.1%})\n\n")
+        f.write(f"- **LOW Confidence**: {dist['LOW']} finding(s) ({dist['LOW']/total_findings:.1%})\n")
+        f.write(f"- **UNKNOWN/UNPARSED Confidence**: {dist['UNKNOWN']} finding(s) ({dist['UNKNOWN']/total_findings:.1%})\n\n")
+
 ```
 
 ---

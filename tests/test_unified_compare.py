@@ -832,13 +832,17 @@ def test_calculate_confidence_distribution():
     from scripts.unified_compare import calculate_confidence_distribution
 
     # Empty list
-    assert calculate_confidence_distribution([]) == {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
+    assert calculate_confidence_distribution([]) == {"HIGH": 0, "MEDIUM": 0, "LOW": 0, "UNKNOWN": 0}
+
+    # Non-list inputs (defensive check)
+    assert calculate_confidence_distribution(None) == {"HIGH": 0, "MEDIUM": 0, "LOW": 0, "UNKNOWN": 0}
+    assert calculate_confidence_distribution("not-a-list") == {"HIGH": 0, "MEDIUM": 0, "LOW": 0, "UNKNOWN": 0}
 
     # Recoverable failure or non-dict unit
     assert calculate_confidence_distribution([
         None,
         {"recoverable_failure": {"type": "provider_error"}},
-    ]) == {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
+    ]) == {"HIGH": 0, "MEDIUM": 0, "LOW": 0, "UNKNOWN": 0}
 
     # Units with findings
     units = [
@@ -865,6 +869,8 @@ def test_calculate_confidence_distribution():
                 "findings": [
                     {"confidence": "LOW"},
                     {"confidence": 0.2}, # parses to LOW
+                    {"confidence": None}, # formats to N/A, should be counted in UNKNOWN
+                    {"confidence": True}, # formats to N/A, should be counted in UNKNOWN
                 ]
             }
         }
@@ -873,9 +879,11 @@ def test_calculate_confidence_distribution():
     expected = {
         "HIGH": 4,   # HIGH, certain, 0.9, 4/5
         "MEDIUM": 2, # MEDIUM, banana
-        "LOW": 2     # LOW, 0.2
-    }
+        "LOW": 2,    # LOW, 0.2
+        "UNKNOWN": 2 # None, True
+     }
     assert calculate_confidence_distribution(units) == expected
+
 
 
 def test_render_unified_report_confidence_distribution_empty(tmp_path):
@@ -902,4 +910,39 @@ def test_render_unified_report_confidence_distribution_with_findings(tmp_path):
     assert "- **HIGH Confidence**: 2 finding(s) (50.0%)" in report_content
     assert "- **MEDIUM Confidence**: 1 finding(s) (25.0%)" in report_content
     assert "- **LOW Confidence**: 1 finding(s) (25.0%)" in report_content
+    assert "- **UNKNOWN/UNPARSED Confidence**: 0 finding(s) (0.0%)" in report_content
+    assert "*Note:" not in report_content
+
+
+def test_calculate_confidence_distribution_malformed_and_non_confidence():
+    from scripts.unified_compare import calculate_confidence_distribution
+
+    # "banana" is a malformed string confidence, normalized to "MEDIUM"
+    # "85%" is normalized to "HIGH"
+    # None, True/False, and non-scalar types (dict, list) are counted as UNKNOWN
+    units = [
+        {
+            "review": {
+                "findings": [
+                    {"confidence": "banana"},  # -> MEDIUM (normalized)
+                    {"confidence": "85%"},     # -> HIGH (normalized)
+                    {"confidence": None},      # -> N/A (UNKNOWN)
+                    {"confidence": False},     # -> N/A (UNKNOWN)
+                    {"confidence": {"nested": "value"}},  # -> UNKNOWN (non-scalar type)
+                    {"confidence": [1, 2]},               # -> UNKNOWN (non-scalar type)
+                ]
+            }
+        }
+    ]
+
+    expected = {
+        "HIGH": 1,
+        "MEDIUM": 1,
+        "LOW": 0,
+        "UNKNOWN": 4
+    }
+    assert calculate_confidence_distribution(units) == expected
+
+
+
 
