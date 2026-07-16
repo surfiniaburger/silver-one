@@ -246,9 +246,15 @@ def _has_concrete_evidence(finding: Dict[str, Any]) -> bool:
     evidence = finding.get("evidence")
     if not isinstance(evidence, dict):
         return False
-    location_type = evidence.get("location_type")
+
+    if not evidence.get("location_type"):
+        return False
+
+    has_path = bool(evidence.get("path"))
     details = evidence.get("details")
-    return bool(location_type and (evidence.get("path") or isinstance(details, dict) and details))
+    has_details = isinstance(details, dict) and bool(details)
+
+    return has_path or has_details
 
 
 def _is_gateable_block_finding(finding: Dict[str, Any]) -> bool:
