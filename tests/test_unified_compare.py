@@ -826,3 +826,80 @@ def test_format_finding_confidence_advanced_parsing():
     assert _format_finding_confidence("4/5") == "HIGH"
     assert _format_finding_confidence("nan") == "MEDIUM"
     assert _format_finding_confidence(float("nan")) == "MEDIUM"
+
+
+def test_calculate_confidence_distribution():
+    from scripts.unified_compare import calculate_confidence_distribution
+
+    # Empty list
+    assert calculate_confidence_distribution([]) == {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
+
+    # Recoverable failure or non-dict unit
+    assert calculate_confidence_distribution([
+        None,
+        {"recoverable_failure": {"type": "provider_error"}},
+    ]) == {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
+
+    # Units with findings
+    units = [
+        {
+            "review": {
+                "findings": [
+                    {"confidence": "HIGH"},
+                    {"confidence": "certain"},
+                    {"confidence": 0.9},
+                ]
+            }
+        },
+        {
+            "review": {
+                "findings": [
+                    {"confidence": "MEDIUM"},
+                    {"confidence": "4/5"}, # parses to HIGH
+                    {"confidence": "banana"}, # defaults to MEDIUM
+                ]
+            }
+        },
+        {
+            "review": {
+                "findings": [
+                    {"confidence": "LOW"},
+                    {"confidence": 0.2}, # parses to LOW
+                ]
+            }
+        }
+    ]
+
+    expected = {
+        "HIGH": 4,   # HIGH, certain, 0.9, 4/5
+        "MEDIUM": 2, # MEDIUM, banana
+        "LOW": 2     # LOW, 0.2
+    }
+    assert calculate_confidence_distribution(units) == expected
+
+
+def test_render_unified_report_confidence_distribution_empty(tmp_path):
+    report_content = render_unified_report(tmp_path, cr_units=[])
+    assert "### Finding Confidence Distribution" in report_content
+    assert "No structured engineering findings reported in this run." in report_content
+
+
+def test_render_unified_report_confidence_distribution_with_findings(tmp_path):
+    cr_units = [
+        {
+            "review": {
+                "findings": [
+                    {"confidence": "HIGH"},
+                    {"confidence": "MEDIUM"},
+                    {"confidence": "LOW"},
+                    {"confidence": "HIGH"},
+                ]
+            }
+        }
+    ]
+    report_content = render_unified_report(tmp_path, cr_units=cr_units)
+    assert "### Finding Confidence Distribution" in report_content
+    assert "- **HIGH Confidence**: 2 finding(s) (50.0%)" in report_content
+    assert "- **MEDIUM Confidence**: 1 finding(s) (25.0%)" in report_content
+    assert "- **LOW Confidence**: 1 finding(s) (25.0%)" in report_content
+

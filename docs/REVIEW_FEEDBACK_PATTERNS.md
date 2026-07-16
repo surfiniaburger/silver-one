@@ -297,6 +297,7 @@ Preferred pattern:
   helpers.
 - Avoid combining parsing, policy, report rendering, and telemetry aggregation
   in one function.
+- Avoid nested loops and deep conditional hierarchies (e.g. loops inside loops containing multiple `if` checks). Extract nested loops or nested-object extraction logic into flat helpers to keep cognitive complexity strictly below the 15 threshold allowed by SonarQube (e.g. `_extract_unit_findings(...)` to extract findings from review units).
 
 Good local examples:
 
@@ -453,3 +454,4 @@ Before merging evaluator, report, or structured-output changes, ask:
 - Are duplicate utility helpers avoided by centralizing them into shared modules (like `telemetry_utils`) or importing them from the source schema?
 - Do report-rendering tests document the helper contract and reserve exact
   string assertions for public markdown behavior?
+- Is Cognitive Complexity kept below 15 by extracting nested loops or nested-object extraction steps into clean helper functions?

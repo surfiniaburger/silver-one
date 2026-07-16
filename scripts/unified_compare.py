@@ -444,6 +444,32 @@ def _format_finding_confidence(value: Any) -> str:
     return "MEDIUM"
 
 
+def _extract_unit_findings(unit: Dict[str, Any]) -> List[Dict[str, Any]]:
+    if not isinstance(unit, dict) or is_recoverable_review_failure(unit):
+        return []
+    review = unit.get("review")
+    if not isinstance(review, dict):
+        return []
+    findings = review.get("findings")
+    return findings if isinstance(findings, list) else []
+
+
+def calculate_confidence_distribution(cr_units: List[Dict[str, Any]]) -> Dict[str, int]:
+    counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
+    for unit in cr_units:
+        findings = _extract_unit_findings(unit)
+        for finding in findings:
+            if not isinstance(finding, dict):
+                continue
+            conf = finding.get("confidence")
+            formatted_conf = _format_finding_confidence(conf)
+            if formatted_conf in counts:
+                counts[formatted_conf] += 1
+            else:
+                counts["MEDIUM"] += 1
+    return counts
+
+
 def _write_metrics_overview(
     f,
     cr_data: Dict[str, Any],
@@ -495,6 +521,19 @@ def _write_metrics_overview(
         f"| API Compatibility | Public API compatibility state "
         f"| {compat_metric} | **{compat_status}** |\n\n"
     )
+
+    # Confidence Distribution Section
+    cr_units = cr_data.get("units") or []
+    dist = calculate_confidence_distribution(cr_units)
+    total_findings = sum(dist.values())
+
+    f.write("### Finding Confidence Distribution\n\n")
+    if total_findings == 0:
+        f.write("No structured engineering findings reported in this run.\n\n")
+    else:
+        f.write(f"- **HIGH Confidence**: {dist['HIGH']} finding(s) ({dist['HIGH']/total_findings:.1%})\n")
+        f.write(f"- **MEDIUM Confidence**: {dist['MEDIUM']} finding(s) ({dist['MEDIUM']/total_findings:.1%})\n")
+        f.write(f"- **LOW Confidence**: {dist['LOW']} finding(s) ({dist['LOW']/total_findings:.1%})\n\n")
 
 
 def _esc(value: Any) -> str:
