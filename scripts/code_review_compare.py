@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from scripts.path_utils import validate_input_path, validate_output_path
 from scripts.finding_schema import CQIResult
+from scripts.telemetry_utils import coerce_int, coerce_float
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -267,13 +268,19 @@ def determine_verdict(
 
 
 def format_token_spend(usage_totals: Dict[str, Any]) -> str:
+    total_tokens = coerce_int(usage_totals.get("total_tokens"))
+    prompt_tokens = coerce_int(usage_totals.get("prompt_tokens"))
+    comp_tokens = coerce_int(usage_totals.get("completion_tokens"))
+    calls = coerce_int(usage_totals.get("calls"))
+    cost = coerce_float(usage_totals.get("cost_usd"))
+
     return (
         "**Token spend**: "
-        f"{int(usage_totals.get('total_tokens') or 0)} total tokens "
-        f"({int(usage_totals.get('prompt_tokens') or 0)} prompt, "
-        f"{int(usage_totals.get('completion_tokens') or 0)} completion) "
-        f"across {int(usage_totals.get('calls') or 0)} LLM call(s); "
-        f"estimated cost ${float(usage_totals.get('cost_usd') or 0.0):.6f}\n\n"
+        f"{total_tokens} total tokens "
+        f"({prompt_tokens} prompt, "
+        f"{comp_tokens} completion) "
+        f"across {calls} LLM call(s); "
+        f"estimated cost ${cost:.6f}\n\n"
     )
 
 

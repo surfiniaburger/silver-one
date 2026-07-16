@@ -47,6 +47,51 @@ class EngineeringImpact(BaseModel):
     performance: Literal["NONE", "LOW", "MEDIUM", "HIGH"] = Field("NONE")
 
 
+import math
+
+
+def _parse_numeric_confidence(val: float) -> str:
+    if math.isnan(val):
+        return "MEDIUM"
+    if val > 1.0:
+        val = val / 100.0 if val > 5.0 else val / 5.0
+    if val >= 0.8:
+        return "HIGH"
+    if val >= 0.4:
+        return "MEDIUM"
+    return "LOW"
+
+
+def _parse_string_confidence(v: str) -> str:
+    val_clean = v.strip().upper()
+    if val_clean in {"HIGH", "CERTAIN", "CRITICAL", "5", "4"}:
+        return "HIGH"
+    if val_clean in {"MEDIUM", "MODERATE", "NORMAL", "3"}:
+        return "MEDIUM"
+    if val_clean in {"LOW", "WEAK", "POOR", "2", "1"}:
+        return "LOW"
+    
+    if val_clean.endswith("%"):
+        val_clean = val_clean[:-1].strip()
+        
+    if "/" in val_clean:
+        parts = val_clean.split("/")
+        if len(parts) == 2:
+            try:
+                num = float(parts[0].strip())
+                den = float(parts[1].strip())
+                if not math.isclose(den, 0.0, abs_tol=1e-9):
+                    return _parse_numeric_confidence(num / den)
+            except ValueError:
+                pass
+    
+    try:
+        numeric_val = float(val_clean)
+        return _parse_numeric_confidence(numeric_val)
+    except ValueError:
+        return "MEDIUM"
+
+
 class EngineeringFinding(BaseModel):
     title: str = Field(..., description="A concise title summarizing the finding.")
     category: str = Field(
@@ -64,11 +109,9 @@ class EngineeringFinding(BaseModel):
         default_factory=EngineeringImpact,
         description="Impact evaluation across code quality domains."
     )
-    confidence: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="LLM confidence score from 0.0 to 1.0."
+    confidence: Literal["LOW", "MEDIUM", "HIGH"] = Field(
+        "MEDIUM",
+        description="LLM confidence score (LOW, MEDIUM, HIGH)."
     )
     reference_principle: str = Field(
         "",
@@ -79,21 +122,16 @@ class EngineeringFinding(BaseModel):
     @field_validator("confidence", mode="before")
     @classmethod
     def validate_confidence(cls, v):
-        if v is None:
-            raise ValueError("Confidence cannot be None.")
-        if isinstance(v, bool):
-            raise ValueError("Confidence cannot be a boolean value.")
-        try:
-            val = float(v)
-        except (ValueError, TypeError):
-            raise ValueError("Confidence must be a numeric value.")
+        if v is None or isinstance(v, bool):
+            return "MEDIUM"
         
-        if 0.0 <= val <= 1.0:
-            return val
-        elif 1.0 < val <= 100.0:
-            return val / 100.0
-        else:
-            raise ValueError("Confidence score is out of bounds.")
+        if isinstance(v, (int, float)):
+            return _parse_numeric_confidence(float(v))
+            
+        if isinstance(v, str):
+            return _parse_string_confidence(v)
+            
+        return "MEDIUM"
 
     @field_validator("reference_principle", mode="before")
     @classmethod
@@ -294,27 +332,47 @@ def _validate_finding_strings(idx: int, raw_find: Dict[str, Any], parsed_find: A
 
 def _validate_finding_confidence(idx: int, raw_find: Dict[str, Any], parsed_find: Any, fields: List[FieldValidation]) -> None:
     raw_conf = raw_find.get("confidence")
-    parsed_conf = getattr(parsed_find, "confidence", None)
-    if raw_conf is not None and parsed_conf is not None:
-        try:
-            raw_conf_float = float(raw_conf)
-            if 1.0 < raw_conf_float <= 100.0:
-                fields.append(FieldValidation(
-                    field_name=f"findings[{idx}].confidence",
-                    status="REPAIRED",
-                    raw_value=raw_conf,
-                    repaired_value=parsed_conf,
-                    repair_type="scaled_percentage",
-                    repair_reason="confidence scale conversion"
-                ))
-        except (ValueError, TypeError):
-            fields.append(FieldValidation(
-                field_name=f"findings[{idx}].confidence",
-                status="INVALID",
-                raw_value=raw_conf,
-                repaired_value=parsed_conf,
-                repair_reason="non-numeric value"
-            ))
+    parsed_conf = getattr(parsed_find, "confidence", "MEDIUM")
+    
+    if raw_conf != parsed_conf:
+        is_repaired = False
+        repair_type = None
+        repair_reason = None
+        
+        if raw_conf is None:
+            is_repaired = True
+            repair_type = "missing_default"
+            repair_reason = "missing confidence repaired to MEDIUM"
+        elif isinstance(raw_conf, bool):
+            is_repaired = True
+            repair_type = "type_coercion"
+            repair_reason = "boolean confidence coerced to MEDIUM"
+        elif isinstance(raw_conf, (int, float)):
+            is_repaired = True
+            repair_type = "type_coercion"
+            repair_reason = f"coerced raw numeric confidence value '{raw_conf}' to '{parsed_conf}'"
+        elif isinstance(raw_conf, str):
+            raw_upper = raw_conf.strip().upper()
+            if raw_upper in {"LOW", "MEDIUM", "HIGH"}:
+                is_repaired = False
+            else:
+                is_repaired = True
+                repair_type = "type_coercion"
+                repair_reason = f"coerced raw string confidence value '{raw_conf}' to '{parsed_conf}'"
+        else:
+            is_repaired = True
+            repair_type = "type_coercion"
+            repair_reason = f"coerced invalid confidence type to '{parsed_conf}'"
+            
+        status = "REPAIRED" if is_repaired else "NORMALIZED"
+        fields.append(FieldValidation(
+            field_name=f"findings[{idx}].confidence",
+            status=status,
+            raw_value=raw_conf,
+            repaired_value=parsed_conf,
+            repair_type=repair_type,
+            repair_reason=repair_reason
+        ))
 
 
 def _validate_finding_path(idx: int, raw_find: Dict[str, Any], parsed_find: Any, fields: List[FieldValidation]) -> None:
@@ -423,6 +481,8 @@ def _validate_top_level_review_fields(raw_json: Dict[str, Any], review: Any, fie
 
 
 def build_validation_context(raw_json: Dict[str, Any], review: Any) -> ValidationContext:
+    if not isinstance(raw_json, dict):
+        raw_json = {}
     fields = []
     _validate_top_level_review_fields(raw_json, review, fields)
     _validate_dimensions(raw_json, review, fields)

@@ -566,7 +566,7 @@ def test_write_unified_report_with_findings(tmp_path):
     assert "##### Structured Engineering Findings" in content
     assert "| Category | Severity | Confidence | Finding | Location | Principle | Consequence | Recommendation |" in content
     assert "Uncaught ValueError" in content
-    assert "0.90" in content
+    assert "HIGH" in content
     assert "Lines 15-20" in content
     assert "Catch parser errors at the boundary before parsing raw strings." in content
     assert "Uncaught exceptions will crash the program." in content
@@ -776,3 +776,52 @@ def test_write_unified_report_displays_compatibility_check_failed(tmp_path):
     assert "| API Compatibility | Public API compatibility state | CHECK_FAILED (Score: 0.0/10) | **FAIL** |" in content
     assert "State: **CHECK_FAILED**" in content
     assert "bad syntax" in content
+
+
+def test_combine_token_spend_handles_malformed_types():
+    # String totals, float string total_tokens, none values, string cost, boolean calls
+    cr = {
+        "__metadata__": {
+            "code_review_usage_summary": {
+                "usage": {
+                    "totals": {
+                        "calls": "2",
+                        "prompt_tokens": "1000",
+                        "completion_tokens": None,
+                        "total_tokens": "1200.0",
+                        "cost_usd": "0.012",
+                    }
+                }
+            }
+        }
+    }
+    farley = {
+        "__metadata__": {
+            "farley_usage_summary": {
+                "usage": {
+                    "totals": {
+                        "calls": True, # Should coerce to 0
+                        "prompt_tokens": "banana", # Should coerce to 0
+                        "completion_tokens": 100,
+                        "total_tokens": 600,
+                        "cost_usd": 0.006,
+                    }
+                }
+            }
+        }
+    }
+
+    res = combine_token_spend(cr, farley)
+    assert "1800 total tokens" in res
+    assert "1000 prompt" in res
+    assert "100 completion" in res
+    assert "2 LLM call(s)" in res
+    assert "0.018000" in res
+
+
+def test_format_finding_confidence_advanced_parsing():
+    from scripts.unified_compare import _format_finding_confidence
+    assert _format_finding_confidence("85%") == "HIGH"
+    assert _format_finding_confidence("4/5") == "HIGH"
+    assert _format_finding_confidence("nan") == "MEDIUM"
+    assert _format_finding_confidence(float("nan")) == "MEDIUM"

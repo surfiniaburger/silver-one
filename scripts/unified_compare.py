@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from scripts.path_utils import validate_input_path, validate_output_path
 from scripts.finding_schema import BaselineCheckResult, CompatibilityCheckResult
+from scripts.telemetry_utils import coerce_int, coerce_float
 from scripts.farley_compare import (
     compute_suite_summary as farley_compute_summary,
     merge_virtual_suite,
@@ -230,11 +231,11 @@ def combine_token_spend(cr_cassette: Dict[str, Any], farley_cassette: Dict[str, 
     cr_totals = get_token_totals(cr_cassette, "code_review_usage_summary")
     farley_totals = get_token_totals(farley_cassette, "farley_usage_summary")
 
-    total_tokens = int((cr_totals.get("total_tokens") or 0) + (farley_totals.get("total_tokens") or 0))
-    prompt_tokens = int((cr_totals.get("prompt_tokens") or 0) + (farley_totals.get("prompt_tokens") or 0))
-    comp_tokens = int((cr_totals.get("completion_tokens") or 0) + (farley_totals.get("completion_tokens") or 0))
-    calls = int((cr_totals.get("calls") or 0) + (farley_totals.get("calls") or 0))
-    cost = float((cr_totals.get("cost_usd") or 0.0) + (farley_totals.get("cost_usd") or 0.0))
+    total_tokens = coerce_int(cr_totals.get("total_tokens")) + coerce_int(farley_totals.get("total_tokens"))
+    prompt_tokens = coerce_int(cr_totals.get("prompt_tokens")) + coerce_int(farley_totals.get("prompt_tokens"))
+    comp_tokens = coerce_int(cr_totals.get("completion_tokens")) + coerce_int(farley_totals.get("completion_tokens"))
+    calls = coerce_int(cr_totals.get("calls")) + coerce_int(farley_totals.get("calls"))
+    cost = coerce_float(cr_totals.get("cost_usd")) + coerce_float(farley_totals.get("cost_usd"))
 
     if total_tokens == 0:
         return "**Token spend**: 0 total tokens (all replayed via cassettes)\n\n"
@@ -430,15 +431,17 @@ def _get_provider_runtime_metric(cr_data: Dict[str, Any]) -> Optional[Tuple[str,
 
 
 def _format_finding_confidence(value: Any) -> str:
-    if isinstance(value, bool):
+    if value is None or isinstance(value, bool):
         return "N/A"
-    try:
-        confidence = float(value)
-    except (TypeError, ValueError, OverflowError):
-        return "N/A"
-    if confidence < 0.0 or confidence > 1.0:
-        return "N/A"
-    return f"{confidence:.2f}"
+
+    from scripts.finding_schema import _parse_numeric_confidence, _parse_string_confidence
+    if isinstance(value, (int, float)):
+        return _parse_numeric_confidence(float(value))
+
+    if isinstance(value, str):
+        return _parse_string_confidence(value)
+
+    return "MEDIUM"
 
 
 def _write_metrics_overview(

@@ -11,3 +11,5 @@ training_corpus*.jsonl
 todo.md
 doc.md
 scenarios/debate/cve_seeds_200.jsonl
+ddods/
+jcrume/
