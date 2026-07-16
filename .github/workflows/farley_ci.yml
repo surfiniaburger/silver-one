@@ -175,7 +175,7 @@ jobs:
             let body;
             try {
               const raw = fs.readFileSync('report.md', 'utf8');
-              const maxLen = 60000;
+              const maxLen = 30000;
               const content = raw.length > maxLen
                 ? raw.slice(0, maxLen) + '\n\n_Report truncated — download the full artifact for details._'
                 : raw;
@@ -184,30 +184,35 @@ jobs:
               body = `${marker}\n⚠️ Unified quality report could not be read: ${e.message}`;
             }
 
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-
-            const existing = comments.find(c => c.body && c.body.includes(marker));
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body,
-              });
-              core.info(`Updated existing Unified comment #${existing.id}`);
-            } else {
-              await github.rest.issues.createComment({
+            try {
+              const { data: comments } = await github.rest.issues.listComments({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: context.issue.number,
-                body,
               });
-              core.info('Created new Unified comment');
+
+              const existing = comments.find(c => c.body && c.body.includes(marker));
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body,
+                });
+                core.info(`Updated existing Unified comment #${existing.id}`);
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body,
+                });
+                core.info('Created new Unified comment');
+              }
+            } catch (e) {
+              core.warning(`Failed to post/update PR comment: ${e.message}`);
             }
+
 
       - name: Gate PR status based on Unified Verdict
         run: |
