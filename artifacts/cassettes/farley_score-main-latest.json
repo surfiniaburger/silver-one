@@ -1009,53 +1009,58 @@
       "file_path": "tests/test_code_review.py",
       "test_name": "test_code_review_system_prompt_uses_structured_contract_sections",
       "class_name": null,
-      "farley_index": 8.75,
+      "farley_index": 8.375,
       "farley_breakdown": {
         "understandable": {
           "score": 8,
-          "rationale": "The test name and logic are highly readable. It clearly identifies the business rule: that a system prompt must contain specific structured sections defined by an evaluator constant.",
+          "rationale": "The test name and logic are highly readable. It clearly identifies the business rule: that a specific system prompt must contain predefined sections using XML-like tags.",
           "suggestions": []
         },
         "maintainable": {
           "score": 9,
-          "rationale": "Excellent decoupling from implementation details; it tests for string presence rather than parsing logic or internal data structures. It will remain valid even if the evaluator's prompt format changes as long as these tags exist.",
+          "rationale": "Excellent decoupling from implementation details; it tests for string presence and tag structure rather than parsing logic or specific content values. It will survive refactoring of the evaluator's internal representation.",
           "suggestions": []
         },
         "repeatable": {
-          "score": 7,
-          "rationale": "The test is self-contained and deterministic regarding its assertions (string presence). However, it relies on `code_review_evaluator.SYSTEM_PROMPT`, which could theoretically change if the evaluator implementation changes without updating this specific unit.",
-          "suggestions": [
-            "Ensure `SYSTEM_PROMPT` in the evaluator module is a constant or explicitly documented as immutable for this test to avoid flakiness due to refactoring that doesn't update tests."
-          ]
+          "score": 10,
+          "rationale": "The test is fully self-contained with no external dependencies (no DB calls, network requests, or timing). It relies solely on string matching and basic Python functions.",
+          "suggestions": []
         },
         "atomic": {
-          "score": 10,
-          "rationale": "The test verifies exactly one behavior: the presence of specific tags within a string. If it fails, the cause is instantly obvious (missing tag or malformed XML). It does not mix setup logic with assertions.",
-          "suggestions": []
+          "score": 9,
+          "rationale": "It verifies exactly one behavior: the presence of specific tags in a single prompt. If it fails, the cause is immediately obvious (missing tag or malformed XML).",
+          "suggestions": [
+            "Consider adding an assertion that checks for *valid* closing tags (`</section>`), not just `</{tag}>`, to prevent false positives if someone accidentally omits a closing bracket.",
+            "Ensure the test doesn't rely on whitespace variations in tag names (e.g., `<role>`) which could cause flaky failures."
+          ]
         },
         "necessary": {
-          "score": 9,
-          "rationale": "This test covers one specific aspect of prompt structure. While it doesn't cover content validation yet (e.g., `elite senior software engineer`), the presence check is necessary to ensure basic structural integrity before deeper semantic checks.",
-          "suggestions": []
+          "score": 7,
+          "rationale": "While useful for validation, this specific test duplicates coverage already provided by the broader `test_code_review_system_prompt_uses_all_sections` (if it exists) or general string presence tests. It adds little new value compared to verifying content within those sections.",
+          "suggestions": [
+            "Remove if there is a dedicated 'all sections' test, as this one only checks for the *presence* of tags rather than their semantic correctness."
+          ]
         },
         "granular": {
-          "score": 8,
-          "rationale": "The test targets a specific pattern: `<tag>` inside `</tag>`. It isolates the 'presence of tags' behavior from content validation. However, it could be more granular by checking for whitespace or newline handling around these tags.",
+          "score": 6,
+          "rationale": "It targets specific structural elements (tags) but does not deeply isolate or verify the actual content semantics within those sections. It's a 'presence' test, which is less granular than verifying `role_content` contains `'elite senior software engineer'`.",
           "suggestions": [
-            "Consider adding assertions to ensure no extra newlines exist between opening and closing tags: `<role></role>` vs `</role>\n<task>`. This prevents false negatives if the evaluator adds formatting that breaks simple string matching."
+            "Refine to check for semantic correctness: assert that `<role>` actually holds text containing 'elite senior software engineer', not just the tag exists."
           ]
         },
         "fast": {
-          "score": 9,
-          "rationale": "The test is extremely fast. It involves a single function call per assertion and no heavy I/O or network operations. The `find` method on strings is O(n) but negligible for this scope.",
+          "score": 10,
+          "rationale": "The test executes in milliseconds. It avoids sleeps, heavy setups, or I/O operations entirely.",
           "suggestions": []
         },
         "first_tdd": {
-          "score": 10,
-          "rationale": "This test perfectly demonstrates the Arrange-Act-Assert pattern: `Arrange` (fetching prompt), `Act` (loop through sections and assert presence), `Assert` (semantic validation). It is a clean, high-level unit test.",
-          "suggestions": []
+          "score": 8,
+          "rationale": "It follows the Arrange-Act-Assert pattern: `Arrange` (get prompt), `Act` (iterate through sections and assert presence), `Assert` (verify content). However, it lacks a clear 'specification' phase where behavior is defined before implementation.",
+          "suggestions": [
+            "Add an explicit specification comment or docstring at the top defining what constitutes valid structured contract data. This makes the test more robust against future changes in the prompt format."
+          ]
         },
-        "summary": "The code passes all Farley properties with minor suggestions for whitespace handling in the granularity check."
+        "summary": "The test demonstrates strong adherence to TDD principles (atomic, fast, repeatable) and is highly understandable/maintainable due to its structural focus on tags rather than content values. However, it risks redundancy if other tests cover section presence broadly, and could be improved by verifying semantic correctness within the sections."
       }
     },
     {
@@ -1108,6 +1113,135 @@
           "suggestions": []
         },
         "summary": "The test passes all criteria. It is highly atomic, fast, and follows TDD principles perfectly. The only minor risk is the reliance on `SYSTEM_PROMPT` being stable; moving it to a constants file would improve maintainability without changing behavior."
+      }
+    },
+    {
+      "id": "tests/test_code_review.py::test_code_review_system_prompt_calibrates_block_severity_to_merge_blockers",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_code_review_system_prompt_calibrates_block_severity_to_merge_blockers",
+      "class_name": null,
+      "farley_index": 7.875,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test name is descriptive enough for a code review context. However, the implementation logic (indexing strings) obscures the business rule; it should assert on specific string content directly.",
+          "suggestions": [
+            "Remove all `code_review_evaluator` lookups and indexing operations from the assertion body to make intent explicit: `assert 'Use BLOCK only for concrete merge-blocking issues' in severity_rules`.",
+            "Ensure domain experts (not just developers) can read this test without needing to understand Python string manipulation internals."
+          ]
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "The logic is decoupled from the system implementation. It tests a specific rule within `SYSTEM_PROMPT` rather than how that prompt is generated or stored.",
+          "suggestions": [
+            "Ensure no side effects occur during test execution (e.g., no file writes, network calls).",
+            "If `code_review_evaluator.SYSTEM_PROMPT` changes structure in the future, this specific assertion will still pass as long as the string exists."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic and self-contained. However, it relies on `SYSTEM_PROMPT` being a constant or easily accessible object; if that data structure changes (e.g., moved to config), the test breaks without context.",
+          "suggestions": [
+            "Move this logic into an isolated fixture class (`test_code_review_system_prompt_calibrates_block_severity_to_merge_blockers`) rather than inline, ensuring it runs independently of other tests' state.",
+            "Verify that `SYSTEM_PROMPT` is not a shared mutable resource; if so, ensure the test creates its own copy or uses immutable data."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: whether specific strings are present in `SYSTEM_PROMPT`. If it fails, the cause is immediately obvious (missing string).",
+          "suggestions": [
+            "No refactoring needed here; this is a clean assertion.",
+            "Ensure no other assertions or side effects exist within this single function."
+          ]
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test covers specific string matching. However, it likely duplicates coverage of existing tests that already verify these strings are present in the prompt.",
+          "suggestions": [
+            "Audit other code review tests to ensure they do not also check for 'Use BLOCK only...' or similar rules; consolidate if necessary.",
+            "If this test is redundant, remove it and rely on broader coverage from existing unit/integration tests."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The assertion targets specific strings related to 'block severity' logic. It isolates the rule for merge-blocking issues.",
+          "suggestions": [
+            "Consider breaking this into smaller tests: one for `Use BLOCK only...`, another for `correctness bug` (if applicable), etc., rather than a single long string match."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes in milliseconds. It avoids sleeps, heavy setups, or I/O operations.",
+          "suggestions": [
+            "No performance issues detected; this is a lightweight unit test."
+          ]
+        },
+        "first_tdd": {
+          "score": 7,
+          "rationale": "The structure follows Arrange-Act-Assert (indexing string to get content -> assert). However, the 'Arrange' phase involves complex logic that obscures intent.",
+          "suggestions": [
+            "Refactor into a dedicated fixture: `def setup_code_review_prompt(): ...` followed by simple assertions in an act block."
+          ]
+        },
+        "summary": "The test is functional and fast but suffers from poor readability due to implementation details. It risks redundancy if other tests cover the same strings. Refactoring for TDD principles (fixture-based) would significantly improve maintainability and clarity."
+      }
+    },
+    {
+      "id": "tests/test_code_review.py::test_code_review_system_prompt_embeds_boundary_first_review_rubric",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_code_review_system_prompt_embeds_boundary_first_review_rubric",
+      "class_name": null,
+      "farley_index": 6.875,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test name and logic are clear. It explicitly targets the 'first review' of system prompt embeddings against a specific Rubric document.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 6,
+          "rationale": "While readable, this test is brittle to any change in `SYSTEM_PROMPT` or the structure of the rubric. It relies on string indexing which fails if new lines are added without updating indices.",
+          "suggestions": [
+            "Extract the Rubric content into a dedicated data class or constant instead of parsing it inline with string slicing."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is self-contained and deterministic. It does not rely on external state like databases or network calls.",
+          "suggestions": []
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "This single assertion verifies exactly one behavior: the presence of specific keywords in a substring extracted from the prompt. If it fails, the cause is instantly obvious (missing keyword or wrong index).",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 5,
+          "rationale": "This test duplicates coverage already provided by other tests likely checking for 'input boundaries', 'compatibility contracts', and general rubric presence. It adds no unique value.",
+          "suggestions": [
+            "Remove this assertion if it is redundant with existing tests covering the same ground."
+          ]
+        },
+        "granular": {
+          "score": 4,
+          "rationale": "The test asserts broad keywords ('security', 'telemetry') rather than specific implementation details or edge cases. It lacks precision in what it isolates.",
+          "suggestions": [
+            "Assert the presence of a specific error code (e.g., `ERROR_CODE_INPUT_BOUNDARY`) instead of general text strings."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes in milliseconds. It avoids sleeps and heavy I/O.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 7,
+          "rationale": "It follows the Arrange-Act-Assert pattern (extracting data -> asserting content). However, it lacks a clear 'Arrange' phase that explicitly defines the input state before acting.",
+          "suggestions": [
+            "Explicitly define `prompt = code_review_evaluator.SYSTEM_PROMPT` as an explicit setup step to ensure isolation and clarity of intent."
+          ]
+        },
+        "summary": "The test is functional but redundant. It should be removed if covered by existing tests or replaced with a more specific assertion about error codes rather than general text presence."
       }
     },
     {
@@ -1819,59 +1953,295 @@
       "file_path": "tests/test_code_review.py",
       "test_name": "test_code_review_block_requires_structured_block_finding",
       "class_name": null,
-      "farley_index": 7.375,
+      "farley_index": 7.875,
       "farley_breakdown": {
         "understandable": {
           "score": 8,
-          "rationale": "The test clearly defines the input data structures (unstructured vs. structured blocks) and the expected output grouping logic via `code_review_compare.group_units_by_severity`. The intent is explicit.",
+          "rationale": "The test name and code clearly define the business rule: a 'BLOCK' severity finding must be contained within a structured block. The logic is straightforward without unnecessary clutter.",
           "suggestions": []
         },
         "maintainable": {
-          "score": 6,
-          "rationale": "The test relies on an external library (`code_review_compare`) and its internal logic. If the grouping algorithm changes or if `group_units_by_severity` is refactored to use a different data structure (e.g., dictionaries instead of nested dicts), this specific assertion will break without modification.",
-          "suggestions": [
-            "Replace hardcoded dictionary structures with abstract classes, interfaces, or generic types that define the shape of 'block units' and their severity levels. This ensures tests remain valid regardless of internal implementation details."
-          ]
+          "score": 9,
+          "rationale": "The test relies on `code_review_compare.group_units_by_severity`, which abstracts away the internal implementation details of how blocks are grouped. It tests 'what' (severity grouping) rather than 'how'.",
+          "suggestions": []
         },
         "repeatable": {
           "score": 7,
-          "rationale": "The test is deterministic in execution order (list input) but relies on the external library's behavior to produce results. It does not contain any shared state or timing dependencies.",
+          "rationale": "The test is deterministic and self-contained in terms of logic flow; however, it relies on `block_finding()` which may introduce external state or timing dependencies if not mocked.",
           "suggestions": [
-            "Ensure `code_review_compare.group_units_by_severity` returns a consistent, ordered list of units based solely on the provided inputs and severity classification logic."
+            "Replace any calls to `block_finding()` with a mock object that returns the expected finding structure directly. This ensures no reliance on external shared state or side effects."
           ]
         },
         "atomic": {
           "score": 9,
-          "rationale": "The test verifies exactly one behavior: grouping by severity. If this assertion fails (e.g., `block_units` is empty or contains unexpected items), the cause is immediately obvious and isolated to that specific logic path.",
+          "rationale": "The test verifies exactly one behavior: grouping units by severity into specific buckets (BLOCK/WARN/OK). If the assertion fails, it is immediately obvious that the logic for categorizing blocks is incorrect.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "While this test covers a specific edge case (BLOCK severity), it may not be strictly necessary if other tests already cover general block grouping logic. It should only exist to ensure the 'critical' path is handled correctly.",
+          "suggestions": [
+            "Review existing unit tests for `group_units_by_severity`. If they pass, this specific test might be redundant unless there's a known failure in handling critical blocks specifically."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The assertion is granular enough to verify the exact distribution of units across severity levels. It isolates specific behavior (severity classification) rather than general functionality.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "There are no artificial sleeps or heavy I/O operations in the test body; it is a pure logic execution that should execute rapidly.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 7,
+          "rationale": "The code follows an Arrange-Act-Assert pattern (setup data -> run grouping function -> assert results). However, the 'Arrange' phase is incomplete; it does not explicitly mock `block_finding()` to prevent external state reliance.",
+          "suggestions": [
+            "Implement a proper TDD cycle: 1. Write an assertion for expected output first (`assert block_units == [...]`). 2. Arrange by mocking or stubbing the dependency that generates findings (e.g., `mock_block_finder.return_value = ...`)."
+          ]
+        },
+        "summary": "The test is well-structured and logically sound but lacks robustness against external dependencies like mocked data generation. It should be refined to ensure it passes without relying on side effects."
+      }
+    },
+    {
+      "id": "tests/test_code_review.py::test_missing_docstring_only_is_warn_not_block",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_missing_docstring_only_is_warn_not_block",
+      "class_name": null,
+      "farley_index": 7.0,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test name and intent are clear: it verifies that a missing docstring triggers only a warning without blocking execution. The code is readable but slightly verbose in its assertion logic.",
+          "suggestions": [
+            "Refactor the `code_review_compare.group_units_by_severity` call to be more explicit about what it returns, reducing cognitive load for future readers."
+          ]
+        },
+        "maintainable": {
+          "score": 6,
+          "rationale": "The test is decoupled from implementation details (no database/network), but the `code_review_compare` module's behavior relies on external state or logic that could change if refactored. It tests 'what' not 'how', which is good.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test runs deterministically without relying on shared mutable state (like a database) or external timing/network calls. However, the `code_review_compare` module's internal logic might introduce non-determinism if it depends on side effects.",
+          "suggestions": []
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: that a single unit with only a missing docstring results in `warn_units == [unit]`. The cause is instantly obvious (missing docstring -> warning).",
           "suggestions": []
         },
         "necessary": {
           "score": 5,
-          "rationale": "This test likely duplicates coverage already provided by other tests in `test_code_review.py` (e.g., unit testing the grouping function itself). It does not add unique value or cover edge cases that are currently untested.",
+          "rationale": "This test duplicates coverage of other tests that likely verify the same logic for different scenarios or edge cases. It does not add unique value to the code review suite.",
+          "suggestions": []
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The test is granular enough to isolate a specific rule (missing docstring) and its immediate consequence (warning). However, it could be more precise by explicitly checking for no `block_units`.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "There are no artificial sleeps or heavy I/O operations. The test executes rapidly assuming the underlying review logic is efficient.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 6,
+          "rationale": "The test follows a basic Arrange-Act-Assert pattern but lacks explicit separation of concerns (Arrange vs Act). It does not clearly demonstrate the design intent before asserting behavior.",
+          "suggestions": []
+        },
+        "summary": "This is an acceptable unit test that verifies specific business logic. However, it risks redundancy and could benefit from clearer naming conventions to avoid duplication with other similar tests in your suite."
+      }
+    },
+    {
+      "id": "tests/test_code_review.py::test_report_contract_string_assertions_are_warn_not_block",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_report_contract_string_assertions_are_warn_not_block",
+      "class_name": null,
+      "farley_index": 7.0,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test name and intent are clear: it verifies that contract string assertions trigger warnings rather than blocks. However, the rationale mentions 'rendered markdown strings' which is implementation-specific clutter not visible to other developers.",
           "suggestions": [
-            "Remove this specific assertion if it is redundant. Instead, focus on writing a test for an *uncovered* scenario: e.g., `test_code_review_block_requires_structured_block_finding_with_mixed_severities` to ensure the logic handles mixed inputs correctly."
+            "Replace 'rendered markdown strings' with generic terms like 'contract assertion output' or simply describe the behavior ('assertions that should warn')."
+          ]
+        },
+        "maintainable": {
+          "score": 6,
+          "rationale": "The test is decoupled from implementation details (it doesn't check for specific markdown rendering), but it relies on a complex `code_review_compare` library and its internal grouping logic. If that library changes how units are grouped or if the underlying contract definition shifts without updating this assertion's expected value, maintainability drops.",
+          "suggestions": [
+            "Ensure the test explicitly checks for specific warning types (e.g., 'WARNING' vs 'ERROR') rather than relying on a generic group name like `warn_units` which could be fragile if grouping logic changes."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is self-contained and deterministic; it does not rely on external state or timing. However, the dependency on a complex library (`code_review_compare`) introduces an artificial coupling that makes reproducing the exact failure mode difficult without running the entire review pipeline.",
+          "suggestions": [
+            "Isolate this specific logic into its own unit test function to ensure it runs independently and can be reused across different code reviews or environments."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: the relationship between contract string assertions and their resulting severity (warn vs block). The cause is instantly obvious if it fails\u2014the assertion triggered a block instead of a warning.",
+          "suggestions": [
+            "None needed. This is an atomic unit."
+          ]
+        },
+        "necessary": {
+          "score": 5,
+          "rationale": "This test duplicates coverage already provided by the `test_report_contract_string_assertions_are_warn_not_block` function (assuming that exists) or other tests verifying contract assertion behavior. It may be testing a trivial implementation detail rather than a unique business rule.",
+          "suggestions": [
+            "Review if this specific grouping logic is necessary for all code reviews, as it might duplicate the purpose of existing 'warn' vs 'block' checks."
           ]
         },
         "granular": {
           "score": 7,
-          "rationale": "The test isolates specific behavior: grouping units by severity. However, it is somewhat coarse-grained as a unit; it tests the *result* of an operation rather than verifying that `group_units_by_severity` correctly identifies 'BLOCK' vs 'WARN' based on content.",
+          "rationale": "The test targets a granular aspect: ensuring contract assertions do not cause blocking failures. However, it is somewhat broad in scope (all units) and doesn't isolate the specific logic of *why* an assertion might be flagged as 'block' versus 'warn'.",
           "suggestions": [
-            "Refine the test to assert specific properties within the returned units (e.g., checking if all BLOCK findings are present in the corresponding unit) or verify a more granular aspect of the grouping logic itself."
+            "Refine to check specifically for a known error code or message pattern associated with blocking assertions rather than just grouping by severity."
+          ]
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "The test executes rapidly as it contains no artificial sleeps, heavy setups, or slow I/O. The only potential bottleneck is the `code_review_compare` library call.",
+          "suggestions": [
+            "Verify that calling `group_units_by_severity([unit])` does not trigger a full review cycle; if so, mock this function to ensure speed."
+          ]
+        },
+        "first_tdd": {
+          "score": 6,
+          "rationale": "The test follows the Arrange-Act-Assert pattern (Arrange: create unit with block finding. Act/Assert: check grouping results). However, it lacks a clear 'specification' of *what* behavior is being designed for; it assumes knowledge about how `code_review_compare` groups units that isn't visible in the code.",
+          "suggestions": [
+            "Add an explicit Arrange step defining the expected outcome (e.g., `assert warn_units == [...]`) and ensure this test was written to define a specific design property of contract assertions, not just verify existing behavior."
+          ]
+        },
+        "summary": "The test is highly atomic and fast but suffers from low understandability due to implementation-specific details. It risks being redundant if other tests cover similar logic or brittle if the underlying library changes grouping semantics without updating this assertion's expected values."
+      }
+    },
+    {
+      "id": "tests/test_code_review.py::test_malformed_cassette_handling_bug_is_block",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_malformed_cassette_handling_bug_is_block",
+      "class_name": null,
+      "farley_index": 8.125,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test name and title clearly articulate the business rule: malformed cassette handling must block CI results. The language is technical but precise enough for engineers familiar with 'cassette' terminology.",
+          "suggestions": [
+            "Consider adding a brief inline comment defining what constitutes a 'malformed' cassette to ensure alignment across teams if this codebase evolves into different dialects."
+          ]
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "The test is tightly coupled only with the `block_finding` function and its return value. It does not rely on external state or side effects that would break if other parts of the system are refactored.",
+          "suggestions": [
+            "Ensure `code_review_compare.group_units_by_severity` remains stable in future versions; consider unit-testing this helper method to guarantee deterministic behavior regardless of implementation changes."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is self-contained and does not rely on external shared state. However, it implicitly relies on the determinism of `block_finding`'s return value structure.",
+          "suggestions": [
+            "Explicitly assert that `code_review_compare.group_units_by_severity([unit])` returns a list with exactly one element to guarantee repeatability even if internal logic changes."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: that the unit is classified as `block_units`. If this assertion fails, it immediately indicates a bug in how malformed cassettes are handled.",
+          "suggestions": [
+            "No specific changes needed; consider adding an explicit check for empty lists to ensure no other units slip through."
+          ]
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "This test has a unique purpose: validating that malformed cassettes are blocked. It does not duplicate coverage of existing tests (assuming they cover valid cases) or trivial things.",
+          "suggestions": [
+            "Review if this specific error path is covered by integration tests; ensure the unit-level failure here doesn't mask broader architectural issues."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The test isolates a single aspect: classification of units. However, it could be more granular by asserting specific values for `block_units`, `warn_units`, and `ok_units` to catch regressions earlier.",
+          "suggestions": [
+            "Assert that `len(block_units) == 1` explicitly rather than just equality; this forces the test to verify not only presence but also correct categorization."
           ]
         },
         "fast": {
           "score": 9,
-          "rationale": "The test executes instantly. There is no artificial delay, heavy setup code (like database connections), or unneeded I/O operations.",
+          "rationale": "The test executes rapidly without artificial delays or heavy I/O. It relies on pure function calls and assertions.",
+          "suggestions": [
+            "No changes needed; ensure `block_finding` is mocked if this test were to run in an environment where external dependencies are slow."
+          ]
+        },
+        "first_tdd": {
+          "score": 8,
+          "rationale": "The test follows the Arrange-Act-Assert pattern: it sets up a `block_finding` call (Arrange), performs the action of grouping units (Act), and asserts results (Assert).",
+          "suggestions": [
+            "Explicitly name variables like `unit`, `block_units`, etc., to make the flow clearer for future maintainers."
+          ]
+        },
+        "summary": "The test is highly effective at validating a critical business rule with minimal overhead. It adheres strictly to TDD principles and maintains high quality standards across all eight properties."
+      }
+    },
+    {
+      "id": "tests/test_code_review.py::test_broken_report_lane_status_is_block",
+      "file_path": "tests/test_code_review.py",
+      "test_name": "test_broken_report_lane_status_is_block",
+      "class_name": null,
+      "farley_index": 7.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test name and title clearly articulate the business rule: a broken report lane status should fail. The domain language is precise ('broken', 'lane status'), avoiding implementation clutter.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 6,
+          "rationale": "The test relies on `code_review_compare.group_units_by_severity`, which couples the logic to a specific internal method. If this grouping function changes or is refactored without updating here, tests break.",
+          "suggestions": [
+            "Extract the unit classification logic into its own helper function (Arrange) before calling it in Act/Assert."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is self-contained and deterministic. It does not rely on external state or timing.",
+          "suggestions": []
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "This single assertion verifies exactly one behavior: that the `block_units` list contains only the failing unit. The cause is instantly obvious if it fails.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "The test has a unique purpose (verifying block status). It does not duplicate coverage of other tests and focuses on a specific rule rather than trivial checks.",
+          "suggestions": []
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "It targets the 'block' state specifically. However, it could be more granular by asserting that *only* this unit is blocked and no others are affected.",
+          "suggestions": [
+            "Assert `len(block_units) == 1` to ensure exclusivity."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes immediately without artificial delays or heavy I/O operations.",
           "suggestions": []
         },
         "first_tdd": {
           "score": 8,
-          "rationale": "While the structure follows Arrange-Act-Assert implicitly by defining inputs and asserting outputs, it does not explicitly demonstrate a clean separation of concerns. The 'Arrange' phase (defining data) is mixed with the Act/Assert phases in a way that could be clearer if structured as an isolated spec.",
+          "rationale": "It follows the Arrange-Act-Assert pattern. However, it lacks a clear 'Arrange' phase that explicitly sets up the context (e.g., `review_with_block_finding` is called but not isolated as an explicit setup step).",
           "suggestions": [
-            "Explicitly separate the Arrange section from the Assert sections using `@pytest.fixture` or similar to clearly delineate setup, execution logic, and verification. This makes it easier for others (and future you) to understand exactly what is being tested."
+            "Explicitly isolate the fixture call: `setup = review_with_block_finding(...)`. Then use `assert len(setup.block_units) == 1` in Act/Assert."
           ]
         },
-        "summary": "The test passes all criteria except necessity due to redundancy with existing tests. It should be removed if the grouping behavior has been thoroughly covered elsewhere in the suite. The implementation details are clean and fast, but decoupling from external library internals would significantly improve maintainability."
+        "summary": ""
       }
     },
     {
@@ -7901,32 +8271,32 @@
     "farley_usage_summary": {
       "run_id": "main-baseline",
       "model": "ollama/qwen3.5:2b",
-      "reviewed_test_cases": 118,
+      "reviewed_test_cases": 124,
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 154,
-          "prompt_tokens": 136106,
-          "completion_tokens": 127517,
-          "total_tokens": 263623,
+          "calls": 160,
+          "prompt_tokens": 139608,
+          "completion_tokens": 132102,
+          "total_tokens": 271710,
           "cost_usd": 0.0,
           "missing_usage_calls": 0
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 154,
-            "prompt_tokens": 136106,
-            "completion_tokens": 127517,
-            "total_tokens": 263623,
+            "calls": 160,
+            "prompt_tokens": 139608,
+            "completion_tokens": 132102,
+            "total_tokens": 271710,
             "cost_usd": 0.0
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 154,
-            "prompt_tokens": 136106,
-            "completion_tokens": 127517,
-            "total_tokens": 263623,
+            "calls": 160,
+            "prompt_tokens": 139608,
+            "completion_tokens": 132102,
+            "total_tokens": 271710,
             "cost_usd": 0.0
           }
         },
@@ -8018,11 +8388,11 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "cache",
+            "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 650,
-            "completion_tokens": 719,
-            "total_tokens": 1369,
+            "prompt_tokens": 658,
+            "completion_tokens": 820,
+            "total_tokens": 1478,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -8035,6 +8405,30 @@
             "prompt_tokens": 505,
             "completion_tokens": 665,
             "total_tokens": 1170,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 546,
+            "completion_tokens": 951,
+            "total_tokens": 1497,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 581,
+            "completion_tokens": 650,
+            "total_tokens": 1231,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -8318,11 +8712,59 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "cache",
+            "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 541,
-            "completion_tokens": 923,
-            "total_tokens": 1464,
+            "prompt_tokens": 539,
+            "completion_tokens": 737,
+            "total_tokens": 1276,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 583,
+            "completion_tokens": 602,
+            "total_tokens": 1185,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 594,
+            "completion_tokens": 1002,
+            "total_tokens": 1596,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 599,
+            "completion_tokens": 873,
+            "total_tokens": 1472,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 593,
+            "completion_tokens": 592,
+            "total_tokens": 1185,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -8402,7 +8844,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 1316,
             "completion_tokens": 786,
@@ -8414,7 +8856,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 1059,
             "completion_tokens": 890,
@@ -8438,7 +8880,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 1050,
             "completion_tokens": 827,
@@ -8462,7 +8904,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 1809,
             "completion_tokens": 731,
@@ -8474,7 +8916,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 1270,
             "completion_tokens": 736,
@@ -8486,7 +8928,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 926,
             "completion_tokens": 725,
@@ -8498,7 +8940,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 849,
             "completion_tokens": 644,
@@ -8558,7 +9000,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 636,
             "completion_tokens": 1024,
@@ -8570,7 +9012,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 1921,
             "completion_tokens": 1024,
@@ -8582,7 +9024,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 3206,
             "completion_tokens": 890,
@@ -8594,7 +9036,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 891,
             "completion_tokens": 1024,
@@ -8606,7 +9048,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 2056,
             "completion_tokens": 1004,
@@ -8618,7 +9060,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 482,
             "completion_tokens": 862,
@@ -9194,7 +9636,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 874,
             "completion_tokens": 950,
@@ -9326,7 +9768,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 705,
             "completion_tokens": 1024,
@@ -9338,7 +9780,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 1879,
             "completion_tokens": 890,
@@ -9350,7 +9792,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 476,
             "completion_tokens": 981,
@@ -15760,6 +16202,222 @@
       "completion_tokens": 981,
       "prompt_tokens": 476,
       "total_tokens": 1457,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "e66f0b22f57776a3b2027f4826a2cea484874599933e13bd18044b1b6cfe3bab": {
+    "id": "chatcmpl-455417e1-7376-4364-9f2e-25efb729c65f",
+    "created": 1784232649,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and logic are highly readable. It clearly identifies the business rule: that a specific system prompt must contain predefined sections using XML-like tags.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"Excellent decoupling from implementation details; it tests for string presence and tag structure rather than parsing logic or specific content values. It will survive refactoring of the evaluator's internal representation.\",\n    \"suggestions\": []\n  },\n  \"repeatable\": {\n    \"score\": 10,\n    \"rationale\": \"The test is fully self-contained with no external dependencies (no DB calls, network requests, or timing). It relies solely on string matching and basic Python functions.\",\n    \"suggestions\": []\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"It verifies exactly one behavior: the presence of specific tags in a single prompt. If it fails, the cause is immediately obvious (missing tag or malformed XML).\",\n    \"suggestions\": [\n      \"Consider adding an assertion that checks for *valid* closing tags (`</section>`), not just `</{tag}>`, to prevent false positives if someone accidentally omits a closing bracket.\",\n      \"Ensure the test doesn't rely on whitespace variations in tag names (e.g., `<role>`) which could cause flaky failures.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 7,\n    \"rationale\": \"While useful for validation, this specific test duplicates coverage already provided by the broader `test_code_review_system_prompt_uses_all_sections` (if it exists) or general string presence tests. It adds little new value compared to verifying content within those sections.\",\n    \"suggestions\": [\n      \"Remove if there is a dedicated 'all sections' test, as this one only checks for the *presence* of tags rather than their semantic correctness.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 6,\n    \"rationale\": \"It targets specific structural elements (tags) but does not deeply isolate or verify the actual content semantics within those sections. It's a 'presence' test, which is less granular than verifying `role_content` contains `'elite senior software engineer'`.\",\n    \"suggestions\": [\n      \"Refine to check for semantic correctness: assert that `<role>` actually holds text containing 'elite senior software engineer', not just the tag exists.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 10,\n    \"rationale\": \"The test executes in milliseconds. It avoids sleeps, heavy setups, or I/O operations entirely.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 8,\n    \"rationale\": \"It follows the Arrange-Act-Assert pattern: `Arrange` (get prompt), `Act` (iterate through sections and assert presence), `Assert` (verify content). However, it lacks a clear 'specification' phase where behavior is defined before implementation.\",\n    \"suggestions\": [\n      \"Add an explicit specification comment or docstring at the top defining what constitutes valid structured contract data. This makes the test more robust against future changes in the prompt format.\"\n    ]\n  },\n  \"summary\": \"The test demonstrates strong adherence to TDD principles (atomic, fast, repeatable) and is highly understandable/maintainable due to its structural focus on tags rather than content values. However, it risks redundancy if other tests cover section presence broadly, and could be improved by verifying semantic correctness within the sections.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 820,
+      "prompt_tokens": 658,
+      "total_tokens": 1478,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "805e0a8a3a17572102cd39e4a95f9f99d07fc8bb4aecd2ba7523599c88804145": {
+    "id": "chatcmpl-9d3dae1d-5874-4c79-a5ef-cd018bc60727",
+    "created": 1784232733,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name is descriptive enough for a code review context. However, the implementation logic (indexing strings) obscures the business rule; it should assert on specific string content directly.\",\n    \"suggestions\": [\n      \"Remove all `code_review_evaluator` lookups and indexing operations from the assertion body to make intent explicit: `assert 'Use BLOCK only for concrete merge-blocking issues' in severity_rules`.\",\n      \"Ensure domain experts (not just developers) can read this test without needing to understand Python string manipulation internals.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"The logic is decoupled from the system implementation. It tests a specific rule within `SYSTEM_PROMPT` rather than how that prompt is generated or stored.\",\n    \"suggestions\": [\n      \"Ensure no side effects occur during test execution (e.g., no file writes, network calls).\",\n      \"If `code_review_evaluator.SYSTEM_PROMPT` changes structure in the future, this specific assertion will still pass as long as the string exists.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic and self-contained. However, it relies on `SYSTEM_PROMPT` being a constant or easily accessible object; if that data structure changes (e.g., moved to config), the test breaks without context.\",\n    \"suggestions\": [\n      \"Move this logic into an isolated fixture class (`test_code_review_system_prompt_calibrates_block_severity_to_merge_blockers`) rather than inline, ensuring it runs independently of other tests' state.\",\n      \"Verify that `SYSTEM_PROMPT` is not a shared mutable resource; if so, ensure the test creates its own copy or uses immutable data.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: whether specific strings are present in `SYSTEM_PROMPT`. If it fails, the cause is immediately obvious (missing string).\",\n    \"suggestions\": [\n      \"No refactoring needed here; this is a clean assertion.\",\n      \"Ensure no other assertions or side effects exist within this single function.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test covers specific string matching. However, it likely duplicates coverage of existing tests that already verify these strings are present in the prompt.\",\n    \"suggestions\": [\n      \"Audit other code review tests to ensure they do not also check for 'Use BLOCK only...' or similar rules; consolidate if necessary.\",\n      \"If this test is redundant, remove it and rely on broader coverage from existing unit/integration tests.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The assertion targets specific strings related to 'block severity' logic. It isolates the rule for merge-blocking issues.\",\n    \"suggestions\": [\n      \"Consider breaking this into smaller tests: one for `Use BLOCK only...`, another for `correctness bug` (if applicable), etc., rather than a single long string match.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes in milliseconds. It avoids sleeps, heavy setups, or I/O operations.\",\n    \"suggestions\": [\n      \"No performance issues detected; this is a lightweight unit test.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"The structure follows Arrange-Act-Assert (indexing string to get content -> assert). However, the 'Arrange' phase involves complex logic that obscures intent.\",\n    \"suggestions\": [\n      \"Refactor into a dedicated fixture: `def setup_code_review_prompt(): ...` followed by simple assertions in an act block.\"\n    ]\n  },\n  \"summary\": \"The test is functional and fast but suffers from poor readability due to implementation details. It risks redundancy if other tests cover the same strings. Refactoring for TDD principles (fixture-based) would significantly improve maintainability and clarity.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 951,
+      "prompt_tokens": 546,
+      "total_tokens": 1497,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "7d22c76fd91f2971dcb4bff17169ed60064f5bafc36c07975d00ae236e945b1e": {
+    "id": "chatcmpl-84043527-7db8-4539-80c2-e566f30ffaa3",
+    "created": 1784232794,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and logic are clear. It explicitly targets the 'first review' of system prompt embeddings against a specific Rubric document.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"While readable, this test is brittle to any change in `SYSTEM_PROMPT` or the structure of the rubric. It relies on string indexing which fails if new lines are added without updating indices.\",\n    \"suggestions\": [\n      \"Extract the Rubric content into a dedicated data class or constant instead of parsing it inline with string slicing.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is self-contained and deterministic. It does not rely on external state like databases or network calls.\",\n    \"suggestions\": []\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"This single assertion verifies exactly one behavior: the presence of specific keywords in a substring extracted from the prompt. If it fails, the cause is instantly obvious (missing keyword or wrong index).\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test duplicates coverage already provided by other tests likely checking for 'input boundaries', 'compatibility contracts', and general rubric presence. It adds no unique value.\",\n    \"suggestions\": [\n      \"Remove this assertion if it is redundant with existing tests covering the same ground.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 4,\n    \"rationale\": \"The test asserts broad keywords ('security', 'telemetry') rather than specific implementation details or edge cases. It lacks precision in what it isolates.\",\n    \"suggestions\": [\n      \"Assert the presence of a specific error code (e.g., `ERROR_CODE_INPUT_BOUNDARY`) instead of general text strings.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes in milliseconds. It avoids sleeps and heavy I/O.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"It follows the Arrange-Act-Assert pattern (extracting data -> asserting content). However, it lacks a clear 'Arrange' phase that explicitly defines the input state before acting.\",\n    \"suggestions\": [\n      \"Explicitly define `prompt = code_review_evaluator.SYSTEM_PROMPT` as an explicit setup step to ensure isolation and clarity of intent.\"\n    ]\n  },\n  \"summary\": \"The test is functional but redundant. It should be removed if covered by existing tests or replaced with a more specific assertion about error codes rather than general text presence.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 650,
+      "prompt_tokens": 581,
+      "total_tokens": 1231,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "f0c3e09403e6c650e78a55f49c868b4b7af325fbc5fa8dcf8102a3ba7ed37155": {
+    "id": "chatcmpl-6cfc6f38-189e-473c-8796-dfe44078dd56",
+    "created": 1784232863,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and code clearly define the business rule: a 'BLOCK' severity finding must be contained within a structured block. The logic is straightforward without unnecessary clutter.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"The test relies on `code_review_compare.group_units_by_severity`, which abstracts away the internal implementation details of how blocks are grouped. It tests 'what' (severity grouping) rather than 'how'.\",\n    \"suggestions\": []\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic and self-contained in terms of logic flow; however, it relies on `block_finding()` which may introduce external state or timing dependencies if not mocked.\",\n    \"suggestions\": [\n      \"Replace any calls to `block_finding()` with a mock object that returns the expected finding structure directly. This ensures no reliance on external shared state or side effects.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: grouping units by severity into specific buckets (BLOCK/WARN/OK). If the assertion fails, it is immediately obvious that the logic for categorizing blocks is incorrect.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"While this test covers a specific edge case (BLOCK severity), it may not be strictly necessary if other tests already cover general block grouping logic. It should only exist to ensure the 'critical' path is handled correctly.\",\n    \"suggestions\": [\n      \"Review existing unit tests for `group_units_by_severity`. If they pass, this specific test might be redundant unless there's a known failure in handling critical blocks specifically.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The assertion is granular enough to verify the exact distribution of units across severity levels. It isolates specific behavior (severity classification) rather than general functionality.\",\n    \"suggestions\": []\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"There are no artificial sleeps or heavy I/O operations in the test body; it is a pure logic execution that should execute rapidly.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"The code follows an Arrange-Act-Assert pattern (setup data -> run grouping function -> assert results). However, the 'Arrange' phase is incomplete; it does not explicitly mock `block_finding()` to prevent external state reliance.\",\n    \"suggestions\": [\n      \"Implement a proper TDD cycle: 1. Write an assertion for expected output first (`assert block_units == [...]`). 2. Arrange by mocking or stubbing the dependency that generates findings (e.g., `mock_block_finder.return_value = ...`).\"\n    ]\n  },\n  \"summary\": \"The test is well-structured and logically sound but lacks robustness against external dependencies like mocked data generation. It should be refined to ensure it passes without relying on side effects.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 737,
+      "prompt_tokens": 539,
+      "total_tokens": 1276,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "7cea86a5f10274aaa0b72666d0782d0eea9d3ec7307eb4812876da7bb5c4ac65": {
+    "id": "chatcmpl-bb5b6fb5-52c2-4ae6-bfb4-d9074890e7c2",
+    "created": 1784232921,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and intent are clear: it verifies that a missing docstring triggers only a warning without blocking execution. The code is readable but slightly verbose in its assertion logic.\",\n    \"suggestions\": [\n      \"Refactor the `code_review_compare.group_units_by_severity` call to be more explicit about what it returns, reducing cognitive load for future readers.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"The test is decoupled from implementation details (no database/network), but the `code_review_compare` module's behavior relies on external state or logic that could change if refactored. It tests 'what' not 'how', which is good.\"\n    },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test runs deterministically without relying on shared mutable state (like a database) or external timing/network calls. However, the `code_review_compare` module's internal logic might introduce non-determinism if it depends on side effects.\"\n    },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: that a single unit with only a missing docstring results in `warn_units == [unit]`. The cause is instantly obvious (missing docstring -> warning).\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test duplicates coverage of other tests that likely verify the same logic for different scenarios or edge cases. It does not add unique value to the code review suite.\"\n    },\n  \"granular\": {\n    \"score\": 7,\n    \"rationale\": \"The test is granular enough to isolate a specific rule (missing docstring) and its immediate consequence (warning). However, it could be more precise by explicitly checking for no `block_units`.\"\n    },\n  \"fast\": {\n    \"score\": 8,\n    \"rationale\": \"There are no artificial sleeps or heavy I/O operations. The test executes rapidly assuming the underlying review logic is efficient.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 6,\n    \"rationale\": \"The test follows a basic Arrange-Act-Assert pattern but lacks explicit separation of concerns (Arrange vs Act). It does not clearly demonstrate the design intent before asserting behavior.\"\n    },\"summary\":\"This is an acceptable unit test that verifies specific business logic. However, it risks redundancy and could benefit from clearer naming conventions to avoid duplication with other similar tests in your suite.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 602,
+      "prompt_tokens": 583,
+      "total_tokens": 1185,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "0783ce3fe0f5baba7d4c33aafc32d4762050672f6462a6e4b8c533d3ac02696f": {
+    "id": "chatcmpl-72e76b6d-8575-4277-b575-5bfe7e79eb49",
+    "created": 1784233014,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and intent are clear: it verifies that contract string assertions trigger warnings rather than blocks. However, the rationale mentions 'rendered markdown strings' which is implementation-specific clutter not visible to other developers.\",\n    \"suggestions\": [\n      \"Replace 'rendered markdown strings' with generic terms like 'contract assertion output' or simply describe the behavior ('assertions that should warn').\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"The test is decoupled from implementation details (it doesn't check for specific markdown rendering), but it relies on a complex `code_review_compare` library and its internal grouping logic. If that library changes how units are grouped or if the underlying contract definition shifts without updating this assertion's expected value, maintainability drops.\",\n    \"suggestions\": [\n      \"Ensure the test explicitly checks for specific warning types (e.g., 'WARNING' vs 'ERROR') rather than relying on a generic group name like `warn_units` which could be fragile if grouping logic changes.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is self-contained and deterministic; it does not rely on external state or timing. However, the dependency on a complex library (`code_review_compare`) introduces an artificial coupling that makes reproducing the exact failure mode difficult without running the entire review pipeline.\",\n    \"suggestions\": [\n      \"Isolate this specific logic into its own unit test function to ensure it runs independently and can be reused across different code reviews or environments.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: the relationship between contract string assertions and their resulting severity (warn vs block). The cause is instantly obvious if it fails\u2014the assertion triggered a block instead of a warning.\",\n    \"suggestions\": [\n      \"None needed. This is an atomic unit.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test duplicates coverage already provided by the `test_report_contract_string_assertions_are_warn_not_block` function (assuming that exists) or other tests verifying contract assertion behavior. It may be testing a trivial implementation detail rather than a unique business rule.\",\n    \"suggestions\": [\n      \"Review if this specific grouping logic is necessary for all code reviews, as it might duplicate the purpose of existing 'warn' vs 'block' checks.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 7,\n    \"rationale\": \"The test targets a granular aspect: ensuring contract assertions do not cause blocking failures. However, it is somewhat broad in scope (all units) and doesn't isolate the specific logic of *why* an assertion might be flagged as 'block' versus 'warn'.\",\n    \"suggestions\": [\n      \"Refine to check specifically for a known error code or message pattern associated with blocking assertions rather than just grouping by severity.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 8,\n    \"rationale\": \"The test executes rapidly as it contains no artificial sleeps, heavy setups, or slow I/O. The only potential bottleneck is the `code_review_compare` library call.\",\n    \"suggestions\": [\n      \"Verify that calling `group_units_by_severity([unit])` does not trigger a full review cycle; if so, mock this function to ensure speed.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 6,\n    \"rationale\": \"The test follows the Arrange-Act-Assert pattern (Arrange: create unit with block finding. Act/Assert: check grouping results). However, it lacks a clear 'specification' of *what* behavior is being designed for; it assumes knowledge about how `code_review_compare` groups units that isn't visible in the code.\",\n    \"suggestions\": [\n      \"Add an explicit Arrange step defining the expected outcome (e.g., `assert warn_units == [...]`) and ensure this test was written to define a specific design property of contract assertions, not just verify existing behavior.\"\n    ]\n  },\n  \"summary\": \"The test is highly atomic and fast but suffers from low understandability due to implementation-specific details. It risks being redundant if other tests cover similar logic or brittle if the underlying library changes grouping semantics without updating this assertion's expected values.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1002,
+      "prompt_tokens": 594,
+      "total_tokens": 1596,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "77d517c601d12fdb422c7ad600168e9642b9839200a8b1d095335e161d482a64": {
+    "id": "chatcmpl-d4878685-9d1e-4eff-a4b1-e3a5044f3eb0",
+    "created": 1784233096,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and title clearly articulate the business rule: malformed cassette handling must block CI results. The language is technical but precise enough for engineers familiar with 'cassette' terminology.\",\n    \"suggestions\": [\n      \"Consider adding a brief inline comment defining what constitutes a 'malformed' cassette to ensure alignment across teams if this codebase evolves into different dialects.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"The test is tightly coupled only with the `block_finding` function and its return value. It does not rely on external state or side effects that would break if other parts of the system are refactored.\",\n    \"suggestions\": [\n      \"Ensure `code_review_compare.group_units_by_severity` remains stable in future versions; consider unit-testing this helper method to guarantee deterministic behavior regardless of implementation changes.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is self-contained and does not rely on external shared state. However, it implicitly relies on the determinism of `block_finding`'s return value structure.\",\n    \"suggestions\": [\n      \"Explicitly assert that `code_review_compare.group_units_by_severity([unit])` returns a list with exactly one element to guarantee repeatability even if internal logic changes.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: that the unit is classified as `block_units`. If this assertion fails, it immediately indicates a bug in how malformed cassettes are handled.\",\n    \"suggestions\": [\n      \"No specific changes needed; consider adding an explicit check for empty lists to ensure no other units slip through.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 8,\n    \"rationale\": \"This test has a unique purpose: validating that malformed cassettes are blocked. It does not duplicate coverage of existing tests (assuming they cover valid cases) or trivial things.\",\n    \"suggestions\": [\n      \"Review if this specific error path is covered by integration tests; ensure the unit-level failure here doesn't mask broader architectural issues.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 7,\n    \"rationale\": \"The test isolates a single aspect: classification of units. However, it could be more granular by asserting specific values for `block_units`, `warn_units`, and `ok_units` to catch regressions earlier.\",\n    \"suggestions\": [\n      \"Assert that `len(block_units) == 1` explicitly rather than just equality; this forces the test to verify not only presence but also correct categorization.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes rapidly without artificial delays or heavy I/O. It relies on pure function calls and assertions.\",\n    \"suggestions\": [\n      \"No changes needed; ensure `block_finding` is mocked if this test were to run in an environment where external dependencies are slow.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 8,\n    \"rationale\": \"The test follows the Arrange-Act-Assert pattern: it sets up a `block_finding` call (Arrange), performs the action of grouping units (Act), and asserts results (Assert).\",\n    \"suggestions\": [\n      \"Explicitly name variables like `unit`, `block_units`, etc., to make the flow clearer for future maintainers.\"\n    ]\n  },\n  \"summary\": \"The test is highly effective at validating a critical business rule with minimal overhead. It adheres strictly to TDD principles and maintains high quality standards across all eight properties.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 873,
+      "prompt_tokens": 599,
+      "total_tokens": 1472,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "cc6fd7cb3fcf71c4e6789962996a6b138d6e93719866fcf7a3bddc8caace6e3d": {
+    "id": "chatcmpl-006d7bf5-a431-4395-9022-05c15655fa99",
+    "created": 1784233154,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and title clearly articulate the business rule: a broken report lane status should fail. The domain language is precise ('broken', 'lane status'), avoiding implementation clutter.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"The test relies on `code_review_compare.group_units_by_severity`, which couples the logic to a specific internal method. If this grouping function changes or is refactored without updating here, tests break.\",\n    \"suggestions\": [\n      \"Extract the unit classification logic into its own helper function (Arrange) before calling it in Act/Assert.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is self-contained and deterministic. It does not rely on external state or timing.\",\n    \"suggestions\": []\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"This single assertion verifies exactly one behavior: that the `block_units` list contains only the failing unit. The cause is instantly obvious if it fails.\"\n    },\"necessary\": {\n      \"score\": 8,\n      \"rationale\": \"The test has a unique purpose (verifying block status). It does not duplicate coverage of other tests and focuses on a specific rule rather than trivial checks.\",\n      \"suggestions\": []\n    },\n    \"granular\": {\n      \"score\": 7,\n      \"rationale\": \"It targets the 'block' state specifically. However, it could be more granular by asserting that *only* this unit is blocked and no others are affected.\",\n      \"suggestions\": [\n        \"Assert `len(block_units) == 1` to ensure exclusivity.\"\n      ]\n    },\n    \"fast\": {\n      \"score\": 9,\n      \"rationale\": \"The test executes immediately without artificial delays or heavy I/O operations.\",\n      \"suggestions\": []\n    },\"first_tdd\": {\n      \"score\": 8,\n      \"rationale\": \"It follows the Arrange-Act-Assert pattern. However, it lacks a clear 'Arrange' phase that explicitly sets up the context (e.g., `review_with_block_finding` is called but not isolated as an explicit setup step).\",\n      \"suggestions\": [\n        \"Explicitly isolate the fixture call: `setup = review_with_block_finding(...)`. Then use `assert len(setup.block_units) == 1` in Act/Assert.\"\n      ]\n    },\"summary\": \"\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 592,
+      "prompt_tokens": 593,
+      "total_tokens": 1185,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
