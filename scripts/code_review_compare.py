@@ -186,14 +186,92 @@ def get_reviews(cassette_data: Dict[str, Any]) -> List[Dict[str, Any]]:
     ]
 
 
+_BLOCKING_FINDING_CATEGORIES = {
+    "api compatibility",
+    "boundary validation",
+    "ci correctness",
+    "compatibility",
+    "correctness",
+    "recoverability",
+    "report contract",
+    "schema contract",
+    "security",
+    "structured output",
+    "telemetry",
+    "validation",
+}
+
+_BLOCKING_FINDING_KEYWORDS = {
+    "broken report",
+    "broken schema",
+    "ci result",
+    "crash",
+    "exception",
+    "false ci",
+    "false pass",
+    "false fail",
+    "injection",
+    "malformed cassette",
+    "missing validation",
+    "path traversal",
+    "schema",
+    "unsafe",
+    "unvalidated",
+}
+
+
+def _finding_text(finding: Dict[str, Any]) -> str:
+    text_fields = [
+        finding.get("title"),
+        finding.get("category"),
+        finding.get("engineering_rationale"),
+        finding.get("engineering_consequence"),
+        finding.get("reference_principle"),
+        finding.get("recommended_action"),
+    ]
+    return " ".join(str(value) for value in text_fields if value).lower()
+
+
+def _has_gateable_block_impact(finding: Dict[str, Any]) -> bool:
+    impact = finding.get("impact")
+    if not isinstance(impact, dict):
+        return False
+    return any(
+        impact.get(domain) in {"MEDIUM", "HIGH"}
+        for domain in ("correctness", "compatibility", "security")
+    )
+
+
+def _has_concrete_evidence(finding: Dict[str, Any]) -> bool:
+    evidence = finding.get("evidence")
+    if not isinstance(evidence, dict):
+        return False
+    location_type = evidence.get("location_type")
+    details = evidence.get("details")
+    return bool(location_type and (evidence.get("path") or isinstance(details, dict) and details))
+
+
+def _is_gateable_block_finding(finding: Dict[str, Any]) -> bool:
+    if not isinstance(finding, dict) or finding.get("severity") != "BLOCK":
+        return False
+    if not _has_concrete_evidence(finding):
+        return False
+
+    category = str(finding.get("category") or "").strip().lower()
+    if category in _BLOCKING_FINDING_CATEGORIES:
+        return True
+    if _has_gateable_block_impact(finding):
+        return True
+
+    text = _finding_text(finding)
+    return any(keyword in text for keyword in _BLOCKING_FINDING_KEYWORDS)
+
+
 def _has_structured_block_finding(review: Dict[str, Any]) -> bool:
     findings = review.get("findings")
     if not isinstance(findings, list):
         return False
-    return any(
-        isinstance(finding, dict) and finding.get("severity") == "BLOCK"
-        for finding in findings
-    )
+    return any(_is_gateable_block_finding(finding) for finding in findings)
 
 
 def effective_review_severity(review: Dict[str, Any]) -> str:
