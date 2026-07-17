@@ -6633,70 +6633,65 @@
       "file_path": "tests/test_unified_compare.py",
       "test_name": "test_format_finding_confidence_advanced_parsing",
       "class_name": null,
-      "farley_index": 6.375,
+      "farley_index": 7.125,
       "farley_breakdown": {
         "understandable": {
-          "score": 6,
-          "rationale": "The test name is descriptive but slightly verbose. The function call `test_format_finding_confidence_advanced_parsing` implies a complex logic that might not be immediately obvious from the assertion alone without reading the implementation.",
+          "score": 8,
+          "rationale": "The test name and assertions are clear. However, the function `_format_finding_confidence` is not defined in this file; it relies on an external module (`scripts.unified_compare`). While understandable as a contract for that specific function, relying on undefined internal logic makes verification difficult without inspecting source code.",
           "suggestions": [
-            "Consider renaming to something more specific like `test_parse_confidence_string_to_high`.",
-            "Ensure the docstring explains *why* this parsing rule exists (e.g., 'Convert confidence strings and fractions into HIGH/MEDIUM/NAN')."
+            "Define or import the actual implementation of `_format_finding_confidence` directly in this file to ensure full visibility and maintainability."
           ]
         },
         "maintainable": {
-          "score": 4,
-          "rationale": "The test relies on a specific function `_format_finding_confidence` which is likely an implementation detail. If this logic changes (e.g., to handle '90%' or '1/3'), the tests will break unless they are updated manually.",
+          "score": 6,
+          "rationale": "The test is brittle. It relies on a specific string format ('85%', '4/5') which may change if the underlying logic updates to handle edge cases differently (e.g., trailing spaces or different separators). The assertion `assert _format_finding_confidence('nan') == 'MEDIUM'` assumes exact equality, failing silently in Python 3.12+ for NaN comparisons.",
           "suggestions": [
-            "Extract `test_format_finding_confidence_advanced_parsing` into a dedicated unit test for `_format_finding_confidence`.",
-            "Ensure the function being tested is well-documented and its logic independent of other parts of the system."
+            "Use a dedicated test runner like pytest's `pytest.raises(Exception)` to verify that invalid inputs (NaN) raise an exception rather than returning the wrong string."
           ]
         },
         "repeatable": {
           "score": 7,
-          "rationale": "The tests are self-contained within this file. However, they rely on external state (the `scripts.unified_compare` module) and potentially implicit behavior from that script's execution environment.",
+          "rationale": "The tests are deterministic and self-contained. They do not rely on external databases or network calls. However, they depend entirely on a specific implementation of `_format_finding_confidence`. If that function is refactored to handle NaN differently (e.g., returning `None` instead of 'MEDIUM'), these assertions will fail.",
           "suggestions": [
-            "Move the import to a top-level test function or use pytest fixtures if possible to ensure isolation per run.",
-            "Verify `_format_finding_confidence` is deterministic; add `assert _format_finding_confidence('85%') == 'HIGH' and _format_finding_confidence('4/5') == 'HIGH'"
+            "Ensure the test suite covers all possible input types and edge cases explicitly, including those not covered by current assumptions."
           ]
         },
         "atomic": {
           "score": 9,
-          "rationale": "Each assertion verifies exactly one distinct behavior: parsing specific string inputs ('85%', '4/5', 'nan'). There is no ambiguity about what the test covers.",
+          "rationale": "Each assertion verifies exactly one behavior: a specific string conversion. If any single line fails (e.g., due to NaN comparison), the cause is instantly obvious and isolated.",
           "suggestions": [
-            "No changes needed here. The atomicity of these assertions is excellent."
+            "None needed; atomicity is already satisfied."
           ]
         },
         "necessary": {
-          "score": 3,
-          "rationale": "This test likely duplicates coverage already provided by other tests in the suite (e.g., `test_format_finding_confidence_basic_parsing`). It does not add unique value unless it specifically targets edge cases like 'nan' or float('nan').",
+          "score": 5,
+          "rationale": "This test duplicates coverage of other tests likely testing string parsing or confidence thresholds. It does not add unique value unless it specifically targets the 'nan' edge case in a way no other unit tests do.",
           "suggestions": [
-            "Review existing tests for this function to ensure no duplication.",
-            "If the test is new, verify if there are other failing assertions in `test_unified_compare.py` that cover these inputs."
+            "Review existing tests to ensure this specific NaN handling is covered elsewhere, and remove redundant assertions if they duplicate coverage."
           ]
         },
         "granular": {
-          "score": 8,
-          "rationale": "The tests target specific edge cases ('nan', float('nan')) and string formats. They isolate the behavior of parsing confidence values into a single output category.",
+          "score": 7,
+          "rationale": "The test targets a single function's behavior. However, it mixes string inputs with float/None types in one block without clear separation of concerns (Arrange vs Act). It could be more granular by isolating the 'nan' case separately.",
           "suggestions": [
-            "Ensure no other test in `test_unified_compare.py` covers these inputs to avoid redundancy."
+            "Refactor into separate tests: `test_format_finding_confidence_with_nan()` and `test_format_finding_confidence_string_inputs()`. This improves clarity and maintainability."
           ]
         },
         "fast": {
           "score": 9,
-          "rationale": "The tests execute immediately without artificial delays or heavy I/O. They rely on simple string and float comparisons.",
+          "rationale": "The test executes rapidly. There are no artificial sleeps or heavy I/O operations.",
           "suggestions": [
-            "No changes needed here."
+            "None needed; performance is already optimal for a unit test."
           ]
         },
         "first_tdd": {
-          "score": 5,
-          "rationale": "The tests follow the Arrange-Act-Assert pattern (calling a function), but they do not explicitly demonstrate design properties like 'specifying behavior' in isolation. They are more of an implementation test than a specification-driven unit test.",
+          "score": 6,
+          "rationale": "The code follows Arrange-Act-Assert structure. However, the 'Arrange' phase (importing `_format_finding_confidence`) obscures the design intent of that function from this test file's perspective.",
           "suggestions": [
-            "Refactor to include explicit setup: `def _setup_confidence_parser(): ...`, then call it before assertions.",
-            "Ensure the tests clearly define expected outputs and inputs as part of the 'spec' rather than just calling an existing function."
+            "Move `from scripts.unified_compare import _format_finding_confidence` to a dedicated module or refactor the call site so the 'Arrange' phase is explicit and isolated within this specific test."
           ]
         },
-        "summary": "The test is functional but lacks explicit design specification (First TDD) and risks duplication or brittleness if `_format_finding_confidence` changes. It should be refactored to explicitly define the behavior being tested rather than relying on an existing implementation."
+        "summary": "The tests are fast and atomic but suffer from brittleness due to reliance on undefined internal logic. They lack unique purpose (necessary) and could be more granular by separating NaN handling into its own test case. The 'Arrange' phase is somewhat obscured."
       }
     },
     {
@@ -6704,59 +6699,65 @@
       "file_path": "tests/test_unified_compare.py",
       "test_name": "test_calculate_confidence_distribution",
       "class_name": null,
-      "farley_index": 6.5,
+      "farley_index": 7.0,
       "farley_breakdown": {
         "understandable": {
           "score": 8,
-          "rationale": "The test clearly defines the business rule: a function that aggregates confidence levels from review findings into categorical counts. The domain language ('confidence', 'findings') is used consistently without implementation clutter.",
-          "suggestions": []
+          "rationale": "The test clearly defines the input domain (lists of review findings with specific confidence values), but it lacks explicit documentation explaining *why* these inputs are valid or invalid. The 'defensive check' for `None` and strings is a good practice that adds clarity to expected behavior.",
+          "suggestions": [
+            "Add docstrings at module level describing the exact contract: what constitutes a valid input, how confidence values map to categories (HIGH/MEDIUM/LOW/UNKNOWN), and any known edge cases or business rules governing these mappings."
+          ]
         },
         "maintainable": {
           "score": 6,
-          "rationale": "The test relies heavily on the internal structure of `units` (nested dicts/lists) and specific string values like `'banana'`. If these structures change in production code or if new confidence types are added without updating this single file, maintainability drops significantly.",
+          "rationale": "The test is decoupled from implementation details regarding the `calculate_confidence_distribution` function itself. However, it relies heavily on implicit parsing logic (e.g., '4/5' -> HIGH) which makes refactoring that parser brittle if not explicitly documented in comments.",
           "suggestions": [
-            "Extract logic into a dedicated utility function with clear parameters instead of hardcoding input shapes inside the test itself. This allows `calculate_confidence_distribution` to be refactored independently."
+            "Explicitly document the transformation rules for non-standard inputs like 'banana', `None`, or floats inside a dedicated section within this test file. Ensure any parsing logic is isolated and clearly marked as implementation detail, preventing future changes from breaking these assertions."
           ]
         },
         "repeatable": {
-          "score": 4,
-          "rationale": "The test relies on external state: specific string literals ('banana', 'certain'), nested dictionary structures defined inline, and implicit parsing logic. If the input format changes slightly (e.g., adding a new field), this entire test must be rewritten to maintain determinism.",
+          "score": 7,
+          "rationale": "The tests are deterministic in execution order (empty list -> None checks -> recoverable failure -> units). However, they rely on the function's internal parsing logic to handle specific string formats like '4/5' or `True`. This introduces a potential source of non-determinism if that parser changes without updating these assertions.",
           "suggestions": [
-            "Move all data validation and transformation into helper functions or fixtures outside of `test_calculate_confidence_distribution`. Ensure no external state is shared between assertions."
+            "Ensure all input transformations are unit tests for themselves (e.g., test what happens when an empty list is passed, not just the final result). Explicitly verify edge cases like `'banana'` and `True` in separate, isolated units to guarantee determinism regardless of internal implementation changes."
           ]
         },
         "atomic": {
-          "score": 7,
-          "rationale": "Each assertion targets a distinct behavior: empty input handling, type coercion for non-lists, error propagation from nested failures, and aggregation logic. The failure cause (e.g., 'banana' string) is immediately obvious within the context of that specific line.",
-          "suggestions": []
+          "score": 9,
+          "rationale": "Each test case verifies a distinct behavior or rule. The empty list check is atomic; the defensive checks are atomic; the recoverable failure scenario isolates error handling logic; and each unit group tests specific parsing rules without mixing them.",
+          "suggestions": [
+            "N/A - Each assertion targets exactly one logical outcome, making it highly atomic."
+          ]
         },
         "necessary": {
           "score": 5,
-          "rationale": "The test covers edge cases for empty lists, type mismatches, and parsing errors. However, it does not cover positive performance scenarios (e.g., large datasets) or integration with the actual CI pipeline logic.",
+          "rationale": "The test covers the primary business rule (mapping findings to confidence levels) and some defensive behaviors. However, it does not cover edge cases like empty review objects or mixed data types that might occur in production scenarios beyond what is currently tested.",
           "suggestions": [
-            "Add a regression test verifying that `calculate_confidence_distribution` correctly processes realistic production data volumes to ensure no regressions in high-load environments."
+            "Incorporate additional unit tests for boundary conditions: an empty list of reviews (`[]`), a single finding with no confidence value (e.g., `None` only), and malformed JSON strings to ensure comprehensive coverage."
           ]
         },
         "granular": {
-          "score": 6,
-          "rationale": "The test isolates specific aspects: type checking and aggregation. However, it mixes unit-level assertions (parsing 'banana') with integration-like behavior (aggregating multiple findings), making the boundary between unit logic and system state slightly blurred.",
+          "score": 7,
+          "rationale": "The test isolates specific parsing rules for different input types. However, it groups multiple distinct transformation scenarios into a single call (`calculate_confidence_distribution(units)`), which reduces granularity compared to testing each rule in isolation.",
           "suggestions": [
-            "Refine granular boundaries by separating input validation from business rule verification in separate helper functions to ensure each test case is strictly atomic."
+            "Refactor the `units` list into separate unit tests: one for empty lists, one for None inputs, one for recoverable failures, and dedicated units for parsing '4/5', `'banana'`, etc. This increases test specificity and maintainability."
           ]
         },
         "fast": {
-          "score": 9,
-          "rationale": "The tests execute immediately without artificial delays. They rely on pure Python logic and do not perform I/O or heavy setup.",
-          "suggestions": []
-        },
-        "first_tdd": {
-          "score": 7,
-          "rationale": "While the test follows an Arrange-Act-Assert pattern (calling a function with inputs), it lacks explicit documentation of expected behavior before execution. The 'Arrange' phase is implicit in calling `calculate_confidence_distribution` without defining its contract upfront.",
+          "score": 8,
+          "rationale": "The tests execute quickly as they contain no artificial sleeps or heavy I/O operations. The logic is self-contained within the file.",
           "suggestions": [
-            "Explicitly document input contracts and output expectations at the top of each test file or within docstrings to ensure clarity on what constitutes a valid Arrange step."
+            "N/A - No performance bottlenecks detected in this test suite."
           ]
         },
-        "summary": "The tests are functional but lack robustness against structural changes. They should be refactored into modular utilities with explicit documentation for maintainability and first-principles design adherence."
+        "first_tdd": {
+          "score": 6,
+          "rationale": "The tests follow a basic Arrange-Act-Assert pattern. However, they do not explicitly demonstrate the 'specification' phase where behavior is defined before implementation (e.g., via `pytest.mark.parametrize` or clear comments). The test assumes specific parsing logic exists without verifying it was designed first.",
+          "suggestions": [
+            "Explicitly document the expected input/output contract in a separate specification file. Use pytest fixtures to define valid inputs and run tests against them, ensuring the 'specification' phase is clearly separated from implementation."
+          ]
+        },
+        "summary": "The test suite demonstrates strong adherence to TDD principles for core logic but lacks explicit documentation of edge cases and transformation rules that could lead to brittle behavior during refactoring. It should be expanded with more granular unit tests for specific parsing scenarios and explicitly documented input contracts."
       }
     },
     {
@@ -6874,65 +6875,59 @@
       "file_path": "tests/test_unified_compare.py",
       "test_name": "test_calculate_confidence_distribution_malformed_and_non_confidence",
       "class_name": null,
-      "farley_index": 7.875,
+      "farley_index": 7.75,
       "farley_breakdown": {
         "understandable": {
           "score": 8,
-          "rationale": "The test clearly defines the input structure (units list with nested findings), mapping specific confidence values to normalized labels. While slightly verbose in comments about normalization logic, it is highly readable for domain experts.",
-          "suggestions": [
-            "Increase code readability by removing or simplifying inline comment blocks that explain trivial transformation rules already evident from the test data itself."
-          ]
+          "rationale": "The test clearly defines the input structure (units list with nested findings), mapping specific confidence values to normalized labels. The intent is explicit: verify normalization logic for malformed inputs.",
+          "suggestions": []
         },
         "maintainable": {
-          "score": 9,
-          "rationale": "The logic is decoupled; it does not depend on system internals. It uses a clean function call and expects an abstracted result object without hardcoding implementation details.",
+          "score": 7,
+          "rationale": "While readable, this test couples heavily to a single function's internal state and data structure assumptions (specifically the `units` list format). If `calculate_confidence_distribution` changes its input schema or logic flow without updating this specific unit, tests become brittle.",
           "suggestions": [
-            "N/A - The test remains robust against refactoring of the underlying `calculate_confidence_distribution` method as long as its signature (input/output types) remain stable."
+            "Extract normalization rules into separate helper functions with clear signatures. Ensure these helpers are tested in isolation to decouple them from the main calculation function."
           ]
         },
         "repeatable": {
-          "score": 7,
-          "rationale": "The logic is deterministic and self-contained. However, it relies on a specific input structure (`units`) which could theoretically be changed if the test suite evolves or if different inputs are needed for other scenarios.",
-          "suggestions": [
-            "Consider adding an explicit `assert len(units) == 1` to ensure strict adherence to this single expected configuration before running assertions."
-          ]
+          "score": 9,
+          "rationale": "The test is fully self-contained within a single file and does not rely on external state (DBs, networks), timing, or shared mutable global variables. It runs deterministically given identical inputs.",
+          "suggestions": []
         },
         "atomic": {
-          "score": 9,
-          "rationale": "The test verifies exactly one behavior: the mapping of specific confidence strings/objects to their normalized labels. If it fails, the cause is immediately obvious (e.g., a string not in `units` or an unexpected type).",
+          "score": 8,
+          "rationale": "It verifies exactly one behavior: the normalization of confidence strings to labels based on specific rules. The failure mode is immediate and unambiguous (assertion fails if result doesn't match expected dict).",
           "suggestions": [
-            "N/A - The atomicity check passes perfectly."
+            "Ensure no side effects occur during execution that could mask failures."
           ]
         },
         "necessary": {
           "score": 6,
-          "rationale": "The test covers specific edge cases for malformed inputs. However, it does not cover the happy path (valid confidence strings) or general type handling logic that might be tested elsewhere in the suite.",
+          "rationale": "This test covers a single edge case scenario for malformed inputs. It does not cover the happy path (valid confidence strings) or other failure modes like empty lists or different data types.",
           "suggestions": [
-            "Add a `test_calculate_confidence_distribution_valid_inputs` to ensure normal operation is covered and prevent regression if normalization rules change."
+            "Add tests covering valid input scenarios and multiple distinct error conditions to ensure comprehensive coverage of all possible paths."
           ]
         },
         "granular": {
-          "score": 8,
-          "rationale": "The test isolates specific edge cases (malformed strings like 'banana', non-scalar types) rather than the general algorithm. It targets precise failure modes.",
+          "score": 7,
+          "rationale": "The test isolates the specific logic for string normalization. However, it mixes high-level business rules (what counts as HIGH/MEDIUM) with low-level data structure details in a single assertion block.",
           "suggestions": [
-            "N/A - The granularity is excellent for its scope."
+            "Separate assertions into distinct blocks: one for valid inputs and another specifically for malformed input handling to improve granularity."
           ]
         },
         "fast": {
           "score": 9,
-          "rationale": "The test executes immediately without artificial delays or heavy I/O operations. No sleeps are present; it relies solely on the function call.",
-          "suggestions": [
-            "N/A - Performance characteristics are optimal for a unit test."
-          ]
+          "rationale": "The test executes immediately without artificial delays, heavy setup code (like `pytest.fixture`), or slow I/O operations. It relies solely on the function call.",
+          "suggestions": []
         },
         "first_tdd": {
-          "score": 7,
-          "rationale": "The structure follows Arrange-Act-Assert implicitly (setup via import/function call -> act via assertion). However, the 'Arrange' phase is somewhat implicit in defining `units` without an explicit setup function or fixture.",
+          "score": 8,
+          "rationale": "It follows a clean Arrange-Act-Assert pattern: Arranging input data, Acting by calling the library function, Asserting against expected output based on business rules. The separation of concerns is visible in the structure.",
           "suggestions": [
-            "Incorporate a dedicated `setUp` method within this test class to explicitly define and isolate the input data structure before running assertions."
+            "Explicitly document the 'Arrange' phase (input schema) and 'Act' phase (library call) to make this TDD-first design even more obvious."
           ]
         },
-        "summary": "The test demonstrates strong adherence to TDD principles, particularly atomicity and granularity. It is highly understandable but could benefit from explicit setup logic for better maintainability in larger suites."
+        "summary": "The test demonstrates strong adherence to first-TDD principles with clear intent, fast execution, and a logical separation of concerns. However, it lacks comprehensive coverage for valid inputs and other edge cases, reducing its necessity score slightly compared to ideal scenarios."
       }
     },
     {
@@ -8512,27 +8507,27 @@
       "usage": {
         "totals": {
           "calls": 164,
-          "prompt_tokens": 142181,
-          "completion_tokens": 134927,
-          "total_tokens": 277108,
+          "prompt_tokens": 142209,
+          "completion_tokens": 135046,
+          "total_tokens": 277255,
           "cost_usd": 0.0,
           "missing_usage_calls": 0
         },
         "by_stage": {
           "farley_evaluation": {
             "calls": 164,
-            "prompt_tokens": 142181,
-            "completion_tokens": 134927,
-            "total_tokens": 277108,
+            "prompt_tokens": 142209,
+            "completion_tokens": 135046,
+            "total_tokens": 277255,
             "cost_usd": 0.0
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
             "calls": 164,
-            "prompt_tokens": 142181,
-            "completion_tokens": 134927,
-            "total_tokens": 277108,
+            "prompt_tokens": 142209,
+            "completion_tokens": 135046,
+            "total_tokens": 277255,
             "cost_usd": 0.0
           }
         },
@@ -10028,11 +10023,11 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "cache",
+            "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 476,
-            "completion_tokens": 981,
-            "total_tokens": 1457,
+            "prompt_tokens": 525,
+            "completion_tokens": 952,
+            "total_tokens": 1477,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -10042,9 +10037,9 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 881,
-            "completion_tokens": 780,
-            "total_tokens": 1661,
+            "prompt_tokens": 867,
+            "completion_tokens": 1009,
+            "total_tokens": 1876,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -10064,7 +10059,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 600,
             "completion_tokens": 618,
@@ -10078,9 +10073,9 @@
             "model": "ollama/qwen3.5:2b",
             "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 655,
-            "completion_tokens": 743,
-            "total_tokens": 1398,
+            "prompt_tokens": 648,
+            "completion_tokens": 662,
+            "total_tokens": 1310,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -16864,6 +16859,87 @@
       "completion_tokens": 743,
       "prompt_tokens": 655,
       "total_tokens": 1398,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "edd760a190fa496d95d7f1996b6669910f4c0657ca0af458daa02fb1c220def3": {
+    "id": "chatcmpl-feca76c9-f5e4-4838-b7b3-96cd6589727d",
+    "created": 1784323049,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and assertions are clear. However, the function `_format_finding_confidence` is not defined in this file; it relies on an external module (`scripts.unified_compare`). While understandable as a contract for that specific function, relying on undefined internal logic makes verification difficult without inspecting source code.\",\n    \"suggestions\": [\n      \"Define or import the actual implementation of `_format_finding_confidence` directly in this file to ensure full visibility and maintainability.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"The test is brittle. It relies on a specific string format ('85%', '4/5') which may change if the underlying logic updates to handle edge cases differently (e.g., trailing spaces or different separators). The assertion `assert _format_finding_confidence('nan') == 'MEDIUM'` assumes exact equality, failing silently in Python 3.12+ for NaN comparisons.\",\n    \"suggestions\": [\n      \"Use a dedicated test runner like pytest's `pytest.raises(Exception)` to verify that invalid inputs (NaN) raise an exception rather than returning the wrong string.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The tests are deterministic and self-contained. They do not rely on external databases or network calls. However, they depend entirely on a specific implementation of `_format_finding_confidence`. If that function is refactored to handle NaN differently (e.g., returning `None` instead of 'MEDIUM'), these assertions will fail.\",\n    \"suggestions\": [\n      \"Ensure the test suite covers all possible input types and edge cases explicitly, including those not covered by current assumptions.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"Each assertion verifies exactly one behavior: a specific string conversion. If any single line fails (e.g., due to NaN comparison), the cause is instantly obvious and isolated.\",\n    \"suggestions\": [\n      \"None needed; atomicity is already satisfied.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test duplicates coverage of other tests likely testing string parsing or confidence thresholds. It does not add unique value unless it specifically targets the 'nan' edge case in a way no other unit tests do.\",\n    \"suggestions\": [\n      \"Review existing tests to ensure this specific NaN handling is covered elsewhere, and remove redundant assertions if they duplicate coverage.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 7,\n    \"rationale\": \"The test targets a single function's behavior. However, it mixes string inputs with float/None types in one block without clear separation of concerns (Arrange vs Act). It could be more granular by isolating the 'nan' case separately.\",\n    \"suggestions\": [\n      \"Refactor into separate tests: `test_format_finding_confidence_with_nan()` and `test_format_finding_confidence_string_inputs()`. This improves clarity and maintainability.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes rapidly. There are no artificial sleeps or heavy I/O operations.\",\n    \"suggestions\": [\n      \"None needed; performance is already optimal for a unit test.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 6,\n    \"rationale\": \"The code follows Arrange-Act-Assert structure. However, the 'Arrange' phase (importing `_format_finding_confidence`) obscures the design intent of that function from this test file's perspective.\",\n    \"suggestions\": [\n      \"Move `from scripts.unified_compare import _format_finding_confidence` to a dedicated module or refactor the call site so the 'Arrange' phase is explicit and isolated within this specific test.\"\n    ]\n  },\n  \"summary\": \"The tests are fast and atomic but suffer from brittleness due to reliance on undefined internal logic. They lack unique purpose (necessary) and could be more granular by separating NaN handling into its own test case. The 'Arrange' phase is somewhat obscured.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 952,
+      "prompt_tokens": 525,
+      "total_tokens": 1477,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "1a0226e2cbf2892bcd2b3229b4c8fd62ee5964e0731fc7d49e5a5b4e3e8cdcb5": {
+    "id": "chatcmpl-d64ff8bc-afa1-4a72-99eb-f6db0e1d3f42",
+    "created": 1784323142,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n\"understandable\": {\n\"score\": 8,\n\"rationale\": \"The test clearly defines the input domain (lists of review findings with specific confidence values), but it lacks explicit documentation explaining *why* these inputs are valid or invalid. The 'defensive check' for `None` and strings is a good practice that adds clarity to expected behavior.\",\n\"suggestions\": [\n\"Add docstrings at module level describing the exact contract: what constitutes a valid input, how confidence values map to categories (HIGH/MEDIUM/LOW/UNKNOWN), and any known edge cases or business rules governing these mappings.\"\n]\n},\n\"maintainable\": {\n\"score\": 6,\n\"rationale\": \"The test is decoupled from implementation details regarding the `calculate_confidence_distribution` function itself. However, it relies heavily on implicit parsing logic (e.g., '4/5' -> HIGH) which makes refactoring that parser brittle if not explicitly documented in comments.\",\n\"suggestions\": [\n\"Explicitly document the transformation rules for non-standard inputs like 'banana', `None`, or floats inside a dedicated section within this test file. Ensure any parsing logic is isolated and clearly marked as implementation detail, preventing future changes from breaking these assertions.\"\n]\n},\n\"repeatable\": {\n\"score\": 7,\n\"rationale\": \"The tests are deterministic in execution order (empty list -> None checks -> recoverable failure -> units). However, they rely on the function's internal parsing logic to handle specific string formats like '4/5' or `True`. This introduces a potential source of non-determinism if that parser changes without updating these assertions.\",\n\"suggestions\": [\n\"Ensure all input transformations are unit tests for themselves (e.g., test what happens when an empty list is passed, not just the final result). Explicitly verify edge cases like `'banana'` and `True` in separate, isolated units to guarantee determinism regardless of internal implementation changes.\"\n]\n},\n\"atomic\": {\n\"score\": 9,\n\"rationale\": \"Each test case verifies a distinct behavior or rule. The empty list check is atomic; the defensive checks are atomic; the recoverable failure scenario isolates error handling logic; and each unit group tests specific parsing rules without mixing them.\",\n\"suggestions\": [\n\"N/A - Each assertion targets exactly one logical outcome, making it highly atomic.\"\n]\n},\n\"necessary\": {\n\"score\": 5,\n\"rationale\": \"The test covers the primary business rule (mapping findings to confidence levels) and some defensive behaviors. However, it does not cover edge cases like empty review objects or mixed data types that might occur in production scenarios beyond what is currently tested.\",\n\"suggestions\": [\n\"Incorporate additional unit tests for boundary conditions: an empty list of reviews (`[]`), a single finding with no confidence value (e.g., `None` only), and malformed JSON strings to ensure comprehensive coverage.\"\n]\n},\n\"granular\": {\n\"score\": 7,\n\"rationale\": \"The test isolates specific parsing rules for different input types. However, it groups multiple distinct transformation scenarios into a single call (`calculate_confidence_distribution(units)`), which reduces granularity compared to testing each rule in isolation.\",\n\"suggestions\": [\n\"Refactor the `units` list into separate unit tests: one for empty lists, one for None inputs, one for recoverable failures, and dedicated units for parsing '4/5', `'banana'`, etc. This increases test specificity and maintainability.\"\n]\n},\n\"fast\": {\n\"score\": 8,\n\"rationale\": \"The tests execute quickly as they contain no artificial sleeps or heavy I/O operations. The logic is self-contained within the file.\",\n\"suggestions\": [\n\"N/A - No performance bottlenecks detected in this test suite.\"\n]\n},\n\"first_tdd\": {\n\"score\": 6,\n\"rationale\": \"The tests follow a basic Arrange-Act-Assert pattern. However, they do not explicitly demonstrate the 'specification' phase where behavior is defined before implementation (e.g., via `pytest.mark.parametrize` or clear comments). The test assumes specific parsing logic exists without verifying it was designed first.\",\n\"suggestions\": [\n\"Explicitly document the expected input/output contract in a separate specification file. Use pytest fixtures to define valid inputs and run tests against them, ensuring the 'specification' phase is clearly separated from implementation.\"\n]\n},\"summary\":\"The test suite demonstrates strong adherence to TDD principles for core logic but lacks explicit documentation of edge cases and transformation rules that could lead to brittle behavior during refactoring. It should be expanded with more granular unit tests for specific parsing scenarios and explicitly documented input contracts.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1009,
+      "prompt_tokens": 867,
+      "total_tokens": 1876,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "8d0091d09b6221600d437d512b517fc2b8f58dd6c437645fd27fad5438d52a2f": {
+    "id": "chatcmpl-5ce899f9-b3f2-45f3-bba2-bbb97de961e2",
+    "created": 1784323203,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n\"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the input structure (units list with nested findings), mapping specific confidence values to normalized labels. The intent is explicit: verify normalization logic for malformed inputs.\", \"suggestions\": []},\n\"maintainable\": {\"score\": 7, \"rationale\": \"While readable, this test couples heavily to a single function's internal state and data structure assumptions (specifically the `units` list format). If `calculate_confidence_distribution` changes its input schema or logic flow without updating this specific unit, tests become brittle.\", \"suggestions\": [\"Extract normalization rules into separate helper functions with clear signatures. Ensure these helpers are tested in isolation to decouple them from the main calculation function.\"]},\n\"repeatable\": {\"score\": 9, \"rationale\": \"The test is fully self-contained within a single file and does not rely on external state (DBs, networks), timing, or shared mutable global variables. It runs deterministically given identical inputs.\", \"suggestions\": []},\n\"atomic\": {\"score\": 8, \"rationale\": \"It verifies exactly one behavior: the normalization of confidence strings to labels based on specific rules. The failure mode is immediate and unambiguous (assertion fails if result doesn't match expected dict).\", \"suggestions\": [\"Ensure no side effects occur during execution that could mask failures.\"]},\n\"necessary\": {\"score\": 6, \"rationale\": \"This test covers a single edge case scenario for malformed inputs. It does not cover the happy path (valid confidence strings) or other failure modes like empty lists or different data types.\", \"suggestions\": [\"Add tests covering valid input scenarios and multiple distinct error conditions to ensure comprehensive coverage of all possible paths.\"]},\n\"granular\": {\"score\": 7, \"rationale\": \"The test isolates the specific logic for string normalization. However, it mixes high-level business rules (what counts as HIGH/MEDIUM) with low-level data structure details in a single assertion block.\", \"suggestions\": [\"Separate assertions into distinct blocks: one for valid inputs and another specifically for malformed input handling to improve granularity.\"]},\n\"fast\": {\"score\": 9, \"rationale\": \"The test executes immediately without artificial delays, heavy setup code (like `pytest.fixture`), or slow I/O operations. It relies solely on the function call.\", \"suggestions\": []},\n\"first_tdd\": {\"score\": 8, \"rationale\": \"It follows a clean Arrange-Act-Assert pattern: Arranging input data, Acting by calling the library function, Asserting against expected output based on business rules. The separation of concerns is visible in the structure.\", \"suggestions\": [\"Explicitly document the 'Arrange' phase (input schema) and 'Act' phase (library call) to make this TDD-first design even more obvious.\"]},\n\"summary\": \"The test demonstrates strong adherence to first-TDD principles with clear intent, fast execution, and a logical separation of concerns. However, it lacks comprehensive coverage for valid inputs and other edge cases, reducing its necessity score slightly compared to ideal scenarios.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 662,
+      "prompt_tokens": 648,
+      "total_tokens": 1310,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
