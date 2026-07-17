@@ -826,6 +826,9 @@ def test_format_finding_confidence_advanced_parsing():
     assert _format_finding_confidence("4/5") == "HIGH"
     assert _format_finding_confidence("nan") == "MEDIUM"
     assert _format_finding_confidence(float("nan")) == "MEDIUM"
+    assert _format_finding_confidence(None) == "UNKNOWN"
+    assert _format_finding_confidence(True) == "UNKNOWN"
+    assert _format_finding_confidence({"nested": "value"}) == "UNKNOWN"
 
 
 def test_calculate_confidence_distribution():
@@ -869,8 +872,8 @@ def test_calculate_confidence_distribution():
                 "findings": [
                     {"confidence": "LOW"},
                     {"confidence": 0.2}, # parses to LOW
-                    {"confidence": None}, # formats to N/A, should be counted in UNKNOWN
-                    {"confidence": True}, # formats to N/A, should be counted in UNKNOWN
+                    {"confidence": None}, # formats to UNKNOWN
+                    {"confidence": True}, # formats to UNKNOWN
                 ]
             }
         }
@@ -919,15 +922,15 @@ def test_calculate_confidence_distribution_malformed_and_non_confidence():
 
     # "banana" is a malformed string confidence, normalized to "MEDIUM"
     # "85%" is normalized to "HIGH"
-    # None, True/False, and non-scalar types (dict, list) are counted as UNKNOWN
+    # None, True/False, and non-scalar types (dict, list) render and count as UNKNOWN
     units = [
         {
             "review": {
                 "findings": [
                     {"confidence": "banana"},  # -> MEDIUM (normalized)
                     {"confidence": "85%"},     # -> HIGH (normalized)
-                    {"confidence": None},      # -> N/A (UNKNOWN)
-                    {"confidence": False},     # -> N/A (UNKNOWN)
+                    {"confidence": None},      # -> UNKNOWN
+                    {"confidence": False},     # -> UNKNOWN
                     {"confidence": {"nested": "value"}},  # -> UNKNOWN (non-scalar type)
                     {"confidence": [1, 2]},               # -> UNKNOWN (non-scalar type)
                 ]
@@ -942,7 +945,6 @@ def test_calculate_confidence_distribution_malformed_and_non_confidence():
         "UNKNOWN": 4
     }
     assert calculate_confidence_distribution(units) == expected
-
 
 
 
