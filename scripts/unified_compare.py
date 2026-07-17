@@ -432,7 +432,7 @@ def _get_provider_runtime_metric(cr_data: Dict[str, Any]) -> Optional[Tuple[str,
 
 def _format_finding_confidence(value: Any) -> str:
     if value is None or isinstance(value, bool):
-        return "N/A"
+        return "UNKNOWN"
 
     from scripts.finding_schema import _parse_numeric_confidence, _parse_string_confidence
     if isinstance(value, (int, float)):
@@ -441,7 +441,7 @@ def _format_finding_confidence(value: Any) -> str:
     if isinstance(value, str):
         return _parse_string_confidence(value)
 
-    return "MEDIUM"
+    return "UNKNOWN"
 
 
 def _extract_unit_findings(unit: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -455,11 +455,9 @@ def _extract_unit_findings(unit: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def _classify_finding_confidence(finding: Dict[str, Any]) -> str:
-    conf = finding.get("confidence")
-    if isinstance(conf, (str, int, float)) and not isinstance(conf, bool):
-        formatted_conf = _format_finding_confidence(conf)
-        if formatted_conf in {"HIGH", "MEDIUM", "LOW"}:
-            return formatted_conf
+    formatted_conf = _format_finding_confidence(finding.get("confidence"))
+    if formatted_conf in {"HIGH", "MEDIUM", "LOW"}:
+        return formatted_conf
     return "UNKNOWN"
 
 
