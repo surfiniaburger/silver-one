@@ -2,6 +2,7 @@
 import argparse
 import html
 import json
+import math
 import os
 import sys
 from pathlib import Path
@@ -359,25 +360,17 @@ def _get_compat_metric(compat_data: Dict[str, Any]) -> Tuple[str, str]:
     return f"{state or verdict} (Score: {compat_score:.1f}/10)", verdict
 
 
-def _coerce_metric_int(value: Any) -> int:
-    if value is None:
-        return 0
-    try:
-        return int(value)
-    except (TypeError, ValueError, OverflowError):
-        return 0
-
-
 def _get_code_review_coverage_metric(cr_data: Dict[str, Any]) -> Optional[Tuple[str, str]]:
     coverage = cr_data.get("review_coverage")
     if not isinstance(coverage, dict):
         return None
 
-    total = _coerce_metric_int(coverage.get("total_extracted_units"))
-    reviewed = _coerce_metric_int(coverage.get("reviewed_units"))
-    skipped = _coerce_metric_int(coverage.get("skipped_units"))
-    batches = _coerce_metric_int(coverage.get("batch_count"))
-    if total == 0 and reviewed == 0 and batches == 0:
+    total = coerce_int(coverage.get("total_extracted_units"))
+    reviewed = coerce_int(coverage.get("reviewed_units"))
+    skipped = coerce_int(coverage.get("skipped_units"))
+    batches = coerce_int(coverage.get("batch_count"))
+    is_empty_coverage = (total == 0 and reviewed == 0 and batches == 0)
+    if is_empty_coverage:
         return None
 
     metric = f"{reviewed}/{total} unit(s) reviewed across {batches} batch(es); {skipped} skipped"
@@ -397,13 +390,13 @@ def _get_structured_output_metric(cr_data: Dict[str, Any]) -> Optional[Tuple[str
     if not isinstance(structured, dict):
         structured = {}
 
-    valid = _coerce_metric_int(summary.get("valid_units"))
-    repaired = _coerce_metric_int(summary.get("repaired_units"))
-    normalized = _coerce_metric_int(summary.get("normalized_units"))
-    invalid = _coerce_metric_int(summary.get("invalid_units"))
-    repair_attempts = _coerce_metric_int(structured.get("repair_attempts"))
-    retries = _coerce_metric_int(structured.get("validation_retries"))
-    final_failures = _coerce_metric_int(structured.get("final_failures"))
+    valid = coerce_int(summary.get("valid_units"))
+    repaired = coerce_int(summary.get("repaired_units"))
+    normalized = coerce_int(summary.get("normalized_units"))
+    invalid = coerce_int(summary.get("invalid_units"))
+    repair_attempts = coerce_int(structured.get("repair_attempts"))
+    retries = coerce_int(structured.get("validation_retries"))
+    final_failures = coerce_int(structured.get("final_failures"))
 
     metric = (
         f"{valid} valid, {repaired} repaired, {normalized} normalized, "
@@ -425,7 +418,7 @@ def _get_provider_runtime_metric(cr_data: Dict[str, Any]) -> Optional[Tuple[str,
     provider = details.get("provider_error")
     if not isinstance(provider, dict):
         provider = {}
-    failures = _coerce_metric_int(provider.get("failures"))
+    failures = coerce_int(provider.get("failures"))
     status = "FAIL" if failures else "PASS"
     return f"{failures} provider failure(s)", status
 
@@ -444,6 +437,35 @@ def _format_finding_confidence(value: Any) -> str:
     return "UNKNOWN"
 
 
+def _format_numeric_confidence_strict(value: Any) -> str:
+    from scripts.finding_schema import _parse_numeric_confidence
+    val_float = float(value)
+    if not math.isfinite(val_float):
+        return "UNKNOWN"
+    return _parse_numeric_confidence(val_float)
+
+
+def _format_string_confidence_strict(value: str) -> str:
+    from scripts.finding_schema import _parse_confidence_literal
+    cleaned = value.strip().upper()
+    if cleaned in {"LOW", "MEDIUM", "HIGH"}:
+        return cleaned
+    return _parse_confidence_literal(cleaned) or "UNKNOWN"
+
+
+def _format_finding_confidence_strict(value: Any) -> str:
+    if value is None or isinstance(value, bool):
+        return "UNKNOWN"
+
+    if isinstance(value, (int, float)):
+        return _format_numeric_confidence_strict(value)
+
+    if isinstance(value, str):
+        return _format_string_confidence_strict(value)
+
+    return "UNKNOWN"
+
+
 def _extract_unit_findings(unit: Dict[str, Any]) -> List[Dict[str, Any]]:
     if not isinstance(unit, dict) or is_recoverable_review_failure(unit):
         return []
@@ -455,7 +477,7 @@ def _extract_unit_findings(unit: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def _classify_finding_confidence(finding: Dict[str, Any]) -> str:
-    formatted_conf = _format_finding_confidence(finding.get("confidence"))
+    formatted_conf = _format_finding_confidence_strict(finding.get("confidence"))
     if formatted_conf in {"HIGH", "MEDIUM", "LOW"}:
         return formatted_conf
     return "UNKNOWN"
@@ -631,7 +653,7 @@ def _write_cr_findings_table(f, findings: List[Dict[str, Any]]) -> None:
         title = _esc(finding.get("title", ""))
         cat = _esc(finding.get("category", ""))
         sev = _esc(finding.get("severity", "INFO"))
-        confidence = _esc(_format_finding_confidence(finding.get("confidence")))
+        confidence = _esc(_format_finding_confidence_strict(finding.get("confidence")))
         principle = _esc(finding.get("reference_principle", ""))
         conseq = _esc(finding.get("engineering_consequence", ""))
         recom = _esc(finding.get("recommended_action", ""))
