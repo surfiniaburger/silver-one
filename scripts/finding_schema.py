@@ -50,6 +50,55 @@ class EngineeringImpact(BaseModel):
 import math
 
 
+def _parse_percentage_literal(cleaned: str) -> Optional[str]:
+    val_str = cleaned[:-1].strip()
+    try:
+        val = float(val_str)
+        if math.isfinite(val):
+            normalized = min(max(val / 100.0, 0.0), 1.0)
+            return _parse_numeric_confidence(normalized)
+    except ValueError:
+        pass
+    return None
+
+
+def _parse_fraction_literal(cleaned: str) -> Optional[str]:
+    parts = cleaned.split("/")
+    if len(parts) != 2:
+        return None
+    try:
+        num = float(parts[0].strip())
+        den = float(parts[1].strip())
+        if math.isfinite(num) and math.isfinite(den):
+            if not math.isclose(den, 0.0, abs_tol=1e-9):
+                return _parse_numeric_confidence(num / den)
+    except ValueError:
+        pass
+    return None
+
+
+def _parse_float_literal(cleaned: str) -> Optional[str]:
+    try:
+        val = float(cleaned)
+        if math.isfinite(val):
+            return _parse_numeric_confidence(val)
+    except ValueError:
+        pass
+    return None
+
+
+def _parse_confidence_literal(v: str) -> Optional[str]:
+    cleaned = v.strip().upper()
+    
+    if cleaned.endswith("%"):
+        return _parse_percentage_literal(cleaned)
+
+    if "/" in cleaned:
+        return _parse_fraction_literal(cleaned)
+
+    return _parse_float_literal(cleaned)
+
+
 def _parse_numeric_confidence(val: float) -> str:
     if math.isnan(val):
         return "MEDIUM"
@@ -71,25 +120,10 @@ def _parse_string_confidence(v: str) -> str:
     if val_clean in {"LOW", "WEAK", "POOR", "2", "1"}:
         return "LOW"
     
-    if val_clean.endswith("%"):
-        val_clean = val_clean[:-1].strip()
-        
-    if "/" in val_clean:
-        parts = val_clean.split("/")
-        if len(parts) == 2:
-            try:
-                num = float(parts[0].strip())
-                den = float(parts[1].strip())
-                if not math.isclose(den, 0.0, abs_tol=1e-9):
-                    return _parse_numeric_confidence(num / den)
-            except ValueError:
-                pass
-    
-    try:
-        numeric_val = float(val_clean)
-        return _parse_numeric_confidence(numeric_val)
-    except ValueError:
-        return "MEDIUM"
+    parsed = _parse_confidence_literal(val_clean)
+    if parsed is not None:
+        return parsed
+    return "MEDIUM"
 
 
 class EngineeringFinding(BaseModel):

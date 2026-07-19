@@ -821,7 +821,8 @@ def test_combine_token_spend_handles_malformed_types():
 
 
 def test_format_finding_confidence_advanced_parsing():
-    from scripts.unified_compare import _format_finding_confidence
+    from scripts.unified_compare import _format_finding_confidence, _format_finding_confidence_strict
+    # Lenient helper (schema-like) tests
     assert _format_finding_confidence("85%") == "HIGH"
     assert _format_finding_confidence("4/5") == "HIGH"
     assert _format_finding_confidence("nan") == "MEDIUM"
@@ -829,6 +830,18 @@ def test_format_finding_confidence_advanced_parsing():
     assert _format_finding_confidence(None) == "UNKNOWN"
     assert _format_finding_confidence(True) == "UNKNOWN"
     assert _format_finding_confidence({"nested": "value"}) == "UNKNOWN"
+
+    # Strict helper tests
+    assert _format_finding_confidence_strict("85%") == "HIGH"
+    assert _format_finding_confidence_strict("4/5") == "HIGH"
+    assert _format_finding_confidence_strict("nan") == "UNKNOWN"
+    assert _format_finding_confidence_strict(float("nan")) == "UNKNOWN"
+    assert _format_finding_confidence_strict(float("inf")) == "UNKNOWN"
+    assert _format_finding_confidence_strict("banana") == "UNKNOWN"
+    assert _format_finding_confidence_strict("certain") == "UNKNOWN"
+    assert _format_finding_confidence_strict(None) == "UNKNOWN"
+    assert _format_finding_confidence_strict(True) == "UNKNOWN"
+    assert _format_finding_confidence_strict({"nested": "value"}) == "UNKNOWN"
 
 
 def test_calculate_confidence_distribution():
@@ -853,8 +866,8 @@ def test_calculate_confidence_distribution():
             "review": {
                 "findings": [
                     {"confidence": "HIGH"},
-                    {"confidence": "certain"},
-                    {"confidence": 0.9},
+                    {"confidence": "certain"}, # strict -> UNKNOWN
+                    {"confidence": 0.9},       # strict -> HIGH
                 ]
             }
         },
@@ -862,8 +875,8 @@ def test_calculate_confidence_distribution():
             "review": {
                 "findings": [
                     {"confidence": "MEDIUM"},
-                    {"confidence": "4/5"}, # parses to HIGH
-                    {"confidence": "banana"}, # defaults to MEDIUM
+                    {"confidence": "4/5"},     # strict -> HIGH
+                    {"confidence": "banana"},   # strict -> UNKNOWN
                 ]
             }
         },
@@ -871,22 +884,21 @@ def test_calculate_confidence_distribution():
             "review": {
                 "findings": [
                     {"confidence": "LOW"},
-                    {"confidence": 0.2}, # parses to LOW
-                    {"confidence": None}, # formats to UNKNOWN
-                    {"confidence": True}, # formats to UNKNOWN
+                    {"confidence": 0.2},       # strict -> LOW
+                    {"confidence": None},      # strict -> UNKNOWN
+                    {"confidence": True},      # strict -> UNKNOWN
                 ]
             }
         }
     ]
 
     expected = {
-        "HIGH": 4,   # HIGH, certain, 0.9, 4/5
-        "MEDIUM": 2, # MEDIUM, banana
+        "HIGH": 3,   # HIGH, 0.9, 4/5
+        "MEDIUM": 1, # MEDIUM
         "LOW": 2,    # LOW, 0.2
-        "UNKNOWN": 2 # None, True
+        "UNKNOWN": 4 # certain, banana, None, True
      }
     assert calculate_confidence_distribution(units) == expected
-
 
 
 def test_render_unified_report_confidence_distribution_empty(tmp_path):
@@ -920,19 +932,19 @@ def test_render_unified_report_confidence_distribution_with_findings(tmp_path):
 def test_calculate_confidence_distribution_malformed_and_non_confidence():
     from scripts.unified_compare import calculate_confidence_distribution
 
-    # "banana" is a malformed string confidence, normalized to "MEDIUM"
-    # "85%" is normalized to "HIGH"
-    # None, True/False, and non-scalar types (dict, list) render and count as UNKNOWN
+    # "banana" -> UNKNOWN (strict)
+    # "85%" -> HIGH (strict)
+    # None, True/False, and non-scalar types -> UNKNOWN
     units = [
         {
             "review": {
                 "findings": [
-                    {"confidence": "banana"},  # -> MEDIUM (normalized)
-                    {"confidence": "85%"},     # -> HIGH (normalized)
+                    {"confidence": "banana"},  # -> UNKNOWN
+                    {"confidence": "85%"},     # -> HIGH
                     {"confidence": None},      # -> UNKNOWN
                     {"confidence": False},     # -> UNKNOWN
-                    {"confidence": {"nested": "value"}},  # -> UNKNOWN (non-scalar type)
-                    {"confidence": [1, 2]},               # -> UNKNOWN (non-scalar type)
+                    {"confidence": {"nested": "value"}},  # -> UNKNOWN
+                    {"confidence": [1, 2]},               # -> UNKNOWN
                 ]
             }
         }
@@ -940,11 +952,29 @@ def test_calculate_confidence_distribution_malformed_and_non_confidence():
 
     expected = {
         "HIGH": 1,
-        "MEDIUM": 1,
+        "MEDIUM": 0,
         "LOW": 0,
-        "UNKNOWN": 4
+        "UNKNOWN": 5
     }
     assert calculate_confidence_distribution(units) == expected
 
 
-
+def test_render_unified_report_confidence_distribution_regression(tmp_path):
+    # Regression test for exact skew scenario
+    cr_units = [{
+        "review": {
+            "findings": [
+                {"confidence": "banana"},  # -> UNKNOWN
+                {"confidence": "nan"},     # -> UNKNOWN
+                {"confidence": None},      # -> UNKNOWN
+                {"confidence": "85%"},     # -> HIGH
+                {"confidence": "MEDIUM"},  # -> MEDIUM
+            ]
+        }
+    }]
+    report_content = render_unified_report(tmp_path, cr_units=cr_units)
+    assert "### Finding Confidence Distribution" in report_content
+    assert "- **HIGH Confidence**: 1 finding(s) (20.0%)" in report_content
+    assert "- **MEDIUM Confidence**: 1 finding(s) (20.0%)" in report_content
+    assert "- **LOW Confidence**: 0 finding(s) (0.0%)" in report_content
+    assert "- **UNKNOWN/UNPARSED Confidence**: 3 finding(s) (60.0%)" in report_content
