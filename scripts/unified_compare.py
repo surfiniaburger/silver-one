@@ -439,7 +439,10 @@ def _format_finding_confidence(value: Any) -> str:
 
 def _format_numeric_confidence_strict(value: Any) -> str:
     from scripts.finding_schema import _parse_numeric_confidence
-    val_float = float(value)
+    try:
+        val_float = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return "UNKNOWN"
     if not math.isfinite(val_float):
         return "UNKNOWN"
     return _parse_numeric_confidence(val_float)
