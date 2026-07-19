@@ -55,7 +55,8 @@ def _parse_percentage_literal(cleaned: str) -> Optional[str]:
     try:
         val = float(val_str)
         if math.isfinite(val):
-            return _parse_numeric_confidence(val)
+            normalized = min(max(val / 100.0, 0.0), 1.0)
+            return _parse_numeric_confidence(normalized)
     except ValueError:
         pass
     return None
