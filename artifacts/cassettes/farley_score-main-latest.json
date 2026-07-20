@@ -4895,65 +4895,57 @@
       "file_path": "tests/test_unified_compare.py",
       "test_name": "test_write_unified_report_separates_structured_output_health",
       "class_name": null,
-      "farley_index": 7.875,
+      "farley_index": 7.0,
       "farley_breakdown": {
         "understandable": {
           "score": 8,
-          "rationale": "The test name and the `render_unified_report` call clearly define a business rule: separating structured output health from general review quality. The assertion strings are verbose but readable for domain experts familiar with 'Unified Report' terminology.",
-          "suggestions": [
-            "Consider adding an inline docstring or comment explaining *why* this specific test exists, rather than just stating the expected content."
-          ]
+          "rationale": "The test name and assertions clearly describe the business rule: separating structured output health from general report rendering. The domain language is standard for CI/CD pipelines.",
+          "suggestions": []
         },
         "maintainable": {
-          "score": 9,
-          "rationale": "The test is decoupled from system implementation details. It does not rely on `tmp_path` in a way that couples it to specific file systems or paths; the assertion checks string content directly.",
+          "score": 6,
+          "rationale": "While readable, this test mixes high-level logic (rendering) with low-level assertions about specific string content. It risks becoming brittle if the `content` variable changes format or location.",
           "suggestions": [
-            "Ensure `render_unified_report` handles edge cases (e.g., empty strings, missing keys) gracefully without raising exceptions during assertions."
+            "Extract a helper function to validate that the rendered report contains these exact strings before asserting them."
           ]
         },
         "repeatable": {
           "score": 7,
-          "rationale": "The test is deterministic and self-contained. It does not rely on external shared state or timing.",
-          "suggestions": [
-            "Remove any implicit reliance on the order of operations within `render_unified_report` if it could vary between runs (e.g., sorting logic). Ensure assertions are purely string-based."
-          ]
+          "rationale": "The test is self-contained and deterministic. It does not rely on external state or timing.",
+          "suggestions": []
         },
         "atomic": {
           "score": 9,
-          "rationale": "The test verifies exactly one behavior: the presence of specific strings in `content`. If this assertion fails, it is instantly obvious that the report generation logic produced incorrect output.",
-          "suggestions": [
-            "Ensure no side effects occur during assertions (e.g., file writes). The current implementation only reads content."
-          ]
+          "rationale": "Each assertion verifies exactly one distinct behavior: the presence of a specific string in `content`. If any fail, it is immediately obvious which line failed and why.",
+          "suggestions": []
         },
         "necessary": {
-          "score": 6,
-          "rationale": "This test duplicates coverage of general 'report generation' tests. It likely covers the same ground as a generic `test_render_unified_report` or similar unit tests.",
+          "score": 5,
+          "rationale": "This test duplicates coverage already provided by other tests likely verifying 'Structured Output Health' or general report rendering. It adds no unique value to the suite.",
           "suggestions": [
-            "Refactor this specific assertion into a dedicated helper function (e.g., `assert_health_format_correct`) and call it from multiple test cases to avoid duplication."
+            "Remove this assertion if it is covered elsewhere in the codebase."
           ]
         },
         "granular": {
-          "score": 8,
-          "rationale": "The test is targeted at the exact format of the 'Structured Output Health' section. It isolates this specific assertion without mixing in unrelated quality checks.",
+          "score": 7,
+          "rationale": "The test isolates specific string content within a report. However, asserting exact text strings can be fragile against minor formatting changes.",
           "suggestions": [
-            "Consider adding a negative case: what happens if `render_unified_report` returns an empty string or malformed JSON? This would reveal whether the test is truly granular."
+            "Assert the presence of keywords or patterns instead of verbatim strings to ensure robustness."
           ]
         },
         "fast": {
-          "score": 9,
-          "rationale": "The execution time depends entirely on I/O and rendering speed. There are no artificial sleeps, heavy setups (beyond `tmp_path`), or unneeded slow operations.",
-          "suggestions": [
-            "Profile the actual render/unified report generation to ensure it doesn't bottleneck CI/CD pipelines with complex formatting logic."
-          ]
+          "score": 8,
+          "rationale": "The test executes quickly. There are no artificial sleeps, heavy setups (beyond `tmp_path`), or slow I/O operations.",
+          "suggestions": []
         },
         "first_tdd": {
-          "score": 7,
-          "rationale": "The test follows Arrange-Act-Pattern (Arrange: `render_unified_report`, Act: assertions). However, the 'Arrange' phase is somewhat implicit in calling a function rather than setting up fixtures explicitly.",
+          "score": 6,
+          "rationale": "It follows the Arrange-Act-Assert pattern. However, it asserts behavior rather than design properties (e.g., 'why' a report is structured this way).",
           "suggestions": [
-            "Explicitly set up any necessary context or mock dependencies before rendering to ensure strict adherence to TDD principles and avoid hidden side effects."
+            "Refactor to assert that `render_unified_report` produces output with these specific fields/strings as part of its contract."
           ]
         },
-        "summary": "The test is highly maintainable and fast but suffers from redundancy (necessary) and potential brittleness if `render_unified_report` changes internal logic without updating assertions. It demonstrates a solid understanding of the domain's reporting format."
+        "summary": "The test demonstrates good TDD principles but risks maintainability and necessity issues. It is fast and atomic but lacks unique coverage value compared to other tests in the suite."
       }
     },
     {
@@ -5018,57 +5010,61 @@
       "file_path": "tests/test_unified_compare.py",
       "test_name": "test_write_unified_report_coerces_malformed_telemetry_counts",
       "class_name": null,
-      "farley_index": 6.625,
+      "farley_index": 7.0,
       "farley_breakdown": {
         "understandable": {
           "score": 8,
-          "rationale": "The test name and the `render_unified_report` call clearly define a specific business rule: converting malformed telemetry data into readable report strings. The assertions are self-explanatory in context.",
+          "rationale": "The test name and assertions clearly describe the business rule: coercion of malformed telemetry counts into a specific report format. The domain language is standard for this context.",
           "suggestions": []
         },
         "maintainable": {
           "score": 6,
-          "rationale": "The test is brittle to changes in `render_unified_report`'s internal logic or the specific string formatting used for assertions. It tightly couples business rules (the exact strings) with implementation details.",
+          "rationale": "While readable, the test relies heavily on string literals within assertions (`assert \"...\" in content`). This makes it brittle to any future changes where these strings might be generated dynamically or refactored.",
           "suggestions": [
-            "Move assertion strings into a dedicated data structure or constants file if possible, though this test is so brittle that refactoring might break it entirely without changing behavior."
+            "Replace hardcoded strings with a dedicated assertion helper method (e.g., `check_report_format(content, expected_pattern)`).",
+            "Ensure the test logic is decoupled from specific string literals by using regex matching instead of direct substring checks where possible."
           ]
         },
         "repeatable": {
-          "score": 4,
-          "rationale": "The `render_unified_report` function likely relies on external state (the mock data passed as arguments) or system timing. If the underlying report generation logic changes slightly to handle edge cases differently, this test will fail unpredictably.",
+          "score": 7,
+          "rationale": "The test runs deterministically without external dependencies. However, it relies on the `render_unified_report` function's internal logic to produce specific output strings; if that function changes its formatting or adds new fields not covered here, this test will fail.",
           "suggestions": [
-            "Ensure `render_unified_report` is fully mocked and deterministic in its output format before running assertions."
+            "Verify the exact expected string format by inspecting a successful run of `render_unified_report`. If possible, mock the report generation in CI/CD to ensure deterministic output without relying on external state."
           ]
         },
         "atomic": {
-          "score": 7,
-          "rationale": "The two assertions verify distinct behaviors (formatting of the summary line vs. formatting of the coverage header). If one fails due to a bug in `render_unified_report`, it is immediately obvious which part failed.",
+          "score": 9,
+          "rationale": "Each assertion verifies exactly one distinct behavior: format validation of counts and provider status. There is no ambiguity about what the test covers.",
           "suggestions": []
         },
         "necessary": {
           "score": 5,
-          "rationale": "This test covers specific edge cases for malformed input. However, if the existing suite already tests all valid and common invalid inputs in `render_unified_report`, this might be redundant unless it targets a previously untested failure mode.",
+          "rationale": "This test duplicates coverage already provided by other tests likely covering `render_unified_report` with valid input and potentially edge cases. It does not add unique value unless it specifically targets a malformed scenario that previous tests missed.",
           "suggestions": [
-            "Review the full coverage of other tests to ensure no similar malformed scenarios are being tested elsewhere."
+            "Review the existing test suite to identify if this specific 'malformed' case is already covered by other tests (e.g., `test_render_unified_report_with_valid_data`, etc.).",
+            "If not, consider refactoring into a dedicated unit test for coercion logic or removing it from here and moving it elsewhere."
           ]
         },
         "granular": {
-          "score": 6,
-          "rationale": "The test isolates specific string formatting rules. It does not verify logic correctness (e.g., whether the counts sum correctly), only that they appear in a certain order and format.",
+          "score": 7,
+          "rationale": "The assertions are granular enough to verify specific fields (counts vs. provider status). However, some checks could be consolidated into a single regex pattern for better maintainability.",
           "suggestions": [
-            "Consider adding assertions to check if `valid_units + repaired_units == total_extracted_units` or similar logical constraints, as string matching is fragile."
+            "Consider consolidating the two `assert in content` blocks that check different parts of the report string into one robust assertion using a regular expression to avoid duplication and potential drift."
           ]
         },
         "fast": {
-          "score": 9,
-          "rationale": "The test performs a single function call and two simple string comparisons. There are no sleeps, heavy I/O operations (other than the mocked file path), or complex setup logic.",
+          "score": 8,
+          "rationale": "The test executes quickly. It avoids sleeps or heavy I/O; it only performs text comparison which is fast.",
           "suggestions": []
         },
         "first_tdd": {
-          "score": 8,
-          "rationale": "The test follows a clean Arrange-Act-Assert structure. It sets up `render_unified_report` with specific inputs (Arrange), performs the conversion action, and asserts expected outputs (Act/Assert).",
-          "suggestions": []
+          "score": 6,
+          "rationale": "It follows the Arrange-Act-Assert pattern (setup `tmp_path`, call function, assert). However, since it's a TDD exercise and likely part of an existing suite designed first, this property is less critical than in isolation. It demonstrates basic structure but lacks explicit design intent documentation.",
+          "suggestions": [
+            "Explicitly document the 'Arrange' phase (what data was fed into `render_unified_report`) to ensure future developers understand the input contract before running tests."
+          ]
         },
-        "summary": "Overall Score: 6"
+        "summary": ""
       }
     },
     {
@@ -5076,131 +5072,65 @@
       "file_path": "tests/test_unified_compare.py",
       "test_name": "test_write_unified_report_coerces_infinite_telemetry_counts",
       "class_name": null,
-      "farley_index": 8.0,
+      "farley_index": 8.25,
       "farley_breakdown": {
         "understandable": {
           "score": 8,
-          "rationale": "The test name and assertions clearly describe the business rule: infinite telemetry counts must be coerced into a specific string format. The language is technical but precise enough for engineers familiar with data pipelines.",
+          "rationale": "The test name and assertions clearly describe the business rule: infinite telemetry counts must be coerced into a specific string format. The language is technical but precise enough for engineers familiar with the codebase.",
           "suggestions": [
-            "Consider adding an explicit comment explaining *why* `float('inf')` triggers this coercion logic, as it's not immediately obvious from the assertion alone without reading the code that calls `render_unified_report`. This helps future maintainers understand the edge case being tested."
+            "Consider adding an explicit comment explaining *why* `float('inf')` triggers this coercion logic, as it's not immediately obvious from the assertion alone without reading the surrounding implementation."
           ]
         },
         "maintainable": {
           "score": 9,
-          "rationale": "The test is decoupled; it does not depend on specific implementation details of how telemetry data flows or where `render_unified_report` resides. It tests the contract between input types and output strings.",
+          "rationale": "The test is decoupled; it does not depend on specific database schemas or network configurations. It only relies on `render_unified_report` and string matching.",
           "suggestions": [
-            "Ensure that any future changes to `review_coverage` keys (e.g., adding a new key like 'unknown_units') do not break this test unless you intend to change its behavior, which is acceptable if it's testing an edge case."
+            "Ensure the assertion strings are immutable to prevent accidental modification during refactoring of the underlying report rendering logic."
           ]
         },
         "repeatable": {
           "score": 7,
-          "rationale": "The logic for generating the output string and checking assertions are deterministic. However, relying on `float('inf')` as input can introduce subtle non-determinism in how different environments or versions of Python handle infinity representation during rendering.",
+          "rationale": "The test is deterministic and self-contained. However, it relies on `tmp_path` which implies a file system dependency that could theoretically vary between runs if not handled consistently (though typically this is acceptable in unit tests). It does not rely on external shared state like databases or network sockets.",
           "suggestions": [
-            "Explicitly define a constant (e.g., `INFINITE_TELEMETRY_COUNT = float('inf')`) at the module level to ensure consistent behavior across all test runs and environments."
+            "Explicitly document the expected output format to ensure consistency across different environments and CI/CD pipelines."
           ]
         },
         "atomic": {
           "score": 10,
-          "rationale": "The test verifies exactly one specific rule: that infinite telemetry counts are coerced into a fixed string format. If this assertion fails, the cause is instantly obvious (the coercion logic itself).",
-          "suggestions": [
-            "None needed; atomicity is excellent here."
-          ]
-        },
-        "necessary": {
-          "score": 6,
-          "rationale": "This test likely duplicates coverage of existing tests that verify the `render_unified_report` function's behavior with finite values. It may be testing a trivial edge case rather than adding unique value.",
-          "suggestions": [
-            "Review if there are already unit tests for this specific coercion logic. If not, consider refactoring to test only one aspect of infinite data handling (e.g., 'infinite units' vs 'infinitely many batches') instead of the full report generation."
-          ]
-        },
-        "granular": {
-          "score": 8,
-          "rationale": "The assertions are granular enough to catch specific formatting errors in the output string. It isolates the behavior related to telemetry counts and provider health status.",
-          "suggestions": [
-            "Consider adding a negative test case where `float('inf')` is passed but should *not* coerce (e.g., if it's handled differently for other types), or ensure existing tests cover this scenario."
-          ]
-        },
-        "fast": {
-          "score": 9,
-          "rationale": "The test avoids sleeps and heavy I/O. It relies on string literals and dictionary lookups which are fast operations.",
-          "suggestions": [
-            "None needed; execution speed is not a concern for this unit."
-          ]
-        },
-        "first_tdd": {
-          "score": 7,
-          "rationale": "The test follows Arrange-Act-Pattern (Arrange: `render_unified_report` call with specific inputs -> Act: assertions). However, the 'Arrange' phase is slightly cluttered by nested dictionaries that might be hard to read quickly.",
-          "suggestions": [
-            "Refactor the input dictionary into a helper function or dataclass at the top of this file (or module) so `render_unified_report` can accept it as an argument. This improves readability and makes the test more 'first TDD' compliant by separating concerns."
-          ]
-        },
-        "summary": "The test is highly atomic and fast but risks being redundant if other tests cover similar coercion logic. It demonstrates a clear understanding of edge cases in data pipelines (infinite telemetry). The main area for improvement is ensuring the 'Arrange' phase remains clean by avoiding deep nesting within assertions."
-      }
-    },
-    {
-      "id": "tests/test_unified_compare.py::test_write_unified_report_handles_malformed_nested_telemetry_objects",
-      "file_path": "tests/test_unified_compare.py",
-      "test_name": "test_write_unified_report_handles_malformed_nested_telemetry_objects",
-      "class_name": null,
-      "farley_index": 6.5,
-      "farley_breakdown": {
-        "understandable": {
-          "score": 6,
-          "rationale": "The test name and assertions are readable but lack a clear business rule explanation. The phrase 'malformed nested telemetry objects' is vague without context on what constitutes malformed data or how it should be handled.",
-          "suggestions": [
-            "Replace the generic description with specific examples of invalid input (e.g., missing required keys, type mismatches) and expected error messages."
-          ]
-        },
-        "maintainable": {
-          "score": 7,
-          "rationale": "The test is decoupled from implementation details; however, it relies on the `render_unified_report` function's internal logic to produce specific output strings. If that function changes its formatting or error handling strategy without updating this test, maintainability suffers.",
-          "suggestions": [
-            "Ensure assertions are based solely on expected text/output patterns rather than implementation-specific details of how data is rendered."
-          ]
-        },
-        "repeatable": {
-          "score": 5,
-          "rationale": "The test relies heavily on `render_unified_report` and the underlying telemetry structure. If that function changes its internal logic or dependencies (e.g., network calls to a mock service), this specific test will fail even if the behavior is correct.",
-          "suggestions": [
-            "Isolate all external state within the fixture itself using `pytest.fixture`. Remove reliance on shared mutable global state like `render_unified_report` unless it's fully mocked and deterministic."
-          ]
-        },
-        "atomic": {
-          "score": 8,
-          "rationale": "The test verifies exactly one behavior: handling malformed nested telemetry objects. It does not mix unrelated logic (e.g., normal flow vs error flow) into a single assertion block.",
-          "suggestions": [
-            "Keep the current structure as it is; ensure no other assertions are made in this function to avoid mixing concerns."
-          ]
-        },
-        "necessary": {
-          "score": 9,
-          "rationale": "This test has a unique purpose: validating that error handling for malformed data does not break the report generation. It is necessary and non-duplicative.",
+          "rationale": "The test verifies exactly one behavior: that specific string patterns appear in the generated report. If these assertions fail, it is immediately obvious which part of the output failed to match.",
           "suggestions": [
             "No changes needed."
           ]
         },
-        "granular": {
-          "score": 4,
-          "rationale": "The test asserts specific text strings rather than validating the actual behavior of `render_unified_report`. It does not isolate 'what' (the logic) but only checks if a string exists in output.",
+        "necessary": {
+          "score": 6,
+          "rationale": "This test likely duplicates coverage already provided by other tests in `test_unified_compare.py` that verify the general structure of reports. It may be testing trivial things (formatting) rather than a unique business rule.",
           "suggestions": [
-            "Refactor to assert that `render_unified_report` raises an exception for invalid input, or asserts specific error messages raised by the function rather than checking static strings."
+            "Review existing tests to ensure this specific string format is not covered elsewhere, or consolidate these assertions into a single 'golden' test if they are redundant."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The test isolates the behavior of `render_unified_report` with infinite inputs. It is targeted at specific string patterns rather than general functionality.",
+          "suggestions": [
+            "Consider adding a negative assertion to ensure that if valid data exists (e.g., finite counts), it does not incorrectly coerce them into this format."
           ]
         },
         "fast": {
-          "score": 7,
-          "rationale": "The test executes quickly assuming a fast mock environment. However, if `render_unified_report` involves heavy I/O or network calls to real services during the 'malformed' case (which it likely does), this property is violated.",
+          "score": 9,
+          "rationale": "The test executes rapidly. It avoids artificial sleeps and heavy I/O operations; the `tmp_path` fixture handles file system access efficiently.",
           "suggestions": [
-            "Verify that all mocked dependencies in `render_unified_report` are fully isolated and do not perform slow operations. Ensure no external API calls occur within the test scope."
+            "No changes needed."
           ]
         },
         "first_tdd": {
-          "score": 6,
-          "rationale": "The code follows Arrange-Act-Assert structure (fixture -> render function call -> assertions). However, it does not explicitly demonstrate a clean separation of concerns where 'Arrange' is purely setup and 'Act' is the deterministic behavior being tested.",
+          "score": 9,
+          "rationale": "The test follows TDD principles: it specifies behavior (what the output should look like) before implementing logic. The Arrange-Act-Assert structure is clear.",
           "suggestions": [
-            "Explicitly separate `setup_method` from test logic. Ensure that any shared state initialization in fixtures is clearly documented as part of Arrange, leaving Act to be pure function calls."
+            "Ensure this specific string format was designed first to cover edge cases of infinite values, rather than being added later as a workaround."
           ]
         },
-        "summary": "The test demonstrates good TDD principles but lacks clarity on business rules and relies too heavily on external functions for its assertions, reducing maintainability. It should explicitly mock all dependencies to ensure repeatability and speed while refining the assertion logic from string matching to behavior validation."
+        "summary": "The test demonstrates strong adherence to TDD principles and maintains high maintainability. However, it risks redundancy if other tests already verify the general report structure or formatting rules for finite inputs. The use of `float('inf')` is well-documented by its effect but could benefit from a clearer comment explaining the coercion logic."
       }
     },
     {
@@ -8575,32 +8505,32 @@
     "farley_usage_summary": {
       "run_id": "main-baseline",
       "model": "ollama/qwen3.5:2b",
-      "reviewed_test_cases": 129,
+      "reviewed_test_cases": 128,
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 165,
-          "prompt_tokens": 143020,
-          "completion_tokens": 136062,
-          "total_tokens": 279082,
+          "calls": 167,
+          "prompt_tokens": 148533,
+          "completion_tokens": 137840,
+          "total_tokens": 286373,
           "cost_usd": 0.0,
           "missing_usage_calls": 0
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 165,
-            "prompt_tokens": 143020,
-            "completion_tokens": 136062,
-            "total_tokens": 279082,
+            "calls": 167,
+            "prompt_tokens": 148533,
+            "completion_tokens": 137840,
+            "total_tokens": 286373,
             "cost_usd": 0.0
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 165,
-            "prompt_tokens": 143020,
-            "completion_tokens": 136062,
-            "total_tokens": 279082,
+            "calls": 167,
+            "prompt_tokens": 148533,
+            "completion_tokens": 137840,
+            "total_tokens": 286373,
             "cost_usd": 0.0
           }
         },
@@ -9736,11 +9666,11 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "cache",
+            "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 642,
-            "completion_tokens": 861,
-            "total_tokens": 1503,
+            "prompt_tokens": 784,
+            "completion_tokens": 623,
+            "total_tokens": 1407,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -9760,11 +9690,11 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "cache",
+            "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 691,
-            "completion_tokens": 720,
-            "total_tokens": 1411,
+            "prompt_tokens": 809,
+            "completion_tokens": 824,
+            "total_tokens": 1633,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -9772,11 +9702,11 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "cache",
+            "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 684,
-            "completion_tokens": 982,
-            "total_tokens": 1666,
+            "prompt_tokens": 799,
+            "completion_tokens": 842,
+            "total_tokens": 1641,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -9784,11 +9714,35 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "cache",
+            "source": "provider",
             "generation_params": {},
-            "prompt_tokens": 667,
-            "completion_tokens": 926,
-            "total_tokens": 1593,
+            "prompt_tokens": 704,
+            "completion_tokens": 1024,
+            "total_tokens": 1728,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 1935,
+            "completion_tokens": 1024,
+            "total_tokens": 2959,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "generation_params": {},
+            "prompt_tokens": 3166,
+            "completion_tokens": 930,
+            "total_tokens": 4096,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -10096,7 +10050,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 739,
             "completion_tokens": 851,
@@ -10108,7 +10062,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 880,
             "completion_tokens": 947,
@@ -10144,7 +10098,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 613,
             "completion_tokens": 828,
@@ -10156,7 +10110,7 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
+            "source": "cache",
             "generation_params": {},
             "prompt_tokens": 619,
             "completion_tokens": 1013,
@@ -17133,6 +17087,168 @@
       "completion_tokens": 1013,
       "prompt_tokens": 619,
       "total_tokens": 1632,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "dea8fac24e1e0759cab11204ed1d95b51994fdde6fa34971189513837e40da5d": {
+    "id": "chatcmpl-c3c4b541-cb9b-4d48-b069-f57ab5960560",
+    "created": 1784564550,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and assertions clearly describe the business rule: separating structured output health from general report rendering. The domain language is standard for CI/CD pipelines.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"While readable, this test mixes high-level logic (rendering) with low-level assertions about specific string content. It risks becoming brittle if the `content` variable changes format or location.\",\n    \"suggestions\": [\n      \"Extract a helper function to validate that the rendered report contains these exact strings before asserting them.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is self-contained and deterministic. It does not rely on external state or timing.\",\n    \"suggestions\": []\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"Each assertion verifies exactly one distinct behavior: the presence of a specific string in `content`. If any fail, it is immediately obvious which line failed and why.\"\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test duplicates coverage already provided by other tests likely verifying 'Structured Output Health' or general report rendering. It adds no unique value to the suite.\",\n    \"suggestions\": [\n      \"Remove this assertion if it is covered elsewhere in the codebase.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 7,\n    \"rationale\": \"The test isolates specific string content within a report. However, asserting exact text strings can be fragile against minor formatting changes.\",\n    \"suggestions\": [\n      \"Assert the presence of keywords or patterns instead of verbatim strings to ensure robustness.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 8,\n    \"rationale\": \"The test executes quickly. There are no artificial sleeps, heavy setups (beyond `tmp_path`), or slow I/O operations.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 6,\n    \"rationale\": \"It follows the Arrange-Act-Assert pattern. However, it asserts behavior rather than design properties (e.g., 'why' a report is structured this way).\",\n    \"suggestions\": [\n      \"Refactor to assert that `render_unified_report` produces output with these specific fields/strings as part of its contract.\"\n    ]\n  },\n  \"summary\": \"The test demonstrates good TDD principles but risks maintainability and necessity issues. It is fast and atomic but lacks unique coverage value compared to other tests in the suite.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 623,
+      "prompt_tokens": 784,
+      "total_tokens": 1407,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "cea113576c55c1b4a06328f21abef9ac27df4665d8f1f819b1b2c686375337e0": {
+    "id": "chatcmpl-b0ba7b32-da7b-4d52-89c6-765622441b11",
+    "created": 1784564625,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and assertions clearly describe the business rule: coercion of malformed telemetry counts into a specific report format. The domain language is standard for this context.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"While readable, the test relies heavily on string literals within assertions (`assert \\\"...\\\" in content`). This makes it brittle to any future changes where these strings might be generated dynamically or refactored.\",\n    \"suggestions\": [\n      \"Replace hardcoded strings with a dedicated assertion helper method (e.g., `check_report_format(content, expected_pattern)`).\",\n      \"Ensure the test logic is decoupled from specific string literals by using regex matching instead of direct substring checks where possible.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test runs deterministically without external dependencies. However, it relies on the `render_unified_report` function's internal logic to produce specific output strings; if that function changes its formatting or adds new fields not covered here, this test will fail.\",\n    \"suggestions\": [\n      \"Verify the exact expected string format by inspecting a successful run of `render_unified_report`. If possible, mock the report generation in CI/CD to ensure deterministic output without relying on external state.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"Each assertion verifies exactly one distinct behavior: format validation of counts and provider status. There is no ambiguity about what the test covers.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test duplicates coverage already provided by other tests likely covering `render_unified_report` with valid input and potentially edge cases. It does not add unique value unless it specifically targets a malformed scenario that previous tests missed.\",\n    \"suggestions\": [\n      \"Review the existing test suite to identify if this specific 'malformed' case is already covered by other tests (e.g., `test_render_unified_report_with_valid_data`, etc.).\",\n      \"If not, consider refactoring into a dedicated unit test for coercion logic or removing it from here and moving it elsewhere.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 7,\n    \"rationale\": \"The assertions are granular enough to verify specific fields (counts vs. provider status). However, some checks could be consolidated into a single regex pattern for better maintainability.\",\n    \"suggestions\": [\n      \"Consider consolidating the two `assert in content` blocks that check different parts of the report string into one robust assertion using a regular expression to avoid duplication and potential drift.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 8,\n    \"rationale\": \"The test executes quickly. It avoids sleeps or heavy I/O; it only performs text comparison which is fast.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 6,\n    \"rationale\": \"It follows the Arrange-Act-Assert pattern (setup `tmp_path`, call function, assert). However, since it's a TDD exercise and likely part of an existing suite designed first, this property is less critical than in isolation. It demonstrates basic structure but lacks explicit design intent documentation.\",\n    \"suggestions\": [\n      \"Explicitly document the 'Arrange' phase (what data was fed into `render_unified_report`) to ensure future developers understand the input contract before running tests.\"\n    ]\n  },\n  \"summary\": \"\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 824,
+      "prompt_tokens": 809,
+      "total_tokens": 1633,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "cd33247005c6050b3d26e626bae2ced058116c1504d5c1748acf36b157dfff4e": {
+    "id": "chatcmpl-3892543c-8415-42e1-81e3-12877f76dba1",
+    "created": 1784564699,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and assertions clearly describe the business rule: infinite telemetry counts must be coerced into a specific string format. The language is technical but precise enough for engineers familiar with the codebase.\",\n    \"suggestions\": [\n      \"Consider adding an explicit comment explaining *why* `float('inf')` triggers this coercion logic, as it's not immediately obvious from the assertion alone without reading the surrounding implementation.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"The test is decoupled; it does not depend on specific database schemas or network configurations. It only relies on `render_unified_report` and string matching.\",\n    \"suggestions\": [\n      \"Ensure the assertion strings are immutable to prevent accidental modification during refactoring of the underlying report rendering logic.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic and self-contained. However, it relies on `tmp_path` which implies a file system dependency that could theoretically vary between runs if not handled consistently (though typically this is acceptable in unit tests). It does not rely on external shared state like databases or network sockets.\",\n    \"suggestions\": [\n      \"Explicitly document the expected output format to ensure consistency across different environments and CI/CD pipelines.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 10,\n    \"rationale\": \"The test verifies exactly one behavior: that specific string patterns appear in the generated report. If these assertions fail, it is immediately obvious which part of the output failed to match.\",\n    \"suggestions\": [\n      \"No changes needed.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test likely duplicates coverage already provided by other tests in `test_unified_compare.py` that verify the general structure of reports. It may be testing trivial things (formatting) rather than a unique business rule.\",\n    \"suggestions\": [\n      \"Review existing tests to ensure this specific string format is not covered elsewhere, or consolidate these assertions into a single 'golden' test if they are redundant.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The test isolates the behavior of `render_unified_report` with infinite inputs. It is targeted at specific string patterns rather than general functionality.\",\n    \"suggestions\": [\n      \"Consider adding a negative assertion to ensure that if valid data exists (e.g., finite counts), it does not incorrectly coerce them into this format.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes rapidly. It avoids artificial sleeps and heavy I/O operations; the `tmp_path` fixture handles file system access efficiently.\",\n    \"suggestions\": [\n      \"No changes needed.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 9,\n    \"rationale\": \"The test follows TDD principles: it specifies behavior (what the output should look like) before implementing logic. The Arrange-Act-Assert structure is clear.\",\n    \"suggestions\": [\n      \"Ensure this specific string format was designed first to cover edge cases of infinite values, rather than being added later as a workaround.\"\n    ]\n  },\n  \"summary\": \"The test demonstrates strong adherence to TDD principles and maintains high maintainability. However, it risks redundancy if other tests already verify the general report structure or formatting rules for finite inputs. The use of `float('inf')` is well-documented by its effect but could benefit from a clearer comment explaining the coercion logic.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 842,
+      "prompt_tokens": 799,
+      "total_tokens": 1641,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "c3440d7c814ff2ee26323545f18a9d40885524eb52170ff879717086feecd22e": {
+    "id": "chatcmpl-ea73cdd4-5422-406c-9221-c96548b6b524",
+    "created": 1784564783,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 4,\n    \"rationale\": \"The test name is verbose and slightly confusing ('handles_malformed_nested_telemetry_objects'), obscuring the core intent. The assertion strings are dense with implementation-specific details (e.g., specific field names like 'structured_output', 'provider_error') rather than business rules or domain concepts.\",\n    \"suggestions\": [\n      \"Rename to `test_write_unified_report_handles_invalid_nested_telemetry` for clarity and brevity.\",\n      \"Replace assertion strings with readable summaries of the expected behavior (e.g., 'Report contains valid summary counts' instead of listing every field).\",\n      \"Remove implementation-specific details from assertions; focus on what is being tested, not how it's formatted.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 3,\n    \"rationale\": \"The test relies heavily on specific string literals and internal field names ('structured_output', 'provider_error') that are likely implementation details. If the `render_unified_report` function changes its output format or adds new fields without updating these assertions, the test will break unexpectedly.\",\n    \"suggestions\": [\n      \"Extract common assertion patterns into a helper method to reduce duplication and ensure consistency across tests.\",\n      \"Use parameterized testing (e.g., using `pytest.mark.parametrize`) with different input data structures rather than hardcoding specific field names in assertions.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 2,\n    \"rationale\": \"The test relies on the global state of a temporary directory (`tmp_path`). While this is standard for unit tests, it introduces non-determinism if multiple runs happen concurrently or if `render_unified_report` modifies side effects. It also lacks isolation from other system components.\",\n    \"suggestions\": [\n      \"Ensure deterministic output by using in-memory data structures instead of file I/O within the test scope where possible.\",\n      \"Isolate this specific logic into a dedicated unit function that takes inputs as arguments, making it self-contained and independent of `tmp_path`.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 5,\n    \"rationale\": \"The test verifies multiple distinct behaviors (summary counts, confidence/score/dropped finding fields, provider health status) in a single run. While this is acceptable for unit tests where the function itself handles logic flow, it risks masking subtle bugs if one of these assertions fails due to an unrelated issue.\",\n    \"suggestions\": [\n      \"Consider breaking down into smaller atomic checks: `test_summary_counts`, `test_health_status`. This makes debugging failures more granular and immediate.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"The test covers specific edge cases for malformed nested telemetry objects. However, it does not cover the happy path (valid data), nor does it verify that `render_unified_report` actually processes these inputs correctly without crashing or producing unexpected side effects.\",\n    \"suggestions\": [\n      \"Add a positive assertion to ensure valid input produces expected output format and counts.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 4,\n    \"rationale\": \"The test is somewhat granular in checking specific fields but lacks granularity on the *structure* of the malformed data. It asserts exact string matches which can be brittle if formatting changes slightly (e.g., trailing spaces or newlines).\",\n    \"suggestions\": [\n      \"Assert that `render_unified_report` raises a clear exception for invalid input rather than silently producing incorrect output.\",\n      \"Use regex assertions to check structural validity of the nested objects instead of exact string matching.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 7,\n    \"rationale\": \"The test executes quickly as it contains no artificial delays or heavy I/O operations. However, if `render_unified_report` involves complex parsing that is slow for invalid inputs (e.g., deep recursion), the overall execution time could be a bottleneck.\",\n    \"suggestions\": [\n      \"Profile `render_unified_report` to ensure performance degradation on malformed input does not cause timeouts or excessive CPU usage.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 3,\n    \"rationale\": \"The test demonstrates a 'specify behavior' approach by asserting specific output strings. However, it lacks the classic Arrange-Act-Assert structure: there is no explicit setup of input data structures before calling `render_unified_report`, and the logic flow isn't clearly separated from assertions.\",\n    \"suggestions\": [\n      \"Refactor to follow TDD principles: 1) Write",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 704,
+      "total_tokens": 1728,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "d0dae5d3b7fbd91afef52053e1f540ffae880f6e9e3c2a5002166b714e80ca65": {
+    "id": "chatcmpl-d3178808-4894-4e64-a315-31ecf2677741",
+    "created": 1784564897,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 4,\n    \"rationale\": \"The test name is verbose and slightly confusing ('handles_malformed_nested_telemetry_objects'), obscuring the core intent. The assertion strings are dense with implementation-specific details (e.g., specific field names like 'structured_output', 'provider_error') rather than business rules or domain concepts.\",\n    \"suggestions\": [\n      \"Rename to `test_write_unified_report_handles_invalid_nested_telemetry` for clarity and brevity.\",\n      \"Replace assertion strings with readable summaries of the expected behavior (e.g., 'Report contains valid summary counts' instead of listing every field).\",\n      \"Remove implementation-specific details from assertions; focus on what is being tested, not how it's formatted.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 3,\n    \"rationale\": \"The test relies heavily on specific string literals and internal field names ('structured_output', 'provider_error') that are likely implementation details. If the `render_unified_report` function changes its output format or adds new fields without updating these assertions, the test will break unexpectedly.\",\n    \"suggestions\": [\n      \"Extract common assertion patterns into a helper method to reduce duplication and ensure consistency across tests.\",\n      \"Use parameterized testing (e.g., using `pytest.mark.parametrize`) with different input data structures rather than hardcoding specific field names in assertions.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 2,\n    \"rationale\": \"The test relies on the global state of a temporary directory (`tmp_path`). While this is standard for unit tests, it introduces non-determinism if multiple runs happen concurrently or if `render_unified_report` modifies side effects. It also lacks isolation from other system components.\",\n    \"suggestions\": [\n      \"Ensure deterministic output by using in-memory data structures instead of file I/O within the test scope where possible.\",\n      \"Isolate this specific logic into a dedicated unit function that takes inputs as arguments, making it self-contained and independent of `tmp_path`.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 5,\n    \"rationale\": \"The test verifies multiple distinct behaviors (summary counts, confidence/score/dropped finding fields, provider health status) in a single run. While this is acceptable for unit tests where the function itself handles logic flow, it risks masking subtle bugs if one of these assertions fails due to an unrelated issue.\",\n    \"suggestions\": [\n      \"Consider breaking down into smaller atomic checks: `test_summary_counts`, `test_health_status`. This makes debugging failures more granular and immediate.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"The test covers specific edge cases for malformed nested telemetry objects. However, it does not cover the happy path (valid data), nor does it verify that `render_unified_report` actually processes these inputs correctly without crashing or producing unexpected side effects.\",\n    \"suggestions\": [\n      \"Add a positive assertion to ensure valid input produces expected output format and counts.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 4,\n    \"rationale\": \"The test is somewhat granular in checking specific fields but lacks granularity on the *structure* of the malformed data. It asserts exact string matches which can be brittle if formatting changes slightly (e.g., trailing spaces or newlines).\",\n    \"suggestions\": [\n      \"Assert that `render_unified_report` raises a clear exception for invalid input rather than silently producing incorrect output.\",\n      \"Use regex assertions to check structural validity of the nested objects instead of exact string matching.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 7,\n    \"rationale\": \"The test executes quickly as it contains no artificial delays or heavy I/O operations. However, if `render_unified_report` involves complex parsing that is slow for invalid inputs (e.g., deep recursion), the overall execution time could be a bottleneck.\",\n    \"suggestions\": [\n      \"Profile `render_unified_report` to ensure performance degradation on malformed input does not cause timeouts or excessive CPU usage.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 3,\n    \"rationale\": \"The test demonstrates a 'specify behavior' approach by asserting specific output strings. However, it lacks the classic Arrange-Act-Assert structure: there is no explicit setup of input data structures before calling `render_unified_report`, and the logic flow isn't clearly separated from assertions.\",\n    \"suggestions\": [\n      \"Refactor to follow TDD principles: 1) Write",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 1935,
+      "total_tokens": 2959,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "9debe19bdd906c0e3a0fad986f29d03c040889efb74ec68294576f67c35d1c36": {
+    "id": "chatcmpl-cd879e96-0192-4c8f-94c4-61c67c1bfe0f",
+    "created": 1784565038,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 4,\n    \"rationale\": \"The test name is verbose and slightly confusing ('handles_malformed_nested_telemetry_objects'), obscuring the core intent. The assertion strings are dense with implementation-specific details (e.g., specific field names like 'structured_output', 'provider_error') rather than business rules or domain concepts.\",\n    \"suggestions\": [\n      \"Rename to `test_write_unified_report_handles_invalid_nested_telemetry` for clarity and brevity.\",\n      \"Replace assertion strings with readable summaries of the expected behavior (e.g., 'Report contains valid summary counts' instead of listing every field).\",\n      \"Remove implementation-specific details from assertions; focus on what is being tested, not how it's formatted.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 3,\n    \"rationale\": \"The test relies heavily on specific string literals and internal field names ('structured_output', 'provider_error') that are likely implementation details. If the `render_unified_report` function changes its output format or adds new fields without updating these assertions, the test will break unexpectedly.\",\n    \"suggestions\": [\n      \"Extract common assertion patterns into a helper method to reduce duplication and ensure consistency across tests.\",\n      \"Use parameterized testing (e.g., using `pytest.mark.parametrize`) with different input data structures rather than hardcoding specific field names in assertions.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 2,\n    \"rationale\": \"The test relies on the global state of a temporary directory (`tmp_path`). While this is standard for unit tests, it introduces non-determinism if multiple runs happen concurrently or if `render_unified_report` modifies side effects. It also lacks isolation from other system components.\",\n    \"suggestions\": [\n      \"Ensure deterministic output by using in-memory data structures instead of file I/O within the test scope where possible.\",\n      \"Isolate this specific logic into a dedicated unit function that takes inputs as arguments, making it self-contained and independent of `tmp_path`.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 5,\n    \"rationale\": \"The test verifies multiple distinct behaviors (summary counts, confidence/score/dropped finding fields, provider health status) in a single run. While this is acceptable for unit tests where the function itself handles logic flow, it risks masking subtle bugs if one of these assertions fails due to an unrelated issue.\",\n    \"suggestions\": [\n      \"Consider breaking down into smaller atomic checks: `test_summary_counts`, `test_health_status`. This makes debugging failures more granular and immediate.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"The test covers specific edge cases for malformed nested telemetry objects. However, it does not cover the happy path (valid data), nor does it verify that `render_unified_report` actually processes these inputs correctly without crashing or producing unexpected side effects.\",\n    \"suggestions\": [\n      \"Add a positive assertion to ensure valid input produces expected output format and counts.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 4,\n    \"rationale\": \"The test is somewhat granular in checking specific fields but lacks granularity on the *structure* of the malformed data. It asserts exact string matches which can be brittle if formatting changes slightly (e.g., trailing spaces or newlines).\",\n    \"suggestions\": [\n      \"Assert that `render_unified_report` raises a clear exception for invalid input rather than silently producing incorrect output.\",\n      \"Use regex assertions to check structural validity of the nested objects instead of exact string matching.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 7,\n    \"rationale\": \"The test executes quickly as it contains no artificial delays or heavy I/O operations. However, if `render_unified_report` involves complex parsing that is slow for invalid inputs (e.g., deep recursion), the overall execution time could be a bottleneck.\",\n    \"suggestions\": [\n      \"Profile `render_unified_report` to ensure performance degradation on malformed input does not cause timeouts or excessive CPU usage.\"\n    ]\n  },\n  \"first_tdd\": {",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 930,
+      "prompt_tokens": 3166,
+      "total_tokens": 4096,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
