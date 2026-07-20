@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PR_NUMBER: ${{ github.event.number }}
+      PYTHONPATH: src
     services:
       ollama:
         image: ollama/ollama:latest
@@ -30,7 +31,7 @@ jobs:
           enable-cache: true
 
       - name: Sync dependencies
-        run: uv sync --locked
+        run: uv sync --no-install-project --no-build --locked
 
       - name: Run targeted unit tests
         run: |
@@ -63,6 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PR_NUMBER: ${{ github.event.number }}
+      PYTHONPATH: src
     services:
       ollama:
         image: ollama/ollama:latest
@@ -81,7 +83,7 @@ jobs:
           enable-cache: true
 
       - name: Sync dependencies
-        run: uv sync --locked
+        run: uv sync --no-install-project --no-build --locked
 
       - name: Pull Qwen3.5 2B model
         run: |
@@ -111,6 +113,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PR_NUMBER: ${{ github.event.number }}
+      PYTHONPATH: src
     steps:
       - uses: actions/checkout@v4
         with:
@@ -136,7 +139,7 @@ jobs:
           path: artifacts
 
       - name: Sync dependencies
-        run: uv sync --locked
+        run: uv sync --no-install-project --no-build --locked
 
       - name: Run API Compatibility Check
         run: |
