@@ -426,8 +426,8 @@ def _get_repair_breakdown_metric(cr_data: Dict[str, Any]) -> Optional[Tuple[str,
 
     metric = (
         f"{confidence} confidence, {score} score, {default} default, "
-        f"{dropped} dropped finding, {invalid} invalid field; "
-        f"{normalized_path} path normalized, {normalized_text} text normalized"
+        f"{dropped} dropped finding(s), {invalid} invalid field(s); "
+        f"{normalized_path} path(s) normalized, {normalized_text} text(s) normalized"
     )
     status = "WARN" if any([confidence, score, default, dropped, invalid]) else "PASS"
     return metric, status
@@ -526,6 +526,68 @@ def calculate_confidence_distribution(cr_units: List[Dict[str, Any]]) -> Dict[st
     return counts
 
 
+def _extract_confidence_validation_fields(unit: Dict[str, Any]) -> Dict[int, Dict[str, Any]]:
+    validation = unit.get("validation")
+    if not isinstance(validation, dict):
+        return {}
+    fields = validation.get("fields")
+    if not isinstance(fields, list):
+        return {}
+
+    by_index: Dict[int, Dict[str, Any]] = {}
+    for field in fields:
+        if not isinstance(field, dict):
+            continue
+        field_name = field.get("field_name")
+        if not isinstance(field_name, str):
+            continue
+        prefix = "findings["
+        suffix = "].confidence"
+        if not field_name.startswith(prefix) or not field_name.endswith(suffix):
+            continue
+        index_text = field_name[len(prefix):-len(suffix)]
+        try:
+            by_index[int(index_text)] = field
+        except ValueError:
+            continue
+    return by_index
+
+
+def _classify_authored_confidence(finding: Dict[str, Any], validation_field: Optional[Dict[str, Any]]) -> str:
+    if validation_field:
+        raw_category = _format_finding_confidence_strict(validation_field.get("raw_value"))
+        if raw_category in {"HIGH", "MEDIUM", "LOW"}:
+            return raw_category
+
+        repaired_category = _format_finding_confidence_strict(validation_field.get("repaired_value"))
+        if validation_field.get("status") == "NORMALIZED" and repaired_category in {"HIGH", "MEDIUM", "LOW"}:
+            return repaired_category
+
+        return "UNKNOWN_REPAIRED"
+
+    category = _classify_finding_confidence(finding)
+    if category in {"HIGH", "MEDIUM", "LOW"}:
+        return category
+    return "UNKNOWN_REPAIRED"
+
+
+def calculate_authored_confidence_distribution(cr_units: List[Dict[str, Any]]) -> Dict[str, int]:
+    counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0, "UNKNOWN_REPAIRED": 0}
+    if not isinstance(cr_units, list):
+        return counts
+    for unit in cr_units:
+        if not isinstance(unit, dict):
+            continue
+        findings = _extract_unit_findings(unit)
+        validation_fields = _extract_confidence_validation_fields(unit)
+        for idx, finding in enumerate(findings):
+            if not isinstance(finding, dict):
+                continue
+            category = _classify_authored_confidence(finding, validation_fields.get(idx))
+            counts[category] += 1
+    return counts
+
+
 
 
 
@@ -595,7 +657,7 @@ def _write_metrics_overview(
     dist = calculate_confidence_distribution(cr_units)
     total_findings = sum(dist.values())
 
-    f.write("### Finding Confidence Distribution\n\n")
+    f.write("### Finding Confidence Distribution (Post-Schema)\n\n")
     if total_findings == 0:
         f.write("No structured engineering findings reported in this run.\n\n")
     else:
@@ -603,6 +665,21 @@ def _write_metrics_overview(
         f.write(f"- **MEDIUM Confidence**: {dist['MEDIUM']} finding(s) ({dist['MEDIUM']/total_findings:.1%})\n")
         f.write(f"- **LOW Confidence**: {dist['LOW']} finding(s) ({dist['LOW']/total_findings:.1%})\n")
         f.write(f"- **UNKNOWN/UNPARSED Confidence**: {dist['UNKNOWN']} finding(s) ({dist['UNKNOWN']/total_findings:.1%})\n\n")
+
+    authored_dist = calculate_authored_confidence_distribution(cr_units)
+    total_authored = sum(authored_dist.values())
+
+    f.write("### Authored Confidence Signal\n\n")
+    if total_authored == 0:
+        f.write("No structured engineering findings reported in this run.\n\n")
+    else:
+        f.write(f"- **HIGH Authored**: {authored_dist['HIGH']} finding(s) ({authored_dist['HIGH']/total_authored:.1%})\n")
+        f.write(f"- **MEDIUM Authored**: {authored_dist['MEDIUM']} finding(s) ({authored_dist['MEDIUM']/total_authored:.1%})\n")
+        f.write(f"- **LOW Authored**: {authored_dist['LOW']} finding(s) ({authored_dist['LOW']/total_authored:.1%})\n")
+        f.write(
+            f"- **UNKNOWN/REPAIRED Authored**: {authored_dist['UNKNOWN_REPAIRED']} "
+            f"finding(s) ({authored_dist['UNKNOWN_REPAIRED']/total_authored:.1%})\n\n"
+        )
 
 
 

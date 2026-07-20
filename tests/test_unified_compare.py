@@ -225,8 +225,41 @@ def test_write_unified_report_separates_structured_output_health(tmp_path):
     ) in content
     assert (
         "| Repair Breakdown | Schema repair categories applied during validation "
-        "| 4 confidence, 2 score, 1 default, 0 dropped finding, 0 invalid field; "
-        "3 path normalized, 5 text normalized | **WARN** |"
+        "| 4 confidence, 2 score, 1 default, 0 dropped finding(s), 0 invalid field(s); "
+        "3 path(s) normalized, 5 text(s) normalized | **WARN** |"
+    ) in content
+
+
+def test_write_unified_report_repair_breakdown_normalization_only_passes(tmp_path):
+    content = render_unified_report(
+        tmp_path,
+        validation_summary={
+            "valid_units": 0,
+            "repaired_units": 0,
+            "normalized_units": 2,
+            "invalid_units": 0,
+            "details": {
+                "repaired_confidence_count": 0,
+                "repaired_score_count": 0,
+                "repaired_default_count": 0,
+                "dropped_finding_count": 0,
+                "normalized_path_count": 2,
+                "normalized_text_count": 3,
+                "invalid_field_count": 0,
+                "structured_output": {
+                    "repair_attempts": 0,
+                    "validation_retries": 0,
+                    "final_failures": 0,
+                },
+                "provider_error": {"failures": 0},
+            },
+        },
+    )
+
+    assert (
+        "| Repair Breakdown | Schema repair categories applied during validation "
+        "| 0 confidence, 0 score, 0 default, 0 dropped finding(s), 0 invalid field(s); "
+        "2 path(s) normalized, 3 text(s) normalized | **PASS** |"
     ) in content
 
 
@@ -287,7 +320,7 @@ def test_write_unified_report_coerces_malformed_telemetry_counts(tmp_path):
     )
 
     assert "0 valid, 2 repaired, 0 normalized, 0 invalid; 0 repair attempt(s), 1 retry/retries, 0 final failure(s)" in content
-    assert "0 confidence, 2 score, 0 default, 0 dropped finding, 0 invalid field; 1 path normalized, 0 text normalized" in content
+    assert "0 confidence, 2 score, 0 default, 0 dropped finding(s), 0 invalid field(s); 1 path(s) normalized, 0 text(s) normalized" in content
     assert "| Provider Runtime | Local model/provider execution health | 0 provider failure(s) | **PASS** |" in content
     assert "| Review Coverage | Changed units reviewed by the evaluator | 3/0 unit(s) reviewed across 1 batch(es); 0 skipped | **WARN** |" in content
 
@@ -325,7 +358,7 @@ def test_write_unified_report_coerces_infinite_telemetry_counts(tmp_path):
     )
 
     assert "0 valid, 0 repaired, 0 normalized, 0 invalid; 0 repair attempt(s), 0 retry/retries, 0 final failure(s)" in content
-    assert "0 confidence, 0 score, 0 default, 0 dropped finding, 0 invalid field; 0 path normalized, 0 text normalized" in content
+    assert "0 confidence, 0 score, 0 default, 0 dropped finding(s), 0 invalid field(s); 0 path(s) normalized, 0 text(s) normalized" in content
     assert "| Provider Runtime | Local model/provider execution health | 0 provider failure(s) | **PASS** |" in content
     assert "| Review Coverage | Changed units reviewed by the evaluator | 1/0 unit(s) reviewed across 1 batch(es); 0 skipped | **WARN** |" in content
 
@@ -343,7 +376,7 @@ def test_write_unified_report_handles_malformed_nested_telemetry_objects(tmp_pat
     )
 
     assert "1 valid, 0 repaired, 0 normalized, 0 invalid" in content
-    assert "0 confidence, 0 score, 0 default, 0 dropped finding, 0 invalid field; 0 path normalized, 0 text normalized" in content
+    assert "0 confidence, 0 score, 0 default, 0 dropped finding(s), 0 invalid field(s); 0 path(s) normalized, 0 text(s) normalized" in content
     assert "| Provider Runtime | Local model/provider execution health | 0 provider failure(s) | **PASS** |" in content
 
     content = render_unified_report(
@@ -988,6 +1021,66 @@ def test_calculate_confidence_distribution_malformed_and_non_confidence():
     assert calculate_confidence_distribution(units) == expected
 
 
+def test_calculate_authored_confidence_distribution_uses_validation_provenance():
+    from scripts.unified_compare import calculate_authored_confidence_distribution
+
+    units = [
+        {
+            "review": {
+                "findings": [
+                    {"confidence": "MEDIUM"},
+                    {"confidence": "MEDIUM"},
+                    {"confidence": "HIGH"},
+                    {"confidence": "MEDIUM"},
+                    {"confidence": "LOW"},
+                ]
+            },
+            "validation": {
+                "fields": [
+                    {
+                        "field_name": "findings[0].confidence",
+                        "status": "REPAIRED",
+                        "raw_value": None,
+                        "repaired_value": "MEDIUM",
+                    },
+                    {
+                        "field_name": "findings[1].confidence",
+                        "status": "REPAIRED",
+                        "raw_value": "banana",
+                        "repaired_value": "MEDIUM",
+                    },
+                    {
+                        "field_name": "findings[2].confidence",
+                        "status": "REPAIRED",
+                        "raw_value": "0.9",
+                        "repaired_value": "HIGH",
+                    },
+                    {
+                        "field_name": "findings[3].confidence",
+                        "status": "NORMALIZED",
+                        "raw_value": " medium ",
+                        "repaired_value": "MEDIUM",
+                    },
+                ]
+            },
+        },
+        {
+            "review": {
+                "findings": [
+                    {"confidence": "HIGH"},
+                ]
+            }
+        },
+    ]
+
+    assert calculate_authored_confidence_distribution(units) == {
+        "HIGH": 2,
+        "MEDIUM": 1,
+        "LOW": 1,
+        "UNKNOWN_REPAIRED": 2,
+    }
+
+
 def test_render_unified_report_confidence_distribution_regression(tmp_path):
     # Regression test for exact skew scenario
     cr_units = [{
@@ -1007,3 +1100,47 @@ def test_render_unified_report_confidence_distribution_regression(tmp_path):
     assert "- **MEDIUM Confidence**: 1 finding(s) (20.0%)" in report_content
     assert "- **LOW Confidence**: 0 finding(s) (0.0%)" in report_content
     assert "- **UNKNOWN/UNPARSED Confidence**: 3 finding(s) (60.0%)" in report_content
+
+
+def test_render_unified_report_authored_confidence_signal_shows_repaired_skew(tmp_path):
+    cr_units = [{
+        "review": {
+            "findings": [
+                {"confidence": "MEDIUM"},
+                {"confidence": "MEDIUM"},
+                {"confidence": "MEDIUM"},
+            ]
+        },
+        "validation": {
+            "fields": [
+                {
+                    "field_name": "findings[0].confidence",
+                    "status": "REPAIRED",
+                    "raw_value": None,
+                    "repaired_value": "MEDIUM",
+                },
+                {
+                    "field_name": "findings[1].confidence",
+                    "status": "REPAIRED",
+                    "raw_value": "banana",
+                    "repaired_value": "MEDIUM",
+                },
+                {
+                    "field_name": "findings[2].confidence",
+                    "status": "REPAIRED",
+                    "raw_value": "0.5",
+                    "repaired_value": "MEDIUM",
+                },
+            ]
+        },
+    }]
+
+    report_content = render_unified_report(tmp_path, cr_units=cr_units)
+
+    assert "### Finding Confidence Distribution (Post-Schema)" in report_content
+    assert "- **MEDIUM Confidence**: 3 finding(s) (100.0%)" in report_content
+    assert "### Authored Confidence Signal" in report_content
+    assert "- **HIGH Authored**: 0 finding(s) (0.0%)" in report_content
+    assert "- **MEDIUM Authored**: 1 finding(s) (33.3%)" in report_content
+    assert "- **LOW Authored**: 0 finding(s) (0.0%)" in report_content
+    assert "- **UNKNOWN/REPAIRED Authored**: 2 finding(s) (66.7%)" in report_content
