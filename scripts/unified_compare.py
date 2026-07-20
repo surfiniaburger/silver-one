@@ -141,23 +141,26 @@ def resolve_farley_baseline(
     )
 
 
-def _resolve_compatibility(pass_val: Optional[bool], state_val: Any) -> bool:
-    if pass_val is not None:
-        return bool(pass_val)
-    if state_val in {"PASS", "FAIL", "NOT_EXECUTED", "CHECK_FAILED"}:
+def _resolve_compatibility(pass_val: Any, state_val: Any) -> bool:
+    if isinstance(pass_val, bool):
+        return pass_val
+    if isinstance(state_val, str) and state_val in {"PASS", "FAIL", "NOT_EXECUTED", "CHECK_FAILED"}:
         return state_val in {"PASS", "NOT_EXECUTED"}
     return True
 
 
 def _resolve_state(state_val: Any, compatible: bool) -> str:
-    if state_val in {"PASS", "FAIL", "NOT_EXECUTED", "CHECK_FAILED"}:
-        return str(state_val)
+    if isinstance(state_val, str) and state_val in {"PASS", "FAIL", "NOT_EXECUTED", "CHECK_FAILED"}:
+        return state_val
     return "PASS" if compatible else "FAIL"
 
 
-def _resolve_score(score_val: Optional[float], compatible: bool) -> float:
+def _resolve_score(score_val: Any, compatible: bool) -> float:
     if score_val is not None:
-        return float(score_val)
+        try:
+            return float(score_val)
+        except (TypeError, ValueError):
+            pass
     return 10.0 if compatible else 0.0
 
 
