@@ -39,9 +39,12 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"name":"qwen3.5:2b"}' || true
 
+      - name: Sync dependencies
+        run: uv sync --locked
+
       - name: Run Farley evaluator against main tests
         run: |
-          uv run --locked python3 scripts/farley_score_evaluator.py tests/ \
+          uv run --no-sync --no-build --locked python3 scripts/farley_score_evaluator.py tests/ \
             --mode record \
             --cassette farley_score-main-latest.json \
             --run-id main-baseline \

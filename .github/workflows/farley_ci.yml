@@ -29,9 +29,12 @@ jobs:
           python-version: '3.11'
           enable-cache: true
 
+      - name: Sync dependencies
+        run: uv sync --locked
+
       - name: Run targeted unit tests
         run: |
-          uv run --locked pytest tests -q --disable-warnings --maxfail=1
+          uv run --no-sync --no-build --locked pytest tests -q --disable-warnings --maxfail=1
 
       - name: Pull Qwen3.5 2B model
         run: |
@@ -39,7 +42,7 @@ jobs:
 
       - name: Run Farley evaluator
         run: |
-          uv run --locked python3 scripts/farley_score_evaluator.py \
+          uv run --no-sync --no-build --locked python3 scripts/farley_score_evaluator.py \
             --base origin/main \
             --mode record \
             --cassette farley_score-PR-${{ env.PR_NUMBER }}.json \
@@ -77,13 +80,16 @@ jobs:
           python-version: '3.11'
           enable-cache: true
 
+      - name: Sync dependencies
+        run: uv sync --locked
+
       - name: Pull Qwen3.5 2B model
         run: |
           curl --fail -sS -X POST http://localhost:11434/api/pull -H 'Content-Type: application/json' -d '{"name":"qwen3.5:2b"}' || true
 
       - name: Run code review evaluator
         run: |
-          uv run --locked python3 scripts/code_review_evaluator.py \
+          uv run --no-sync --no-build --locked python3 scripts/code_review_evaluator.py \
             --base origin/main \
             --cassette code_review-PR-${{ env.PR_NUMBER }}.json \
             --run-id pr-cr-${{ env.PR_NUMBER }} \
@@ -129,16 +135,19 @@ jobs:
           name: code-review-cassette-pr-${{ env.PR_NUMBER }}
           path: artifacts
 
+      - name: Sync dependencies
+        run: uv sync --locked
+
       - name: Run API Compatibility Check
         run: |
-          uv run --locked python3 scripts/compatibility_check.py \
+          uv run --no-sync --no-build --locked python3 scripts/compatibility_check.py \
             --base origin/main \
             --out artifacts/metrics/compatibility_results.json
 
       - name: Compile Unified Quality Report
         continue-on-error: true
         run: |
-          uv run --locked python3 scripts/unified_compare.py \
+          uv run --no-sync --no-build --locked python3 scripts/unified_compare.py \
             --code-review-pr artifacts/cassettes/code_review-PR-${{ env.PR_NUMBER }}.json \
             --farley-baseline artifacts/cassettes/farley_score-main-latest.json \
             --farley-pr artifacts/cassettes/farley_score-PR-${{ env.PR_NUMBER }}.json \
@@ -208,7 +217,7 @@ jobs:
       - name: Gate PR status based on Unified Verdict
         run: |
           # Re-run unified_compare.py to enforce the actual gating exit code (0 = PASS, 2 = FAIL)
-          uv run --locked python3 scripts/unified_compare.py \
+          uv run --no-sync --no-build --locked python3 scripts/unified_compare.py \
             --code-review-pr artifacts/cassettes/code_review-PR-${{ env.PR_NUMBER }}.json \
             --farley-baseline artifacts/cassettes/farley_score-main-latest.json \
             --farley-pr artifacts/cassettes/farley_score-PR-${{ env.PR_NUMBER }}.json \
