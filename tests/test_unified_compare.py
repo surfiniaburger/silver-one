@@ -200,6 +200,13 @@ def test_write_unified_report_separates_structured_output_health(tmp_path):
             "normalized_units": 0,
             "invalid_units": 1,
             "details": {
+                "repaired_confidence_count": 4,
+                "repaired_score_count": 2,
+                "repaired_default_count": 1,
+                "dropped_finding_count": 0,
+                "normalized_path_count": 3,
+                "normalized_text_count": 5,
+                "invalid_field_count": 0,
                 "structured_output": {
                     "repair_attempts": 2,
                     "validation_retries": 1,
@@ -215,6 +222,11 @@ def test_write_unified_report_separates_structured_output_health(tmp_path):
         "| Structured Output Health | Schema validity, repairs, retries, final failures "
         "| 3 valid, 1 repaired, 0 normalized, 1 invalid; 2 repair attempt(s), "
         "1 retry/retries, 1 final failure(s) | **FAIL** |"
+    ) in content
+    assert (
+        "| Repair Breakdown | Schema repair categories applied during validation "
+        "| 4 confidence, 2 score, 1 default, 0 dropped finding, 0 invalid field; "
+        "3 path normalized, 5 text normalized | **WARN** |"
     ) in content
 
 
@@ -257,6 +269,13 @@ def test_write_unified_report_coerces_malformed_telemetry_counts(tmp_path):
             "normalized_units": None,
             "invalid_units": "bad-invalid",
             "details": {
+                "repaired_confidence_count": "bad-confidence",
+                "repaired_score_count": "2",
+                "repaired_default_count": None,
+                "dropped_finding_count": "bad-dropped",
+                "normalized_path_count": "1",
+                "normalized_text_count": "bad-text",
+                "invalid_field_count": "bad-invalid-field",
                 "structured_output": {
                     "repair_attempts": "bad-repairs",
                     "validation_retries": "1",
@@ -268,6 +287,7 @@ def test_write_unified_report_coerces_malformed_telemetry_counts(tmp_path):
     )
 
     assert "0 valid, 2 repaired, 0 normalized, 0 invalid; 0 repair attempt(s), 1 retry/retries, 0 final failure(s)" in content
+    assert "0 confidence, 2 score, 0 default, 0 dropped finding, 0 invalid field; 1 path normalized, 0 text normalized" in content
     assert "| Provider Runtime | Local model/provider execution health | 0 provider failure(s) | **PASS** |" in content
     assert "| Review Coverage | Changed units reviewed by the evaluator | 3/0 unit(s) reviewed across 1 batch(es); 0 skipped | **WARN** |" in content
 
@@ -287,6 +307,13 @@ def test_write_unified_report_coerces_infinite_telemetry_counts(tmp_path):
             "normalized_units": 0,
             "invalid_units": 0,
             "details": {
+                "repaired_confidence_count": float("inf"),
+                "repaired_score_count": 0,
+                "repaired_default_count": 0,
+                "dropped_finding_count": 0,
+                "normalized_path_count": 0,
+                "normalized_text_count": float("-inf"),
+                "invalid_field_count": 0,
                 "structured_output": {
                     "repair_attempts": float("-inf"),
                     "validation_retries": 0,
@@ -298,6 +325,7 @@ def test_write_unified_report_coerces_infinite_telemetry_counts(tmp_path):
     )
 
     assert "0 valid, 0 repaired, 0 normalized, 0 invalid; 0 repair attempt(s), 0 retry/retries, 0 final failure(s)" in content
+    assert "0 confidence, 0 score, 0 default, 0 dropped finding, 0 invalid field; 0 path normalized, 0 text normalized" in content
     assert "| Provider Runtime | Local model/provider execution health | 0 provider failure(s) | **PASS** |" in content
     assert "| Review Coverage | Changed units reviewed by the evaluator | 1/0 unit(s) reviewed across 1 batch(es); 0 skipped | **WARN** |" in content
 
@@ -315,6 +343,7 @@ def test_write_unified_report_handles_malformed_nested_telemetry_objects(tmp_pat
     )
 
     assert "1 valid, 0 repaired, 0 normalized, 0 invalid" in content
+    assert "0 confidence, 0 score, 0 default, 0 dropped finding, 0 invalid field; 0 path normalized, 0 text normalized" in content
     assert "| Provider Runtime | Local model/provider execution health | 0 provider failure(s) | **PASS** |" in content
 
     content = render_unified_report(
