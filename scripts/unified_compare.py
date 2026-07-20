@@ -407,6 +407,32 @@ def _get_structured_output_metric(cr_data: Dict[str, Any]) -> Optional[Tuple[str
     return metric, status
 
 
+def _get_repair_breakdown_metric(cr_data: Dict[str, Any]) -> Optional[Tuple[str, str]]:
+    summary = cr_data.get("validation_summary")
+    if not isinstance(summary, dict) or not summary:
+        return None
+
+    details = summary.get("details")
+    if not isinstance(details, dict):
+        details = {}
+
+    confidence = coerce_int(details.get("repaired_confidence_count"))
+    score = coerce_int(details.get("repaired_score_count"))
+    default = coerce_int(details.get("repaired_default_count"))
+    dropped = coerce_int(details.get("dropped_finding_count"))
+    invalid = coerce_int(details.get("invalid_field_count"))
+    normalized_path = coerce_int(details.get("normalized_path_count"))
+    normalized_text = coerce_int(details.get("normalized_text_count"))
+
+    metric = (
+        f"{confidence} confidence, {score} score, {default} default, "
+        f"{dropped} dropped finding, {invalid} invalid field; "
+        f"{normalized_path} path normalized, {normalized_text} text normalized"
+    )
+    status = "WARN" if any([confidence, score, default, dropped, invalid]) else "PASS"
+    return metric, status
+
+
 def _get_provider_runtime_metric(cr_data: Dict[str, Any]) -> Optional[Tuple[str, str]]:
     summary = cr_data.get("validation_summary")
     if not isinstance(summary, dict) or not summary:
@@ -525,6 +551,14 @@ def _write_metrics_overview(
         metric, status = structured_metric
         f.write(
             f"| Structured Output Health | Schema validity, repairs, retries, final failures "
+            f"| {metric} | **{status}** |\n"
+        )
+
+    repair_metric = _get_repair_breakdown_metric(cr_data)
+    if repair_metric:
+        metric, status = repair_metric
+        f.write(
+            f"| Repair Breakdown | Schema repair categories applied during validation "
             f"| {metric} | **{status}** |\n"
         )
 
