@@ -141,38 +141,50 @@ def resolve_farley_baseline(
     )
 
 
+def _resolve_compatibility(pass_val: Any, state_val: Any) -> bool:
+    if isinstance(pass_val, bool):
+        return pass_val
+    if isinstance(state_val, str) and state_val in {"PASS", "FAIL", "NOT_EXECUTED", "CHECK_FAILED"}:
+        return state_val in {"PASS", "NOT_EXECUTED"}
+    return True
+
+
+def _resolve_state(state_val: Any, compatible: bool) -> str:
+    if isinstance(state_val, str) and state_val in {"PASS", "FAIL", "NOT_EXECUTED", "CHECK_FAILED"}:
+        return state_val
+    return "PASS" if compatible else "FAIL"
+
+
+def _resolve_score(score_val: Any, compatible: bool) -> float:
+    if score_val is not None:
+        try:
+            return float(score_val)
+        except (TypeError, ValueError):
+            pass
+    return 10.0 if compatible else 0.0
+
+
+def _coerce_list(items: Any) -> List[str]:
+    if isinstance(items, list):
+        return [str(item) for item in items]
+    return []
+
+
 def parse_compatibility_result(compat_results: Dict[str, Any]) -> CompatibilityCheckResult:
     """Normalize compatibility result JSON into the explicit state model."""
-    regressions = compat_results.get("regressions")
-    if not isinstance(regressions, list):
-        regressions = []
-
-    details = compat_results.get("details")
-    if not isinstance(details, list):
-        details = []
-
-    state = compat_results.get("state")
-    if state in {"PASS", "FAIL", "NOT_EXECUTED", "CHECK_FAILED"}:
-        compatible = compat_results.get("pass")
-        if compatible is None:
-            compatible = state in {"PASS", "NOT_EXECUTED"}
-    else:
-        compatible = compat_results.get("pass") if compat_results.get("pass") is not None else True
-        state = "PASS" if compatible else "FAIL"
-
-    raw_score = compat_results.get("compatibility_index")
-    default_score = 0.0
-    if compatible:
-        default_score = 10.0
-    score = raw_score if raw_score is not None else default_score
+    compatible = _resolve_compatibility(compat_results.get("pass"), compat_results.get("state"))
+    state = _resolve_state(compat_results.get("state"), compatible)
+    score = _resolve_score(compat_results.get("compatibility_index"), compatible)
+    regressions = _coerce_list(compat_results.get("regressions"))
+    details = _coerce_list(compat_results.get("details"))
 
     return CompatibilityCheckResult(
         state=state,
-        compatible=bool(compatible),
-        score=float(score),
-        regressions=[str(item) for item in regressions],
+        compatible=compatible,
+        score=score,
+        regressions=regressions,
         reason=compat_results.get("reason"),
-        details=[str(item) for item in details],
+        details=details,
     )
 
 
@@ -426,8 +438,8 @@ def _get_repair_breakdown_metric(cr_data: Dict[str, Any]) -> Optional[Tuple[str,
 
     metric = (
         f"{confidence} confidence, {score} score, {default} default, "
-        f"{dropped} dropped finding, {invalid} invalid field; "
-        f"{normalized_path} path normalized, {normalized_text} text normalized"
+        f"{dropped} dropped finding(s), {invalid} invalid field(s); "
+        f"{normalized_path} path(s) normalized, {normalized_text} text(s) normalized"
     )
     status = "WARN" if any([confidence, score, default, dropped, invalid]) else "PASS"
     return metric, status
@@ -526,6 +538,68 @@ def calculate_confidence_distribution(cr_units: List[Dict[str, Any]]) -> Dict[st
     return counts
 
 
+def _extract_confidence_validation_fields(unit: Dict[str, Any]) -> Dict[int, Dict[str, Any]]:
+    validation = unit.get("validation")
+    if not isinstance(validation, dict):
+        return {}
+    fields = validation.get("fields")
+    if not isinstance(fields, list):
+        return {}
+
+    by_index: Dict[int, Dict[str, Any]] = {}
+    for field in fields:
+        if not isinstance(field, dict):
+            continue
+        field_name = field.get("field_name")
+        if not isinstance(field_name, str):
+            continue
+        prefix = "findings["
+        suffix = "].confidence"
+        if not field_name.startswith(prefix) or not field_name.endswith(suffix):
+            continue
+        index_text = field_name[len(prefix):-len(suffix)]
+        try:
+            by_index[int(index_text)] = field
+        except ValueError:
+            continue
+    return by_index
+
+
+def _classify_authored_confidence(finding: Dict[str, Any], validation_field: Optional[Dict[str, Any]]) -> str:
+    if validation_field:
+        raw_category = _format_finding_confidence_strict(validation_field.get("raw_value"))
+        if raw_category in {"HIGH", "MEDIUM", "LOW"}:
+            return raw_category
+
+        repaired_category = _format_finding_confidence_strict(validation_field.get("repaired_value"))
+        if validation_field.get("status") == "NORMALIZED" and repaired_category in {"HIGH", "MEDIUM", "LOW"}:
+            return repaired_category
+
+        return "UNKNOWN_REPAIRED"
+
+    category = _classify_finding_confidence(finding)
+    if category in {"HIGH", "MEDIUM", "LOW"}:
+        return category
+    return "UNKNOWN_REPAIRED"
+
+
+def calculate_authored_confidence_distribution(cr_units: List[Dict[str, Any]]) -> Dict[str, int]:
+    counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0, "UNKNOWN_REPAIRED": 0}
+    if not isinstance(cr_units, list):
+        return counts
+    for unit in cr_units:
+        if not isinstance(unit, dict):
+            continue
+        findings = _extract_unit_findings(unit)
+        validation_fields = _extract_confidence_validation_fields(unit)
+        for idx, finding in enumerate(findings):
+            if not isinstance(finding, dict):
+                continue
+            category = _classify_authored_confidence(finding, validation_fields.get(idx))
+            counts[category] += 1
+    return counts
+
+
 
 
 
@@ -595,7 +669,7 @@ def _write_metrics_overview(
     dist = calculate_confidence_distribution(cr_units)
     total_findings = sum(dist.values())
 
-    f.write("### Finding Confidence Distribution\n\n")
+    f.write("### Finding Confidence Distribution (Post-Schema)\n\n")
     if total_findings == 0:
         f.write("No structured engineering findings reported in this run.\n\n")
     else:
@@ -603,6 +677,21 @@ def _write_metrics_overview(
         f.write(f"- **MEDIUM Confidence**: {dist['MEDIUM']} finding(s) ({dist['MEDIUM']/total_findings:.1%})\n")
         f.write(f"- **LOW Confidence**: {dist['LOW']} finding(s) ({dist['LOW']/total_findings:.1%})\n")
         f.write(f"- **UNKNOWN/UNPARSED Confidence**: {dist['UNKNOWN']} finding(s) ({dist['UNKNOWN']/total_findings:.1%})\n\n")
+
+    authored_dist = calculate_authored_confidence_distribution(cr_units)
+    total_authored = sum(authored_dist.values())
+
+    f.write("### Authored Confidence Signal\n\n")
+    if total_authored == 0:
+        f.write("No structured engineering findings reported in this run.\n\n")
+    else:
+        f.write(f"- **HIGH Authored**: {authored_dist['HIGH']} finding(s) ({authored_dist['HIGH']/total_authored:.1%})\n")
+        f.write(f"- **MEDIUM Authored**: {authored_dist['MEDIUM']} finding(s) ({authored_dist['MEDIUM']/total_authored:.1%})\n")
+        f.write(f"- **LOW Authored**: {authored_dist['LOW']} finding(s) ({authored_dist['LOW']/total_authored:.1%})\n")
+        f.write(
+            f"- **UNKNOWN/REPAIRED Authored**: {authored_dist['UNKNOWN_REPAIRED']} "
+            f"finding(s) ({authored_dist['UNKNOWN_REPAIRED']/total_authored:.1%})\n\n"
+        )
 
 
 
