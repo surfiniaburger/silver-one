@@ -27,8 +27,9 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
+          version: "0.7.2"
           python-version: '3.11'
           enable-cache: true
 
@@ -40,7 +41,7 @@ jobs:
 
       - name: Run Farley evaluator against main tests
         run: |
-          uv run python3 scripts/farley_score_evaluator.py tests/ \
+          uv run --locked python3 scripts/farley_score_evaluator.py tests/ \
             --mode record \
             --cassette farley_score-main-latest.json \
             --run-id main-baseline \

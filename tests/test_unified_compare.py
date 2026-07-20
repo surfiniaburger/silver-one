@@ -1021,6 +1021,15 @@ def test_calculate_confidence_distribution_malformed_and_non_confidence():
     assert calculate_confidence_distribution(units) == expected
 
 
+def _make_validation_field(field_index, status, raw_value, repaired_value):
+    return {
+        "field_name": f"findings[{field_index}].confidence",
+        "status": status,
+        "raw_value": raw_value,
+        "repaired_value": repaired_value,
+    }
+
+
 def test_calculate_authored_confidence_distribution_uses_validation_provenance():
     from scripts.unified_compare import calculate_authored_confidence_distribution
 
@@ -1037,30 +1046,10 @@ def test_calculate_authored_confidence_distribution_uses_validation_provenance()
             },
             "validation": {
                 "fields": [
-                    {
-                        "field_name": "findings[0].confidence",
-                        "status": "REPAIRED",
-                        "raw_value": None,
-                        "repaired_value": "MEDIUM",
-                    },
-                    {
-                        "field_name": "findings[1].confidence",
-                        "status": "REPAIRED",
-                        "raw_value": "banana",
-                        "repaired_value": "MEDIUM",
-                    },
-                    {
-                        "field_name": "findings[2].confidence",
-                        "status": "REPAIRED",
-                        "raw_value": "0.9",
-                        "repaired_value": "HIGH",
-                    },
-                    {
-                        "field_name": "findings[3].confidence",
-                        "status": "NORMALIZED",
-                        "raw_value": " medium ",
-                        "repaired_value": "MEDIUM",
-                    },
+                    _make_validation_field(0, "REPAIRED", None, "MEDIUM"),
+                    _make_validation_field(1, "REPAIRED", "banana", "MEDIUM"),
+                    _make_validation_field(2, "REPAIRED", "0.9", "HIGH"),
+                    _make_validation_field(3, "NORMALIZED", " medium ", "MEDIUM"),
                 ]
             },
         },
@@ -1113,24 +1102,9 @@ def test_render_unified_report_authored_confidence_signal_shows_repaired_skew(tm
         },
         "validation": {
             "fields": [
-                {
-                    "field_name": "findings[0].confidence",
-                    "status": "REPAIRED",
-                    "raw_value": None,
-                    "repaired_value": "MEDIUM",
-                },
-                {
-                    "field_name": "findings[1].confidence",
-                    "status": "REPAIRED",
-                    "raw_value": "banana",
-                    "repaired_value": "MEDIUM",
-                },
-                {
-                    "field_name": "findings[2].confidence",
-                    "status": "REPAIRED",
-                    "raw_value": "0.5",
-                    "repaired_value": "MEDIUM",
-                },
+                _make_validation_field(0, "REPAIRED", None, "MEDIUM"),
+                _make_validation_field(1, "REPAIRED", "banana", "MEDIUM"),
+                _make_validation_field(2, "REPAIRED", "0.5", "MEDIUM"),
             ]
         },
     }]

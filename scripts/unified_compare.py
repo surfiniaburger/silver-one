@@ -141,38 +141,47 @@ def resolve_farley_baseline(
     )
 
 
+def _resolve_compatibility(pass_val: Optional[bool], state_val: Any) -> bool:
+    if pass_val is not None:
+        return bool(pass_val)
+    if state_val in {"PASS", "FAIL", "NOT_EXECUTED", "CHECK_FAILED"}:
+        return state_val in {"PASS", "NOT_EXECUTED"}
+    return True
+
+
+def _resolve_state(state_val: Any, compatible: bool) -> str:
+    if state_val in {"PASS", "FAIL", "NOT_EXECUTED", "CHECK_FAILED"}:
+        return str(state_val)
+    return "PASS" if compatible else "FAIL"
+
+
+def _resolve_score(score_val: Optional[float], compatible: bool) -> float:
+    if score_val is not None:
+        return float(score_val)
+    return 10.0 if compatible else 0.0
+
+
+def _coerce_list(items: Any) -> List[str]:
+    if isinstance(items, list):
+        return [str(item) for item in items]
+    return []
+
+
 def parse_compatibility_result(compat_results: Dict[str, Any]) -> CompatibilityCheckResult:
     """Normalize compatibility result JSON into the explicit state model."""
-    regressions = compat_results.get("regressions")
-    if not isinstance(regressions, list):
-        regressions = []
-
-    details = compat_results.get("details")
-    if not isinstance(details, list):
-        details = []
-
-    state = compat_results.get("state")
-    if state in {"PASS", "FAIL", "NOT_EXECUTED", "CHECK_FAILED"}:
-        compatible = compat_results.get("pass")
-        if compatible is None:
-            compatible = state in {"PASS", "NOT_EXECUTED"}
-    else:
-        compatible = compat_results.get("pass") if compat_results.get("pass") is not None else True
-        state = "PASS" if compatible else "FAIL"
-
-    raw_score = compat_results.get("compatibility_index")
-    default_score = 0.0
-    if compatible:
-        default_score = 10.0
-    score = raw_score if raw_score is not None else default_score
+    compatible = _resolve_compatibility(compat_results.get("pass"), compat_results.get("state"))
+    state = _resolve_state(compat_results.get("state"), compatible)
+    score = _resolve_score(compat_results.get("compatibility_index"), compatible)
+    regressions = _coerce_list(compat_results.get("regressions"))
+    details = _coerce_list(compat_results.get("details"))
 
     return CompatibilityCheckResult(
         state=state,
-        compatible=bool(compatible),
-        score=float(score),
-        regressions=[str(item) for item in regressions],
+        compatible=compatible,
+        score=score,
+        regressions=regressions,
         reason=compat_results.get("reason"),
-        details=[str(item) for item in details],
+        details=details,
     )
 
 

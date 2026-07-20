@@ -23,14 +23,15 @@ jobs:
           fetch-depth: 0
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
+          version: "0.7.2"
           python-version: '3.11'
           enable-cache: true
 
       - name: Run targeted unit tests
         run: |
-          uv run pytest tests -q --disable-warnings --maxfail=1
+          uv run --locked pytest tests -q --disable-warnings --maxfail=1
 
       - name: Pull Qwen3.5 2B model
         run: |
@@ -38,7 +39,7 @@ jobs:
 
       - name: Run Farley evaluator
         run: |
-          uv run python3 scripts/farley_score_evaluator.py \
+          uv run --locked python3 scripts/farley_score_evaluator.py \
             --base origin/main \
             --mode record \
             --cassette farley_score-PR-${{ env.PR_NUMBER }}.json \
@@ -70,8 +71,9 @@ jobs:
           fetch-depth: 0
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
+          version: "0.7.2"
           python-version: '3.11'
           enable-cache: true
 
@@ -81,7 +83,7 @@ jobs:
 
       - name: Run code review evaluator
         run: |
-          uv run python3 scripts/code_review_evaluator.py \
+          uv run --locked python3 scripts/code_review_evaluator.py \
             --base origin/main \
             --cassette code_review-PR-${{ env.PR_NUMBER }}.json \
             --run-id pr-cr-${{ env.PR_NUMBER }} \
@@ -109,8 +111,9 @@ jobs:
           fetch-depth: 0
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
+          version: "0.7.2"
           python-version: '3.11'
           enable-cache: true
 
@@ -128,14 +131,14 @@ jobs:
 
       - name: Run API Compatibility Check
         run: |
-          uv run python3 scripts/compatibility_check.py \
+          uv run --locked python3 scripts/compatibility_check.py \
             --base origin/main \
             --out artifacts/metrics/compatibility_results.json
 
       - name: Compile Unified Quality Report
         continue-on-error: true
         run: |
-          uv run python3 scripts/unified_compare.py \
+          uv run --locked python3 scripts/unified_compare.py \
             --code-review-pr artifacts/cassettes/code_review-PR-${{ env.PR_NUMBER }}.json \
             --farley-baseline artifacts/cassettes/farley_score-main-latest.json \
             --farley-pr artifacts/cassettes/farley_score-PR-${{ env.PR_NUMBER }}.json \
@@ -205,7 +208,7 @@ jobs:
       - name: Gate PR status based on Unified Verdict
         run: |
           # Re-run unified_compare.py to enforce the actual gating exit code (0 = PASS, 2 = FAIL)
-          uv run python3 scripts/unified_compare.py \
+          uv run --locked python3 scripts/unified_compare.py \
             --code-review-pr artifacts/cassettes/code_review-PR-${{ env.PR_NUMBER }}.json \
             --farley-baseline artifacts/cassettes/farley_score-main-latest.json \
             --farley-pr artifacts/cassettes/farley_score-PR-${{ env.PR_NUMBER }}.json \
