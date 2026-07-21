@@ -448,6 +448,39 @@ for finding in findings:
         counts[formatted] += 1
 ```
 
+## Pinning and Locking CI/CD Dependencies
+
+Floating versions in GitHub Actions workflows (both for actions themselves and for packages installed within them) introduce supply-chain risks and make builds non-deterministic.
+
+Preferred pattern:
+- Pin third-party GitHub Actions to a full 40-character commit SHA instead of major version tags (e.g., use `@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86` instead of `@v5`). Always append a comment indicating the human-readable version (e.g., `# v5.4.2`) for readability.
+- Explicitly pin the tool versions (such as `version: "0.7.2"` under `astral-sh/setup-uv`) rather than allowing the action to dynamically pull the latest release.
+- Enforce lockfile compliance in run steps using the `--locked` (or `--frozen`) flags.
+
+## Restricting Arbitrary Build Execution
+
+When installing dependencies or executing packages, omitting binary-only constraints can cause the package manager to download source distributions and run arbitrary build scripts (`setup.py` / PEP 517 backends) on the host runner.
+
+Preferred pattern:
+- In CI workflows, sync dependencies with `uv sync --no-install-project --no-build --locked` to ensure only pre-compiled wheels are fetched.
+- Execute project scripts using `uv run --no-sync --no-build --locked <command>` (and set `PYTHONPATH: src` at the job environment level) so no resolution or building occurs during the run phase.
+
+## Bumpy Road Code Smell (Refactoring Sequential Conditionals)
+
+Functions containing multiple sequential blocks of nested conditional checks ("bumpy roads") place a heavy tax on working memory and complicate state tracking.
+
+Preferred pattern:
+- Identify distinct logical phases (such as validating compatibility, resolving status, setting score defaults, or list coercion) and extract them into small, single-purpose helper functions (each with a Cyclomatic Complexity <= 2).
+- Keep the main orchestrator function flat (CC = 1) by delegating input parsing to these extracted helpers.
+
+## Test Suite Duplication and Complexity
+
+Inline duplication of deep nested mock-data dictionaries (such as cassette outputs or validation reports) increases test suite length beyond quality limits and hurts readability.
+
+Preferred pattern:
+- Refactor test files to extract shared mock-data structures into compact builder helper functions (e.g., `_make_validation_field`) or pytest fixtures.
+- Keep test cases under the 50-line limit to maintain high comprehensibility.
+
 ## When Not To Apply Feedback
 
 Some automated comments are useful but generic. Others are simply wrong for the
@@ -485,4 +518,8 @@ Before merging evaluator, report, or structured-output changes, ask:
   string assertions for public markdown behavior?
 - Is Cognitive Complexity kept below 15 by extracting nested loops or nested-object extraction steps into clean helper functions?
 - Do classification and aggregation counts exclude unrecognized, None, or fallback "N/A" values instead of silently counting them in a default bucket?
+- Are third-party GitHub Actions pinned to a full 40-character commit SHA rather than a mutable version tag?
+- Are CI package managers configured with `--no-build` and `--locked` (or `--no-sync`) to prevent execution of unverified setup scripts?
+- Are sequential conditional blocks ("bumpy roads") refactored into flat helper functions?
+- Are test suite functions kept under 50 lines by extracting helper mock-data builders?
 
