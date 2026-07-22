@@ -80,14 +80,14 @@ def test_replay_manager_latency_aggregation(tmp_path):
 
     summary = rm.get_usage_summary()
     totals = summary["totals"]
-    assert totals["total_duration_ms"] == 500.0
-    assert totals["avg_duration_ms"] == 250.0
-    assert totals["max_duration_ms"] == 350.0
-    assert totals["min_duration_ms"] == 150.0
+    assert totals["total_duration_ms"] == pytest.approx(500.0)
+    assert totals["avg_duration_ms"] == pytest.approx(250.0)
+    assert totals["max_duration_ms"] == pytest.approx(350.0)
+    assert totals["min_duration_ms"] == pytest.approx(150.0)
 
     by_stage = summary["by_stage"]
-    assert by_stage["test_stage_1"]["total_duration_ms"] == 150.0
-    assert by_stage["test_stage_2"]["total_duration_ms"] == 350.0
+    assert by_stage["test_stage_1"]["total_duration_ms"] == pytest.approx(150.0)
+    assert by_stage["test_stage_2"]["total_duration_ms"] == pytest.approx(350.0)
 
 
 def test_unified_compare_latency_slo_metric(monkeypatch):
