@@ -10,7 +10,7 @@ try:
     from agentbeats.tracing import trace_span
 except ImportError:
     import contextlib
-    `@contextlib.contextmanager`
+    @contextlib.contextmanager
     def trace_span(*a, **kw):
         yield None
 
