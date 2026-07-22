@@ -9,7 +9,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from agentbeats.tracing import TraceSpan, trace_span, get_current_trace_id, set_current_trace_id, reset_current_trace_id
+from agentbeats.tracing import trace_span, set_current_trace_id, reset_current_trace_id
 from agentbeats.replay import ReplayManager, RunRecord, LLMCassette
 from scripts.unified_compare import _get_latency_slo_metric
 

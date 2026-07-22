@@ -23,14 +23,8 @@ except ImportError:
 from scripts import llm_adapter
 from scripts import diff_extractor
 from scripts import telemetry_utils
+from scripts.telemetry_utils import trace_span
 from scripts.finding_schema import EngineeringFinding
-try:
-    from agentbeats.tracing import trace_span
-except Exception:
-    import contextlib
-    @contextlib.contextmanager
-    def trace_span(*a, **kw):
-        yield None
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CASSETTE_ROOT = (PROJECT_ROOT / "artifacts" / "cassettes").resolve()

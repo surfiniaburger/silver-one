@@ -239,6 +239,13 @@ def get_code_review_validation_summary(cassette: Dict[str, Any]) -> Dict[str, An
     return validation
 
 
+def _aggregate_latency(cr_totals: Dict[str, Any], farley_totals: Dict[str, Any], calls: int) -> Tuple[float, float, float]:
+    total_dur_ms = coerce_float(cr_totals.get("total_duration_ms")) + coerce_float(farley_totals.get("total_duration_ms"))
+    max_dur_ms = max(coerce_float(cr_totals.get("max_duration_ms")), coerce_float(farley_totals.get("max_duration_ms")))
+    avg_dur_ms = round(total_dur_ms / calls, 1) if calls > 0 else 0.0
+    return total_dur_ms, max_dur_ms, avg_dur_ms
+
+
 def combine_token_spend(cr_cassette: Dict[str, Any], farley_cassette: Dict[str, Any]) -> str:
     """Summarize total token spend and latency across both Code Review and Farley runs."""
     cr_totals = get_token_totals(cr_cassette, "code_review_usage_summary")
@@ -250,9 +257,7 @@ def combine_token_spend(cr_cassette: Dict[str, Any], farley_cassette: Dict[str, 
     calls = coerce_int(cr_totals.get("calls")) + coerce_int(farley_totals.get("calls"))
     cost = coerce_float(cr_totals.get("cost_usd")) + coerce_float(farley_totals.get("cost_usd"))
 
-    total_dur_ms = coerce_float(cr_totals.get("total_duration_ms")) + coerce_float(farley_totals.get("total_duration_ms"))
-    max_dur_ms = max(coerce_float(cr_totals.get("max_duration_ms")), coerce_float(farley_totals.get("max_duration_ms")))
-    avg_dur_ms = round(total_dur_ms / calls, 1) if calls > 0 else 0.0
+    total_dur_ms, max_dur_ms, avg_dur_ms = _aggregate_latency(cr_totals, farley_totals, calls)
 
     latency_text = ""
     if total_dur_ms > 0:
@@ -477,9 +482,7 @@ def _get_latency_slo_metric(cr_data: Dict[str, Any], farley_data: Optional[Dict[
     farley_calls = coerce_int(farley_totals.get("calls"))
     calls = cr_calls + farley_calls
 
-    total_dur_ms = coerce_float(cr_totals.get("total_duration_ms")) + coerce_float(farley_totals.get("total_duration_ms"))
-    max_dur_ms = max(coerce_float(cr_totals.get("max_duration_ms")), coerce_float(farley_totals.get("max_duration_ms")))
-    avg_dur_ms = round(total_dur_ms / calls, 1) if calls > 0 else 0.0
+    total_dur_ms, max_dur_ms, avg_dur_ms = _aggregate_latency(cr_totals, farley_totals, calls)
 
     max_call_slo = float(os.getenv("LATENCY_SLO_MAX_CALL_MS", "30000"))
     max_batch_slo = float(os.getenv("LATENCY_SLO_MAX_BATCH_MS", "300000"))

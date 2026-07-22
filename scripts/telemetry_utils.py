@@ -6,6 +6,14 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+try:
+    from agentbeats.tracing import trace_span
+except Exception:
+    import contextlib
+    @contextlib.contextmanager
+    def trace_span(*a, **kw):
+        yield None
+
 
 def _write_telemetry_payload(metrics_root: Path, payload: Dict[str, Any]) -> Path:
     metrics_path = metrics_root / "token_spend.jsonl"

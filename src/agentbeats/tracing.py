@@ -2,29 +2,29 @@ import json
 import time
 import uuid
 import contextlib
+import contextvars
 from pathlib import Path
 from typing import Dict, Any, Optional, Generator
 
 from agentbeats.clock import RunClock
 
-_CURRENT_TRACE_ID: Optional[str] = None
+_CURRENT_TRACE_ID_VAR: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("_CURRENT_TRACE_ID_VAR", default=None)
 
 
 def get_current_trace_id() -> str:
-    global _CURRENT_TRACE_ID
-    if _CURRENT_TRACE_ID is None:
-        _CURRENT_TRACE_ID = uuid.uuid4().hex
-    return _CURRENT_TRACE_ID
+    trace_id = _CURRENT_TRACE_ID_VAR.get()
+    if trace_id is None:
+        trace_id = uuid.uuid4().hex
+        _CURRENT_TRACE_ID_VAR.set(trace_id)
+    return trace_id
 
 
 def set_current_trace_id(trace_id: str) -> None:
-    global _CURRENT_TRACE_ID
-    _CURRENT_TRACE_ID = trace_id
+    _CURRENT_TRACE_ID_VAR.set(trace_id)
 
 
 def reset_current_trace_id() -> None:
-    global _CURRENT_TRACE_ID
-    _CURRENT_TRACE_ID = None
+    _CURRENT_TRACE_ID_VAR.set(None)
 
 
 class TraceSpan:

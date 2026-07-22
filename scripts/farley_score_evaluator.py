@@ -47,14 +47,7 @@ except Exception:
     pass
 from llm_adapter import call_structured
 from path_utils import validate_path
-from telemetry_utils import persist_usage_artifacts as telemetry_persist_usage_artifacts
-try:
-    from agentbeats.tracing import trace_span
-except Exception:
-    import contextlib
-    @contextlib.contextmanager
-    def trace_span(*a, **kw):
-        yield None
+from telemetry_utils import persist_usage_artifacts as telemetry_persist_usage_artifacts, trace_span
 
 def log_info(msg: str) -> None:
     print(f"\033[94m{msg}\033[0m")
