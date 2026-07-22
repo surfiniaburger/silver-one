@@ -568,6 +568,177 @@
   },
   "tests": [
     {
+      "id": "tests/test_tracing_and_latency.py::test_trace_span_context",
+      "file_path": "tests/test_tracing_and_latency.py",
+      "test_name": "test_trace_span_context",
+      "class_name": null,
+      "farley_index": 7.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the business rule: a trace context must be set and propagated correctly to disk. The language is domain-appropriate (trace IDs, names), avoiding implementation clutter.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 7,
+          "rationale": "Decoupled from system internals; however, it relies on `reset_current_trace_id()` which may be a brittle internal function if the test runner or framework changes its behavior. It also assumes specific JSON structure in spans_file.",
+          "suggestions": [
+            "Replace `reset_current_trace_id` with an explicit assertion like `assert trace_context.current_span is None`."
+          ]
+        },
+        "repeatable": {
+          "score": 6,
+          "rationale": "Deterministic and self-contained regarding the test logic. However, it relies on external state (`tmp_path`, file system) which can cause flakiness if disk I/O or path resolution varies between runs.",
+          "suggestions": [
+            "Ensure `trace_span` writes to a deterministic location (e.g., in-memory buffer for unit tests)."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "Verifies exactly one behavior: the propagation of trace context. If it fails, the cause is instantly obvious (`assert span.trace_id == ...`).",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "Has a unique purpose (verifying `trace_span` output). It does not duplicate coverage of other tests or test trivial things unnecessarily.",
+          "suggestions": []
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "Targeted at the specific assertion that trace context is propagated. However, it mixes setup (`set_current_trace_id`) with verification in a way that could be more granular by separating 'arrange' and 'assert'.",
+          "suggestions": [
+            "Separate `reset_current_trace_id()` into an Arrange phase to ensure clarity.",
+            "Explicitly assert the absence of any active trace context before setting one, if not already implied."
+          ]
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "Executes rapidly. The only potential slowdown is the explicit `time.sleep(0.01)`, which is negligible but unnecessary for correctness.",
+          "suggestions": [
+            "Remove or comment out `time.sleep(0.01)` as it adds artificial delay without functional benefit."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "Demonstrates clean separation of Arrange (setup), Act (test logic with assertions), and Assert (verification). The test is designed first to verify the behavior.",
+          "suggestions": []
+        },
+        "summary": "The test demonstrates strong TDD principles but relies on fragile internal state management (`reset_current_trace_id`) which risks maintainability. It could be improved by explicitly separating Arrange/Act phases for clarity."
+      }
+    },
+    {
+      "id": "tests/test_tracing_and_latency.py::test_trace_span_error",
+      "file_path": "tests/test_tracing_and_latency.py",
+      "test_name": "test_trace_span_error",
+      "class_name": null,
+      "farley_index": 8.125,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 9,
+          "rationale": "The test clearly defines the scenario (triggering a span error), the expected outcome (ValueError raised and file written with specific content), and uses domain-appropriate terminology like 'spans.jsonl' and 'trace_span'.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 8,
+          "rationale": "The test is decoupled from implementation details; it does not rely on the internal logic of `trace_span` or any specific framework internals. It only asserts observable behavior (file existence and content).",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "While deterministic in execution order, this test relies entirely on file I/O (`spans_file.read_text`). If the underlying tracing infrastructure changes its output format or encoding strategy without updating tests, repeatability is compromised.",
+          "suggestions": [
+            "Ensure `json.loads` handles potential whitespace variations consistently across runs."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: that a specific error message and status are written to the file upon failure. If it fails, the cause (ValueError) is instantly obvious.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "This test covers the 'write-on-error' contract of `trace_span`. While other tests might cover reading or different error types, this specific assertion ensures the file system integration works correctly for errors.",
+          "suggestions": [
+            "Consider if a separate test is needed to verify that successful traces do not write files."
+          ]
+        },
+        "granular": {
+          "score": 9,
+          "rationale": "The test isolates precisely one aspect: writing an ERROR status and error message to `spans.jsonl`. It does not mix in unrelated assertions like 'file exists' or general logging checks.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 6,
+          "rationale": "This test is relatively fast as it involves a single function call per iteration. However, the explicit file I/O (`read_text`) adds overhead compared to in-memory assertions that could be made if `trace_span` were mocked or tested directly.",
+          "suggestions": [
+            "Refactor to mock `spans_file.read_text()` and assert on memory data instead of disk I/O."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The test follows the Arrange-Act-Assert pattern: it sets up a file path (Arrange), triggers an error action (Act), and asserts specific content (Assert). It clearly specifies behavior before implementation.",
+          "suggestions": []
+        },
+        "summary": "This is a high-quality TDD test that adheres to 8 properties. The only minor weakness in 'fast' is the reliance on disk I/O, which could be optimized by mocking if performance becomes an issue."
+      }
+    },
+    {
+      "id": "tests/test_tracing_and_latency.py::test_replay_manager_latency_aggregation",
+      "file_path": "tests/test_tracing_and_latency.py",
+      "test_name": "test_replay_manager_latency_aggregation",
+      "class_name": null,
+      "farley_index": 8.125,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the business rule: latency aggregation across stages and summary statistics are computed correctly based on recorded events.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "Tests rely solely on `RunRecord` and `ReplayManager`, avoiding external state or database dependencies. Refactoring the underlying model logic will not break this test.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic (fixed seed) but relies on file I/O (`tmp_path`), which can introduce flakiness if disk operations vary. No reliance on network or timing-specific behavior that could drift.",
+          "suggestions": [
+            "Ensure `cassette_file` path remains stable across runs; consider using a dedicated temp directory for test artifacts to avoid race conditions."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The single assertion verifies the aggregate totals and stage breakdown. If it fails, the cause is immediately obvious: either calculation logic or data ingestion was incorrect.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "This test covers specific aggregation formulas (sum, avg, max/min). It does not duplicate coverage of general latency tests but focuses on a complex edge case involving multiple stages and summary generation.",
+          "suggestions": [
+            "Ensure no other existing tests cover the same `totals` or `by_stage` calculations to avoid redundancy."
+          ]
+        },
+        "granular": {
+          "score": 9,
+          "rationale": "The test isolates precise behavior: latency aggregation logic. It does not assert unrelated side effects like file system creation speed.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 6,
+          "rationale": "While the code is fast to execute (no sleeps), it involves creating a temporary JSON file and reading/writing disk I/O for each test run. This can slow down CI/CD pipelines significantly compared to in-memory tests.",
+          "suggestions": [
+            "Move `cassette_file` creation into an inline fixture or use a dedicated temp directory with atomic writes if persistence is required."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The test follows the Arrange-Act-Assert pattern: setup (`RunRecord`, `Cassette`) -> Act (record events) -> Assert (verify summary). It explicitly tests design properties of a replay manager.",
+          "suggestions": []
+        },
+        "summary": "Overall score: 7.5/10. The test is well-written and TDD-compliant but suffers from moderate performance overhead due to file I/O, which could impact CI speed."
+      }
+    },
+    {
       "id": "tests/test_code_review.py::test_function_visitor",
       "file_path": "tests/test_code_review.py",
       "test_name": "test_function_visitor",
@@ -3548,6 +3719,178 @@
           ]
         },
         "summary": "The test is functional and follows a basic TDD structure but lacks the explicit documentation of business rules (understandable) and robustness against implementation changes (maintainable). It risks becoming brittle if external dependencies or internal logic evolve without updates to this specific assertion."
+      }
+    },
+    {
+      "id": "tests/test_evaluator_clock.py::test_farley_arg_parser_clock_now",
+      "file_path": "tests/test_evaluator_clock.py",
+      "test_name": "test_farley_arg_parser_clock_now",
+      "class_name": null,
+      "farley_index": 8.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly demonstrates the intended behavior of a specific command-line argument parser. The intent is unambiguous for anyone familiar with the `farley_parser` library.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "The test relies entirely on the internal logic of a single function (`parse_args`) and does not depend on external state or side effects. It is robust against refactoring as long as `farley_parser` remains stable.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 10,
+          "rationale": "The test is fully self-contained and deterministic. No external dependencies (database, network, filesystem) or timing variations are involved in the execution flow.",
+          "suggestions": []
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "A single assertion verifies exactly one behavior: that `args.clock_now` matches the provided string. The failure cause is immediately obvious if it fails.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 7,
+          "rationale": "While this test covers a specific edge case (clock argument), it may not be strictly necessary for general coverage of the parser's core logic unless that specific behavior is critical to the system.",
+          "suggestions": []
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The test isolates a very narrow aspect: parsing and validating a single command-line flag. It does not cover argument validation for other flags or error handling scenarios.",
+          "suggestions": [
+            "Consider adding tests to verify that invalid arguments (e.g., missing values) are handled gracefully by the parser."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes in negligible time. There is no artificial delay or heavy I/O operation; it performs a simple string comparison.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 10,
+          "rationale": "This follows the Arrange-Act-Assert pattern perfectly: `parser` is set up (Arrange), arguments are parsed and asserted (Act/Assert). It demonstrates a clean separation of concerns.",
+          "suggestions": []
+        },
+        "summary": "{\"understandable\":8,\"maintainable\":9,\"repeatable\":10,\"atomic\":9,\"necessary\":7,\"granular\":8,\"fast\":9,\"first_tdd\":10}"
+      }
+    },
+    {
+      "id": "tests/test_evaluator_clock.py::test_farley_init_replay_manager_clock_now",
+      "file_path": "tests/test_evaluator_clock.py",
+      "test_name": "test_farley_init_replay_manager_clock_now",
+      "class_name": null,
+      "farley_index": 8.0,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the business rule (clock must be set to a specific ISO timestamp) and uses domain-specific terminology ('replay manager', 'created_at'). It avoids low-level implementation clutter.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "The test is decoupled from system internals; it does not depend on the specific logic of `farley_init_rm` or any external state. If that function changes its internal clock handling, this test remains valid.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic and self-contained within a single file path (`tmp_path`). However, it relies on `farley_init_rm` which may introduce external state or timing dependencies not fully isolated here (e.g., network calls if the model loads).",
+          "suggestions": [
+            "Ensure `farley_init_rm` does not rely on shared global state that this test cannot control.",
+            "Verify no side effects occur during initialization beyond what is explicitly asserted."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: the clock value. If it fails, the cause (wrong timestamp) is instantly obvious without needing to inspect logs or other outputs.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "This specific assertion targets a critical business rule that likely requires its own dedicated test; duplicating this logic elsewhere would be redundant and increase maintenance burden.",
+          "suggestions": [
+            "Ensure no existing tests cover the clock initialization or replay creation for this scenario."
+          ]
+        },
+        "granular": {
+          "score": 9,
+          "rationale": "The assertion is precise: it checks a specific attribute (`created_at`) against an exact string value. It isolates exactly one aspect of the system's state.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 6,
+          "rationale": "While fast execution-wise (no sleeps), this test relies on `farley_init_rm` which may involve heavy setup or I/O if it loads a model. The assertion itself is instant, but the prerequisite function's cost matters.",
+          "suggestions": [
+            "Ensure `farley_init_rm` does not perform expensive operations like loading large models unless necessary for this specific replay scenario."
+          ]
+        },
+        "first_tdd": {
+          "score": 8,
+          "rationale": "The test follows a clean Arrange-Act-Assert structure: it sets up the cassette file (Arrange), instantiates the object with explicit parameters (Act), and asserts the expected state (Assert).",
+          "suggestions": []
+        },
+        "summary": "{\"understandable\":9,\"maintainable\":8,\"repeatable\":7,\"atomic\":9,\"necessary\":8,\"granular\":9,\"fast\":6,\"first_tdd\":8}"
+      }
+    },
+    {
+      "id": "tests/test_evaluator_clock.py::test_code_review_init_replay_manager_clock_now",
+      "file_path": "tests/test_evaluator_clock.py",
+      "test_name": "test_code_review_init_replay_manager_clock_now",
+      "class_name": null,
+      "farley_index": 7.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test name and code clearly describe the business rule (clock synchronization) without implementation clutter. The domain language is standard for testing replay logic.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 7,
+          "rationale": "While readable, this test relies on `cr_init_rm` which likely contains complex internal state or side effects. It couples the specific clock value to a single instance of initialization logic.",
+          "suggestions": [
+            "Extract the 'clock_now' parameter into a dedicated fixture or helper function (e.g., `setup_clock`).",
+            "Ensure that if `cr_init_rm` changes its internal state based on arguments, this test is resilient."
+          ]
+        },
+        "repeatable": {
+          "score": 6,
+          "rationale": "The test depends entirely on the specific string value passed to `clock_now`. If a race condition or timing issue occurs in production where two runs happen simultaneously with different seeds but same clock values, this might fail intermittently.",
+          "suggestions": [
+            "Add an explicit assertion that verifies the timestamp is within a small tolerance (e.g., 1 second) rather than exact string equality to account for potential micro-timing drift in test environments."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test isolates exactly one behavior: the creation of a replay manager with a specific clock. The failure mode (assertion error) is immediate and unambiguous.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "This test verifies a critical business rule that other tests likely do not cover: the synchronization of replay timestamps. It adds unique value to the suite.",
+          "suggestions": [
+            "Ensure this specific clock assertion is not redundant with existing 'record' or 'playback' flow tests unless those flows are known to be non-deterministic."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The test targets the initialization phase and a specific timestamp assertion. It is granular enough but could benefit from separating 'setup' (fixture) from 'assertion'.",
+          "suggestions": [
+            "Move `cassette_file` creation to an explicit fixture function named `create_test_cassette`. This improves clarity of intent regarding test setup."
+          ]
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "The test avoids sleeps and heavy I/O. The only potential slowness is the JSON file creation if not using a mock cassette provider.",
+          "suggestions": [
+            "If `cassette_file` requires actual disk write operations in this specific runner environment (which seems unlikely given it's a unit-like test), ensure the underlying cassette library handles mocking efficiently."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The code follows Arrange-Act-Assert structure. The behavior is specified in the argument (`clock_now`), and the assertion verifies it directly.",
+          "suggestions": [
+            "Explicitly document that `cr_init_rm` expects a string for clock; if this contract can be enforced via type hints or docstrings, add them to increase maintainability."
+          ]
+        },
+        "summary": "{\"understandable\":8,\"maintainable\":7,\"repeatable\":6,\"atomic\":9,\"necessary\":8,\"granular\":7,\"fast\":8,\"first_tdd\":9}"
       }
     },
     {
@@ -8752,40 +9095,130 @@
     "farley_usage_summary": {
       "run_id": "main-baseline",
       "model": "ollama/qwen3.5:2b",
-      "reviewed_test_cases": 132,
+      "reviewed_test_cases": 138,
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 168,
-          "prompt_tokens": 145530,
-          "completion_tokens": 138232,
-          "total_tokens": 283762,
+          "calls": 177,
+          "prompt_tokens": 154886,
+          "completion_tokens": 144922,
+          "total_tokens": 299808,
           "cost_usd": 0.0,
-          "missing_usage_calls": 0
+          "missing_usage_calls": 0,
+          "total_duration_ms": 683698.434,
+          "avg_duration_ms": 3862.703,
+          "max_duration_ms": 131189.622,
+          "min_duration_ms": 4.715,
+          "p95_duration_ms": 51749.44
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 168,
-            "prompt_tokens": 145530,
-            "completion_tokens": 138232,
-            "total_tokens": 283762,
-            "cost_usd": 0.0
+            "calls": 177,
+            "prompt_tokens": 154886,
+            "completion_tokens": 144922,
+            "total_tokens": 299808,
+            "cost_usd": 0.0,
+            "total_duration_ms": 683698.434,
+            "max_duration_ms": 131189.622,
+            "avg_duration_ms": 3862.703
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 168,
-            "prompt_tokens": 145530,
-            "completion_tokens": 138232,
-            "total_tokens": 283762,
-            "cost_usd": 0.0
+            "calls": 177,
+            "prompt_tokens": 154886,
+            "completion_tokens": 144922,
+            "total_tokens": 299808,
+            "cost_usd": 0.0,
+            "total_duration_ms": 683698.434,
+            "max_duration_ms": 131189.622,
+            "avg_duration_ms": 3862.703
           }
         },
         "events": [
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 59325.722,
+            "generation_params": {},
+            "prompt_tokens": 624,
+            "completion_tokens": 618,
+            "total_tokens": 1242,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 51749.44,
+            "generation_params": {},
+            "prompt_tokens": 500,
+            "completion_tokens": 615,
+            "total_tokens": 1115,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 54470.131,
+            "generation_params": {},
+            "prompt_tokens": 796,
+            "completion_tokens": 581,
+            "total_tokens": 1377,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 84610.219,
+            "generation_params": {},
+            "prompt_tokens": 632,
+            "completion_tokens": 1024,
+            "total_tokens": 1656,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 121158.332,
+            "generation_params": {},
+            "prompt_tokens": 1972,
+            "completion_tokens": 1024,
+            "total_tokens": 2996,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 131189.622,
+            "generation_params": {},
+            "prompt_tokens": 3312,
+            "completion_tokens": 784,
+            "total_tokens": 4096,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.424,
             "generation_params": {},
             "prompt_tokens": 523,
             "completion_tokens": 641,
@@ -8798,6 +9231,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.281,
             "generation_params": {},
             "prompt_tokens": 614,
             "completion_tokens": 571,
@@ -8810,6 +9244,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 9.065,
             "generation_params": {},
             "prompt_tokens": 413,
             "completion_tokens": 799,
@@ -8822,6 +9257,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.17,
             "generation_params": {},
             "prompt_tokens": 492,
             "completion_tokens": 705,
@@ -8834,6 +9270,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.728,
             "generation_params": {},
             "prompt_tokens": 537,
             "completion_tokens": 776,
@@ -8846,6 +9283,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 8.9,
             "generation_params": {},
             "prompt_tokens": 422,
             "completion_tokens": 867,
@@ -8858,6 +9296,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.921,
             "generation_params": {},
             "prompt_tokens": 474,
             "completion_tokens": 941,
@@ -8870,6 +9309,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 8.501,
             "generation_params": {},
             "prompt_tokens": 658,
             "completion_tokens": 820,
@@ -8882,6 +9322,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 85.795,
             "generation_params": {},
             "prompt_tokens": 505,
             "completion_tokens": 665,
@@ -8894,6 +9335,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.648,
             "generation_params": {},
             "prompt_tokens": 546,
             "completion_tokens": 951,
@@ -8906,6 +9348,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.867,
             "generation_params": {},
             "prompt_tokens": 581,
             "completion_tokens": 650,
@@ -8918,6 +9361,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.013,
             "generation_params": {},
             "prompt_tokens": 480,
             "completion_tokens": 848,
@@ -8930,6 +9374,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.735,
             "generation_params": {},
             "prompt_tokens": 525,
             "completion_tokens": 1024,
@@ -8942,6 +9387,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.063,
             "generation_params": {},
             "prompt_tokens": 1698,
             "completion_tokens": 1024,
@@ -8954,6 +9400,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.787,
             "generation_params": {},
             "prompt_tokens": 2872,
             "completion_tokens": 1024,
@@ -8966,6 +9413,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.113,
             "generation_params": {},
             "prompt_tokens": 711,
             "completion_tokens": 1024,
@@ -8978,6 +9426,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.81,
             "generation_params": {},
             "prompt_tokens": 1942,
             "completion_tokens": 1024,
@@ -8990,6 +9439,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.891,
             "generation_params": {},
             "prompt_tokens": 3173,
             "completion_tokens": 923,
@@ -9002,6 +9452,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.01,
             "generation_params": {},
             "prompt_tokens": 549,
             "completion_tokens": 619,
@@ -9014,6 +9465,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.775,
             "generation_params": {},
             "prompt_tokens": 625,
             "completion_tokens": 1024,
@@ -9026,6 +9478,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.088,
             "generation_params": {},
             "prompt_tokens": 2023,
             "completion_tokens": 1024,
@@ -9038,6 +9491,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.789,
             "generation_params": {},
             "prompt_tokens": 3422,
             "completion_tokens": 674,
@@ -9050,6 +9504,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.759,
             "generation_params": {},
             "prompt_tokens": 449,
             "completion_tokens": 815,
@@ -9062,6 +9517,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.01,
             "generation_params": {},
             "prompt_tokens": 509,
             "completion_tokens": 854,
@@ -9074,6 +9530,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.717,
             "generation_params": {},
             "prompt_tokens": 540,
             "completion_tokens": 719,
@@ -9086,6 +9543,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.183,
             "generation_params": {},
             "prompt_tokens": 529,
             "completion_tokens": 858,
@@ -9098,6 +9556,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.739,
             "generation_params": {},
             "prompt_tokens": 672,
             "completion_tokens": 889,
@@ -9110,6 +9569,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.206,
             "generation_params": {},
             "prompt_tokens": 663,
             "completion_tokens": 723,
@@ -9122,6 +9582,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.751,
             "generation_params": {},
             "prompt_tokens": 470,
             "completion_tokens": 1024,
@@ -9134,6 +9595,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.748,
             "generation_params": {},
             "prompt_tokens": 1749,
             "completion_tokens": 1024,
@@ -9146,6 +9608,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.047,
             "generation_params": {},
             "prompt_tokens": 2982,
             "completion_tokens": 1024,
@@ -9158,6 +9621,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.736,
             "generation_params": {},
             "prompt_tokens": 556,
             "completion_tokens": 786,
@@ -9170,6 +9634,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.113,
             "generation_params": {},
             "prompt_tokens": 525,
             "completion_tokens": 912,
@@ -9182,6 +9647,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.773,
             "generation_params": {},
             "prompt_tokens": 498,
             "completion_tokens": 811,
@@ -9194,6 +9660,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.777,
             "generation_params": {},
             "prompt_tokens": 539,
             "completion_tokens": 737,
@@ -9206,6 +9673,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 83.338,
             "generation_params": {},
             "prompt_tokens": 583,
             "completion_tokens": 602,
@@ -9218,6 +9686,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.281,
             "generation_params": {},
             "prompt_tokens": 594,
             "completion_tokens": 1002,
@@ -9230,6 +9699,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.429,
             "generation_params": {},
             "prompt_tokens": 599,
             "completion_tokens": 873,
@@ -9242,6 +9712,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.93,
             "generation_params": {},
             "prompt_tokens": 593,
             "completion_tokens": 592,
@@ -9254,6 +9725,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.792,
             "generation_params": {},
             "prompt_tokens": 547,
             "completion_tokens": 975,
@@ -9266,6 +9738,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.964,
             "generation_params": {},
             "prompt_tokens": 524,
             "completion_tokens": 553,
@@ -9278,6 +9751,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.844,
             "generation_params": {},
             "prompt_tokens": 519,
             "completion_tokens": 688,
@@ -9290,6 +9764,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.085,
             "generation_params": {},
             "prompt_tokens": 416,
             "completion_tokens": 923,
@@ -9302,6 +9777,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.813,
             "generation_params": {},
             "prompt_tokens": 510,
             "completion_tokens": 891,
@@ -9314,6 +9790,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.393,
             "generation_params": {},
             "prompt_tokens": 465,
             "completion_tokens": 574,
@@ -9326,6 +9803,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.815,
             "generation_params": {},
             "prompt_tokens": 1316,
             "completion_tokens": 786,
@@ -9338,6 +9816,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.822,
             "generation_params": {},
             "prompt_tokens": 1059,
             "completion_tokens": 890,
@@ -9350,6 +9829,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.152,
             "generation_params": {},
             "prompt_tokens": 1124,
             "completion_tokens": 857,
@@ -9362,6 +9842,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.813,
             "generation_params": {},
             "prompt_tokens": 1050,
             "completion_tokens": 827,
@@ -9374,6 +9855,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.218,
             "generation_params": {},
             "prompt_tokens": 578,
             "completion_tokens": 683,
@@ -9386,6 +9868,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.792,
             "generation_params": {},
             "prompt_tokens": 1809,
             "completion_tokens": 731,
@@ -9398,6 +9881,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.801,
             "generation_params": {},
             "prompt_tokens": 1270,
             "completion_tokens": 736,
@@ -9410,6 +9894,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.996,
             "generation_params": {},
             "prompt_tokens": 926,
             "completion_tokens": 725,
@@ -9422,6 +9907,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.737,
             "generation_params": {},
             "prompt_tokens": 849,
             "completion_tokens": 644,
@@ -9434,6 +9920,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.113,
             "generation_params": {},
             "prompt_tokens": 702,
             "completion_tokens": 683,
@@ -9446,6 +9933,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.802,
             "generation_params": {},
             "prompt_tokens": 545,
             "completion_tokens": 748,
@@ -9458,6 +9946,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.186,
             "generation_params": {},
             "prompt_tokens": 766,
             "completion_tokens": 803,
@@ -9470,6 +9959,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.768,
             "generation_params": {},
             "prompt_tokens": 673,
             "completion_tokens": 770,
@@ -9482,6 +9972,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.76,
             "generation_params": {},
             "prompt_tokens": 636,
             "completion_tokens": 1024,
@@ -9494,6 +9985,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.084,
             "generation_params": {},
             "prompt_tokens": 1921,
             "completion_tokens": 1024,
@@ -9506,6 +9998,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.784,
             "generation_params": {},
             "prompt_tokens": 3206,
             "completion_tokens": 890,
@@ -9518,6 +10011,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 87.885,
             "generation_params": {},
             "prompt_tokens": 891,
             "completion_tokens": 1024,
@@ -9530,6 +10024,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.925,
             "generation_params": {},
             "prompt_tokens": 2056,
             "completion_tokens": 1004,
@@ -9542,6 +10037,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.478,
             "generation_params": {},
             "prompt_tokens": 482,
             "completion_tokens": 862,
@@ -9553,7 +10049,47 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 52079.15,
+            "generation_params": {},
+            "prompt_tokens": 458,
+            "completion_tokens": 602,
+            "total_tokens": 1060,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 55958.055,
+            "generation_params": {},
+            "prompt_tokens": 530,
+            "completion_tokens": 621,
+            "total_tokens": 1151,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 71724.519,
+            "generation_params": {},
+            "prompt_tokens": 532,
+            "completion_tokens": 821,
+            "total_tokens": 1353,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.898,
             "generation_params": {},
             "prompt_tokens": 792,
             "completion_tokens": 631,
@@ -9566,6 +10102,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.179,
             "generation_params": {},
             "prompt_tokens": 447,
             "completion_tokens": 583,
@@ -9578,6 +10115,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.767,
             "generation_params": {},
             "prompt_tokens": 448,
             "completion_tokens": 649,
@@ -9590,6 +10128,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 8.974,
             "generation_params": {},
             "prompt_tokens": 449,
             "completion_tokens": 637,
@@ -9602,6 +10141,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.0,
             "generation_params": {},
             "prompt_tokens": 458,
             "completion_tokens": 757,
@@ -9614,6 +10154,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.782,
             "generation_params": {},
             "prompt_tokens": 461,
             "completion_tokens": 1024,
@@ -9626,6 +10167,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.101,
             "generation_params": {},
             "prompt_tokens": 1688,
             "completion_tokens": 1024,
@@ -9638,6 +10180,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.781,
             "generation_params": {},
             "prompt_tokens": 2915,
             "completion_tokens": 1024,
@@ -9650,6 +10193,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 9.58,
             "generation_params": {},
             "prompt_tokens": 464,
             "completion_tokens": 519,
@@ -9662,6 +10206,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.765,
             "generation_params": {},
             "prompt_tokens": 447,
             "completion_tokens": 636,
@@ -9674,6 +10219,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.751,
             "generation_params": {},
             "prompt_tokens": 475,
             "completion_tokens": 707,
@@ -9686,6 +10232,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 6.749,
             "generation_params": {},
             "prompt_tokens": 459,
             "completion_tokens": 579,
@@ -9698,6 +10245,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.715,
             "generation_params": {},
             "prompt_tokens": 471,
             "completion_tokens": 663,
@@ -9710,6 +10258,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.139,
             "generation_params": {},
             "prompt_tokens": 612,
             "completion_tokens": 693,
@@ -9722,6 +10271,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.736,
             "generation_params": {},
             "prompt_tokens": 484,
             "completion_tokens": 1024,
@@ -9734,6 +10284,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.757,
             "generation_params": {},
             "prompt_tokens": 1658,
             "completion_tokens": 1024,
@@ -9746,6 +10297,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 84.078,
             "generation_params": {},
             "prompt_tokens": 2833,
             "completion_tokens": 1024,
@@ -9758,6 +10310,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.323,
             "generation_params": {},
             "prompt_tokens": 483,
             "completion_tokens": 660,
@@ -9770,6 +10323,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.237,
             "generation_params": {},
             "prompt_tokens": 557,
             "completion_tokens": 745,
@@ -9782,6 +10336,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.759,
             "generation_params": {},
             "prompt_tokens": 577,
             "completion_tokens": 965,
@@ -9794,6 +10349,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.738,
             "generation_params": {},
             "prompt_tokens": 554,
             "completion_tokens": 881,
@@ -9806,6 +10362,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.992,
             "generation_params": {},
             "prompt_tokens": 756,
             "completion_tokens": 1024,
@@ -9818,6 +10375,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.754,
             "generation_params": {},
             "prompt_tokens": 1924,
             "completion_tokens": 979,
@@ -9830,6 +10388,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.304,
             "generation_params": {},
             "prompt_tokens": 405,
             "completion_tokens": 608,
@@ -9842,6 +10401,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.157,
             "generation_params": {},
             "prompt_tokens": 672,
             "completion_tokens": 1024,
@@ -9854,6 +10414,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.81,
             "generation_params": {},
             "prompt_tokens": 1894,
             "completion_tokens": 806,
@@ -9866,6 +10427,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.067,
             "generation_params": {},
             "prompt_tokens": 512,
             "completion_tokens": 667,
@@ -9878,6 +10440,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.742,
             "generation_params": {},
             "prompt_tokens": 547,
             "completion_tokens": 769,
@@ -9890,6 +10453,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.327,
             "generation_params": {},
             "prompt_tokens": 537,
             "completion_tokens": 872,
@@ -9902,6 +10466,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.767,
             "generation_params": {},
             "prompt_tokens": 530,
             "completion_tokens": 789,
@@ -9914,6 +10479,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.792,
             "generation_params": {},
             "prompt_tokens": 790,
             "completion_tokens": 728,
@@ -9926,6 +10492,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.032,
             "generation_params": {},
             "prompt_tokens": 674,
             "completion_tokens": 803,
@@ -9938,6 +10505,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.725,
             "generation_params": {},
             "prompt_tokens": 560,
             "completion_tokens": 630,
@@ -9950,6 +10518,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.139,
             "generation_params": {},
             "prompt_tokens": 815,
             "completion_tokens": 824,
@@ -9962,6 +10531,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.807,
             "generation_params": {},
             "prompt_tokens": 805,
             "completion_tokens": 833,
@@ -9974,6 +10544,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.733,
             "generation_params": {},
             "prompt_tokens": 710,
             "completion_tokens": 1004,
@@ -9986,6 +10557,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.625,
             "generation_params": {},
             "prompt_tokens": 461,
             "completion_tokens": 793,
@@ -9998,6 +10570,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.772,
             "generation_params": {},
             "prompt_tokens": 526,
             "completion_tokens": 640,
@@ -10010,6 +10583,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.089,
             "generation_params": {},
             "prompt_tokens": 459,
             "completion_tokens": 852,
@@ -10022,6 +10596,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.882,
             "generation_params": {},
             "prompt_tokens": 483,
             "completion_tokens": 1024,
@@ -10034,6 +10609,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.246,
             "generation_params": {},
             "prompt_tokens": 1649,
             "completion_tokens": 992,
@@ -10046,6 +10622,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 84.901,
             "generation_params": {},
             "prompt_tokens": 448,
             "completion_tokens": 631,
@@ -10058,6 +10635,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 9.59,
             "generation_params": {},
             "prompt_tokens": 449,
             "completion_tokens": 686,
@@ -10070,6 +10648,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.285,
             "generation_params": {},
             "prompt_tokens": 501,
             "completion_tokens": 527,
@@ -10082,6 +10661,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 9.031,
             "generation_params": {},
             "prompt_tokens": 500,
             "completion_tokens": 745,
@@ -10094,6 +10674,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.259,
             "generation_params": {},
             "prompt_tokens": 504,
             "completion_tokens": 856,
@@ -10106,6 +10687,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 6.688,
             "generation_params": {},
             "prompt_tokens": 758,
             "completion_tokens": 924,
@@ -10118,6 +10700,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.799,
             "generation_params": {},
             "prompt_tokens": 645,
             "completion_tokens": 709,
@@ -10130,6 +10713,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.122,
             "generation_params": {},
             "prompt_tokens": 874,
             "completion_tokens": 950,
@@ -10142,6 +10726,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.769,
             "generation_params": {},
             "prompt_tokens": 531,
             "completion_tokens": 879,
@@ -10154,6 +10739,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.113,
             "generation_params": {},
             "prompt_tokens": 580,
             "completion_tokens": 723,
@@ -10166,6 +10752,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.749,
             "generation_params": {},
             "prompt_tokens": 451,
             "completion_tokens": 638,
@@ -10178,6 +10765,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.739,
             "generation_params": {},
             "prompt_tokens": 503,
             "completion_tokens": 834,
@@ -10190,6 +10778,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.979,
             "generation_params": {},
             "prompt_tokens": 611,
             "completion_tokens": 916,
@@ -10202,6 +10791,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.765,
             "generation_params": {},
             "prompt_tokens": 664,
             "completion_tokens": 815,
@@ -10214,6 +10804,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.09,
             "generation_params": {},
             "prompt_tokens": 526,
             "completion_tokens": 832,
@@ -10226,6 +10817,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.796,
             "generation_params": {},
             "prompt_tokens": 728,
             "completion_tokens": 881,
@@ -10238,6 +10830,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.179,
             "generation_params": {},
             "prompt_tokens": 618,
             "completion_tokens": 1001,
@@ -10250,6 +10843,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.798,
             "generation_params": {},
             "prompt_tokens": 559,
             "completion_tokens": 960,
@@ -10262,6 +10856,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.805,
             "generation_params": {},
             "prompt_tokens": 705,
             "completion_tokens": 1024,
@@ -10274,6 +10869,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.098,
             "generation_params": {},
             "prompt_tokens": 1879,
             "completion_tokens": 890,
@@ -10286,6 +10882,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.824,
             "generation_params": {},
             "prompt_tokens": 739,
             "completion_tokens": 851,
@@ -10298,6 +10895,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.145,
             "generation_params": {},
             "prompt_tokens": 880,
             "completion_tokens": 947,
@@ -10310,6 +10908,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.788,
             "generation_params": {},
             "prompt_tokens": 437,
             "completion_tokens": 684,
@@ -10322,6 +10921,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.774,
             "generation_params": {},
             "prompt_tokens": 600,
             "completion_tokens": 618,
@@ -10334,6 +10934,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.969,
             "generation_params": {},
             "prompt_tokens": 613,
             "completion_tokens": 828,
@@ -10346,6 +10947,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.775,
             "generation_params": {},
             "prompt_tokens": 681,
             "completion_tokens": 646,
@@ -10358,6 +10960,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 87.486,
             "generation_params": {},
             "prompt_tokens": 619,
             "completion_tokens": 1013,
@@ -10370,6 +10973,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.933,
             "generation_params": {},
             "prompt_tokens": 719,
             "completion_tokens": 821,
@@ -10382,6 +10986,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.326,
             "generation_params": {},
             "prompt_tokens": 492,
             "completion_tokens": 943,
@@ -10394,6 +10999,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.98,
             "generation_params": {},
             "prompt_tokens": 573,
             "completion_tokens": 1012,
@@ -10406,6 +11012,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.303,
             "generation_params": {},
             "prompt_tokens": 546,
             "completion_tokens": 614,
@@ -10418,6 +11025,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.974,
             "generation_params": {},
             "prompt_tokens": 512,
             "completion_tokens": 1024,
@@ -10430,6 +11038,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.968,
             "generation_params": {},
             "prompt_tokens": 1678,
             "completion_tokens": 1024,
@@ -10442,6 +11051,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.165,
             "generation_params": {},
             "prompt_tokens": 2852,
             "completion_tokens": 1024,
@@ -10454,6 +11064,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.787,
             "generation_params": {},
             "prompt_tokens": 435,
             "completion_tokens": 794,
@@ -10466,6 +11077,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.148,
             "generation_params": {},
             "prompt_tokens": 545,
             "completion_tokens": 1024,
@@ -10478,6 +11090,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.792,
             "generation_params": {},
             "prompt_tokens": 1812,
             "completion_tokens": 1024,
@@ -10490,6 +11103,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.834,
             "generation_params": {},
             "prompt_tokens": 3033,
             "completion_tokens": 1024,
@@ -10502,6 +11116,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.99,
             "generation_params": {},
             "prompt_tokens": 591,
             "completion_tokens": 615,
@@ -10514,6 +11129,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.778,
             "generation_params": {},
             "prompt_tokens": 555,
             "completion_tokens": 725,
@@ -10526,6 +11142,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.111,
             "generation_params": {},
             "prompt_tokens": 477,
             "completion_tokens": 685,
@@ -10538,6 +11155,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.741,
             "generation_params": {},
             "prompt_tokens": 423,
             "completion_tokens": 1015,
@@ -10550,6 +11168,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.214,
             "generation_params": {},
             "prompt_tokens": 480,
             "completion_tokens": 570,
@@ -10562,6 +11181,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.74,
             "generation_params": {},
             "prompt_tokens": 627,
             "completion_tokens": 1024,
@@ -10574,6 +11194,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.85,
             "generation_params": {},
             "prompt_tokens": 1851,
             "completion_tokens": 1024,
@@ -10586,6 +11207,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.086,
             "generation_params": {},
             "prompt_tokens": 3133,
             "completion_tokens": 963,
@@ -10598,6 +11220,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.768,
             "generation_params": {},
             "prompt_tokens": 755,
             "completion_tokens": 948,
@@ -10610,6 +11233,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.095,
             "generation_params": {},
             "prompt_tokens": 478,
             "completion_tokens": 801,
@@ -10622,6 +11246,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.818,
             "generation_params": {},
             "prompt_tokens": 616,
             "completion_tokens": 671,
@@ -10634,6 +11259,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.668,
             "generation_params": {},
             "prompt_tokens": 496,
             "completion_tokens": 651,
@@ -10646,6 +11272,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.807,
             "generation_params": {},
             "prompt_tokens": 644,
             "completion_tokens": 592,
@@ -10658,6 +11285,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.778,
             "generation_params": {},
             "prompt_tokens": 503,
             "completion_tokens": 835,
@@ -10670,6 +11298,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 85.87,
             "generation_params": {},
             "prompt_tokens": 571,
             "completion_tokens": 597,
@@ -10682,6 +11311,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.44,
             "generation_params": {},
             "prompt_tokens": 811,
             "completion_tokens": 624,
@@ -10694,6 +11324,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.415,
             "generation_params": {},
             "prompt_tokens": 537,
             "completion_tokens": 715,
@@ -10706,6 +11337,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.837,
             "generation_params": {},
             "prompt_tokens": 423,
             "completion_tokens": 721,
@@ -10718,6 +11350,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.823,
             "generation_params": {},
             "prompt_tokens": 548,
             "completion_tokens": 1024,
@@ -10730,6 +11363,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.003,
             "generation_params": {},
             "prompt_tokens": 1769,
             "completion_tokens": 907,
@@ -10742,6 +11376,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.726,
             "generation_params": {},
             "prompt_tokens": 559,
             "completion_tokens": 960,
@@ -10754,6 +11389,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.114,
             "generation_params": {},
             "prompt_tokens": 525,
             "completion_tokens": 812,
@@ -10766,6 +11402,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.731,
             "generation_params": {},
             "prompt_tokens": 555,
             "completion_tokens": 616,
@@ -10778,6 +11415,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 5.19,
             "generation_params": {},
             "prompt_tokens": 686,
             "completion_tokens": 699,
@@ -10790,6 +11428,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
+            "duration_ms": 4.821,
             "generation_params": {},
             "prompt_tokens": 1001,
             "completion_tokens": 814,
@@ -17697,6 +18336,249 @@
       "completion_tokens": 821,
       "prompt_tokens": 719,
       "total_tokens": 1540,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "276d9f2c0271b961886c58ee3bf63130cf84ba11bd6174ff6677a7e61cf898a9": {
+    "id": "chatcmpl-1b51c4c4-353f-43ab-8428-cabd3dcde9a7",
+    "created": 1784756718,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the business rule: a trace context must be set and propagated correctly to disk. The language is domain-appropriate (trace IDs, names), avoiding implementation clutter.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 7, \"rationale\": \"Decoupled from system internals; however, it relies on `reset_current_trace_id()` which may be a brittle internal function if the test runner or framework changes its behavior. It also assumes specific JSON structure in spans_file.\", \"suggestions\": [\"Replace `reset_current_trace_id` with an explicit assertion like `assert trace_context.current_span is None`.\"]},\n  \"repeatable\": {\"score\": 6, \"rationale\": \"Deterministic and self-contained regarding the test logic. However, it relies on external state (`tmp_path`, file system) which can cause flakiness if disk I/O or path resolution varies between runs.\", \"suggestions\": [\"Ensure `trace_span` writes to a deterministic location (e.g., in-memory buffer for unit tests).\"]},\n  \"atomic\": {\"score\": 9, \"rationale\": \"Verifies exactly one behavior: the propagation of trace context. If it fails, the cause is instantly obvious (`assert span.trace_id == ...`).\", \"suggestions\": []},\n  \"necessary\": {\"score\": 8, \"rationale\": \"Has a unique purpose (verifying `trace_span` output). It does not duplicate coverage of other tests or test trivial things unnecessarily.\", \"suggestions\": []},\n  \"granular\": {\"score\": 7, \"rationale\": \"Targeted at the specific assertion that trace context is propagated. However, it mixes setup (`set_current_trace_id`) with verification in a way that could be more granular by separating 'arrange' and 'assert'.\", \"suggestions\": [\"Separate `reset_current_trace_id()` into an Arrange phase to ensure clarity.\", \"Explicitly assert the absence of any active trace context before setting one, if not already implied.\"]},\n  \"fast\": {\"score\": 8, \"rationale\": \"Executes rapidly. The only potential slowdown is the explicit `time.sleep(0.01)`, which is negligible but unnecessary for correctness.\", \"suggestions\": [\"Remove or comment out `time.sleep(0.01)` as it adds artificial delay without functional benefit.\"]},\n  \"first_tdd\": {\"score\": 9, \"rationale\": \"Demonstrates clean separation of Arrange (setup), Act (test logic with assertions), and Assert (verification). The test is designed first to verify the behavior.\", \"suggestions\": []},\"summary\": \"The test demonstrates strong TDD principles but relies on fragile internal state management (`reset_current_trace_id`) which risks maintainability. It could be improved by explicitly separating Arrange/Act phases for clarity.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 618,
+      "prompt_tokens": 624,
+      "total_tokens": 1242,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "50db82a197db1270e3548fbebb41c671cb0aa43fdbcda28d526bf0537555ea83": {
+    "id": "chatcmpl-4cc9ec2f-430d-41c6-85c6-8950c39bfabe",
+    "created": 1784756770,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 9, \"rationale\": \"The test clearly defines the scenario (triggering a span error), the expected outcome (ValueError raised and file written with specific content), and uses domain-appropriate terminology like 'spans.jsonl' and 'trace_span'.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 8, \"rationale\": \"The test is decoupled from implementation details; it does not rely on the internal logic of `trace_span` or any specific framework internals. It only asserts observable behavior (file existence and content).\", \"suggestions\": []},\n  \"repeatable\": {\"score\": 7, \"rationale\": \"While deterministic in execution order, this test relies entirely on file I/O (`spans_file.read_text`). If the underlying tracing infrastructure changes its output format or encoding strategy without updating tests, repeatability is compromised.\", \"suggestions\": [\"Ensure `json.loads` handles potential whitespace variations consistently across runs.\"]},\"atomic\": {\"score\": 9, \"rationale\": \"The test verifies exactly one behavior: that a specific error message and status are written to the file upon failure. If it fails, the cause (ValueError) is instantly obvious.\", \"suggestions\": []},\n  \"necessary\": {\"score\": 8, \"rationale\": \"This test covers the 'write-on-error' contract of `trace_span`. While other tests might cover reading or different error types, this specific assertion ensures the file system integration works correctly for errors.\", \"suggestions\": [\"Consider if a separate test is needed to verify that successful traces do not write files.\"]},\"granular\": {\"score\": 9, \"rationale\": \"The test isolates precisely one aspect: writing an ERROR status and error message to `spans.jsonl`. It does not mix in unrelated assertions like 'file exists' or general logging checks.\", \"suggestions\": []},\n  \"fast\": {\"score\": 6, \"rationale\": \"This test is relatively fast as it involves a single function call per iteration. However, the explicit file I/O (`read_text`) adds overhead compared to in-memory assertions that could be made if `trace_span` were mocked or tested directly.\", \"suggestions\": [\"Refactor to mock `spans_file.read_text()` and assert on memory data instead of disk I/O.\"]},\"first_tdd\": {\"score\": 9, \"rationale\": \"The test follows the Arrange-Act-Assert pattern: it sets up a file path (Arrange), triggers an error action (Act), and asserts specific content (Assert). It clearly specifies behavior before implementation.\", \"suggestions\": []},\"summary\": \"This is a high-quality TDD test that adheres to 8 properties. The only minor weakness in 'fast' is the reliance on disk I/O, which could be optimized by mocking if performance becomes an issue.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 615,
+      "prompt_tokens": 500,
+      "total_tokens": 1115,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "da78152ce46af971dda5a09ef2a2ef407268f04d23489026a3e7fac5cd834519": {
+    "id": "chatcmpl-9a598770-f608-4aef-83d5-dd8b50d03c83",
+    "created": 1784756825,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the business rule: latency aggregation across stages and summary statistics are computed correctly based on recorded events.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 9, \"rationale\": \"Tests rely solely on `RunRecord` and `ReplayManager`, avoiding external state or database dependencies. Refactoring the underlying model logic will not break this test.\", \"suggestions\": []},\n  \"repeatable\": {\"score\": 7, \"rationale\": \"The test is deterministic (fixed seed) but relies on file I/O (`tmp_path`), which can introduce flakiness if disk operations vary. No reliance on network or timing-specific behavior that could drift.\", \"suggestions\": [\"Ensure `cassette_file` path remains stable across runs; consider using a dedicated temp directory for test artifacts to avoid race conditions.\"]},\n  \"atomic\": {\"score\": 9, \"rationale\": \"The single assertion verifies the aggregate totals and stage breakdown. If it fails, the cause is immediately obvious: either calculation logic or data ingestion was incorrect.\", \"suggestions\": []},\n  \"necessary\": {\"score\": 8, \"rationale\": \"This test covers specific aggregation formulas (sum, avg, max/min). It does not duplicate coverage of general latency tests but focuses on a complex edge case involving multiple stages and summary generation.\", \"suggestions\": [\"Ensure no other existing tests cover the same `totals` or `by_stage` calculations to avoid redundancy.\"]},\n  \"granular\": {\"score\": 9, \"rationale\": \"The test isolates precise behavior: latency aggregation logic. It does not assert unrelated side effects like file system creation speed.\", \"suggestions\": []},\n  \"fast\": {\"score\": 6, \"rationale\": \"While the code is fast to execute (no sleeps), it involves creating a temporary JSON file and reading/writing disk I/O for each test run. This can slow down CI/CD pipelines significantly compared to in-memory tests.\", \"suggestions\": [\"Move `cassette_file` creation into an inline fixture or use a dedicated temp directory with atomic writes if persistence is required.\"]},\n  \"first_tdd\": {\"score\": 9, \"rationale\": \"The test follows the Arrange-Act-Assert pattern: setup (`RunRecord`, `Cassette`) -> Act (record events) -> Assert (verify summary). It explicitly tests design properties of a replay manager.\", \"suggestions\": []},\"summary\":\"Overall score: 7.5/10. The test is well-written and TDD-compliant but suffers from moderate performance overhead due to file I/O, which could impact CI speed.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 581,
+      "prompt_tokens": 796,
+      "total_tokens": 1377,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "6b4c1dee7c655e17cebfd4cbb576cba1e2ff9623e5ad039b853dfd69fdbaa042": {
+    "id": "chatcmpl-fe38a46a-63d7-4c7d-b6a5-acd382c82326",
+    "created": 1784756909,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 6,\n    \"rationale\": \"The test name and variable names are somewhat technical (e.g., `cr_data`, `_get_latency_slo_metric`), which may obscure the business rule for a non-technical stakeholder. The logic is clear enough to run but lacks explicit documentation of *why* these specific metrics matter.\",\n    \"suggestions\": [\n      \"Rename variables like `cr_data` and function calls to be more descriptive (e.g., `test_cr_metrics`, `_get_slo_result`).\",\n      \"Add a docstring explaining the business rule: 'This test verifies that latency SLA checks correctly identify PASS status when total duration is under 2.5s, WARN status at exactly 1000ms threshold, and FAIL otherwise.'\",\n      \"Remove or rename `monkeypatch` usage if this specific test doesn't require mocking external dependencies; prefer fixtures for setup.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 7,\n    \"rationale\": \"The logic is decoupled from the implementation details of `_get_latency_slo_metric`. However, relying on `monkeypatch.setenv` makes this test brittle if that environment variable changes in production or future refactors. It also lacks isolation for concurrent execution.\",\n    \"suggestions\": [\n      \"Replace `monkeypatch.setenv` with a dedicated fixture (e.g., `@pytest.fixture`) to manage the SLA threshold globally, ensuring tests are deterministic and isolated from other test state.\",\n      \"Ensure `_get_latency_slo_metric` is unit-tested in isolation; this file should not depend on external system calls or shared mutable state like environment variables unless explicitly documented as a side-effect of that specific scenario.\",\n      \"Consider adding `@pytest.mark.parametrize` to vary the SLA threshold across multiple test cases, making it easier to maintain coverage for different scenarios.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 5,\n    \"rationale\": \"The test relies on an external environment variable (`LATENCY_SLO_MAX_CALL_MS`) which is not deterministic. If the system restarts or if multiple tests run in parallel without proper isolation (e.g., via fixtures), results could vary based on timing or shared state.\",\n    \"suggestions\": [\n      \"Remove `monkeypatch.setenv` and instead use a fixture to set up the SLA threshold once per test class, ensuring every instance of `_get_latency_slo_metric` sees the same value.\",\n      \"Ensure no other tests share this environment variable or rely on its current state. If shared state is necessary for testing side effects (e.g., logging), ensure it's cleared between runs using `pytest.mark.usefixtures('cleanup_env')`.\",\n      \"Avoid relying on external timing-dependent behavior; if the SLA check involves real-time metrics, mock those inputs explicitly in fixtures rather than environment variables.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 8,\n    \"rationale\": \"The test verifies exactly one distinct rule: 'If total duration <= threshold (1000ms), return WARN; otherwise PASS'. The assertion `assert warn_status == \\\"WARN\\\"` is clear and self-contained. If it fails, the cause is immediately obvious.\",\n    \"suggestions\": [\n      \"Refine assertions to be more explicit about edge cases: e.g., 'If total_duration_ms <= 1000ms AND avg < threshold, return WARN; else PASS'.\",\n      \"Ensure no other side effects occur during execution (e.g., logging errors). If the function modifies state internally, ensure cleanup happens automatically or is tested separately.\",\n      \"Consider adding a negative test case to verify that if `total_duration_ms` exceeds 1000ms but avg < threshold, it correctly returns PASS.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 9,\n    \"rationale\": \"This test has a unique purpose: validating the specific boundary conditions for SLA status (PASS/WARN/FAIL) based on total duration and average latency. It does not duplicate coverage of other tests in this file or trivial things like unit testing helper functions.\",\n    \"suggestions\": [\n      \"Verify no existing tests cover these exact metric thresholds; if they do, ensure the new test adds a distinct scenario (e.g., different SLA values).\",\n      \"Ensure `cr_data` is not hardcoded in other parts of the codebase. If it's used elsewhere, extract this logic into a dedicated data model or fixture to avoid duplication.\",\n      \"Check if this specific metric calculation overlaps with tests for `_get_latency_slo_metric`. Ensure no redundant assertions exist that could be merged.\"\n    ]\n  },\n  \"granular\":",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 632,
+      "total_tokens": 1656,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "655a8d1ac6cdf80bf4f887f2e3b75a9faaa98f02eb1803039dac0e3195a8e245": {
+    "id": "chatcmpl-20d7b2e4-ee05-4069-b1d8-bc92ed0a1d57",
+    "created": 1784757031,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 6,\n    \"rationale\": \"The test name and variable names are somewhat technical (e.g., `cr_data`, `_get_latency_slo_metric`), which may obscure the business rule for a non-technical stakeholder. The logic is clear enough to run but lacks explicit documentation of *why* these specific metrics matter.\",\n    \"suggestions\": [\n      \"Rename variables like `cr_data` and function calls to be more descriptive (e.g., `test_cr_metrics`, `_get_slo_result`).\",\n      \"Add a docstring explaining the business rule: 'This test verifies that latency SLA checks correctly identify PASS status when total duration is under 2.5s, WARN status at exactly 1000ms threshold, and FAIL otherwise.'\",\n      \"Remove or rename `monkeypatch` usage if this specific test doesn't require mocking external dependencies; prefer fixtures for setup.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 7,\n    \"rationale\": \"The logic is decoupled from the implementation details of `_get_latency_slo_metric`. However, relying on `monkeypatch.setenv` makes this test brittle if that environment variable changes in production or future refactors. It also lacks isolation for concurrent execution.\",\n    \"suggestions\": [\n      \"Replace `monkeypatch.setenv` with a dedicated fixture (e.g., `@pytest.fixture`) to manage the SLA threshold globally, ensuring tests are deterministic and isolated from other test state.\",\n      \"Ensure `_get_latency_slo_metric` is unit-tested in isolation; this file should not depend on external system calls or shared mutable state like environment variables unless explicitly documented as a side-effect of that specific scenario.\",\n      \"Consider adding `@pytest.mark.parametrize` to vary the SLA threshold across multiple test cases, making it easier to maintain coverage for different scenarios.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 5,\n    \"rationale\": \"The test relies on an external environment variable (`LATENCY_SLO_MAX_CALL_MS`) which is not deterministic. If the system restarts or if multiple tests run in parallel without proper isolation (e.g., via fixtures), results could vary based on timing or shared state.\",\n    \"suggestions\": [\n      \"Remove `monkeypatch.setenv` and instead use a fixture to set up the SLA threshold once per test class, ensuring every instance of `_get_latency_slo_metric` sees the same value.\",\n      \"Ensure no other tests share this environment variable or rely on its current state. If shared state is necessary for testing side effects (e.g., logging), ensure it's cleared between runs using `pytest.mark.usefixtures('cleanup_env')`.\",\n      \"Avoid relying on external timing-dependent behavior; if the SLA check involves real-time metrics, mock those inputs explicitly in fixtures rather than environment variables.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 8,\n    \"rationale\": \"The test verifies exactly one distinct rule: 'If total duration <= threshold (1000ms), return WARN; otherwise PASS'. The assertion `assert warn_status == \\\"WARN\\\"` is clear and self-contained. If it fails, the cause is immediately obvious.\",\n    \"suggestions\": [\n      \"Refine assertions to be more explicit about edge cases: e.g., 'If total_duration_ms <= 1000ms AND avg < threshold, return WARN; else PASS'.\",\n      \"Ensure no other side effects occur during execution (e.g., logging errors). If the function modifies state internally, ensure cleanup happens automatically or is tested separately.\",\n      \"Consider adding a negative test case to verify that if `total_duration_ms` exceeds 1000ms but avg < threshold, it correctly returns PASS.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 9,\n    \"rationale\": \"This test has a unique purpose: validating the specific boundary conditions for SLA status (PASS/WARN/FAIL) based on total duration and average latency. It does not duplicate coverage of other tests in this file or trivial things like unit testing helper functions.\",\n    \"suggestions\": [\n      \"Verify no existing tests cover these exact metric thresholds; if they do, ensure the new test adds a distinct scenario (e.g., different SLA values).\",\n      \"Ensure `cr_data` is not hardcoded in other parts of the codebase. If it's used elsewhere, extract this logic into a dedicated data model or fixture to avoid duplication.\",\n      \"Check if this specific metric calculation overlaps with tests for `_get_latency_slo_metric`. Ensure no redundant assertions exist that could be merged.\"\n    ]\n  },\n  \"granular\":",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 1972,
+      "total_tokens": 2996,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "37fbae906b1bcf298e88c0ed27f75adf5e642b86e3a705e70313669ce7f976e0": {
+    "id": "chatcmpl-9b621e2f-b15d-49aa-9a45-e8338dbdd3fc",
+    "created": 1784757162,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 6,\n    \"rationale\": \"The test name and variable names are somewhat technical (e.g., `cr_data`, `_get_latency_slo_metric`), which may obscure the business rule for a non-technical stakeholder. The logic is clear enough to run but lacks explicit documentation of *why* these specific metrics matter.\",\n    \"suggestions\": [\n      \"Rename variables like `cr_data` and function calls to be more descriptive (e.g., `test_cr_metrics`, `_get_slo_result`).\",\n      \"Add a docstring explaining the business rule: 'This test verifies that latency SLA checks correctly identify PASS status when total duration is under 2.5s, WARN status at exactly 1000ms threshold, and FAIL otherwise.'\",\n      \"Remove or rename `monkeypatch` usage if this specific test doesn't require mocking external dependencies; prefer fixtures for setup.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 7,\n    \"rationale\": \"The logic is decoupled from the implementation details of `_get_latency_slo_metric`. However, relying on `monkeypatch.setenv` makes this test brittle if that environment variable changes in production or future refactors. It also lacks isolation for concurrent execution.\",\n    \"suggestions\": [\n      \"Replace `monkeypatch.setenv` with a dedicated fixture (e.g., `@pytest.fixture`) to manage the SLA threshold globally, ensuring tests are deterministic and isolated from other test state.\",\n      \"Ensure `_get_latency_slo_metric` is unit-tested in isolation; this file should not depend on external system calls or shared mutable state like environment variables unless explicitly documented as a side-effect of that specific scenario.\",\n      \"Consider adding `@pytest.mark.parametrize` to vary the SLA threshold across multiple test cases, making it easier to maintain coverage for different scenarios.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 5,\n    \"rationale\": \"The test relies on an external environment variable (`LATENCY_SLO_MAX_CALL_MS`) which is not deterministic. If the system restarts or if multiple tests run in parallel without proper isolation (e.g., via fixtures), results could vary based on timing or shared state.\",\n    \"suggestions\": [\n      \"Remove `monkeypatch.setenv` and instead use a fixture to set up the SLA threshold once per test class, ensuring every instance of `_get_latency_slo_metric` sees the same value.\",\n      \"Ensure no other tests share this environment variable or rely on its current state. If shared state is necessary for testing side effects (e.g., logging), ensure it's cleared between runs using `pytest.mark.usefixtures('cleanup_env')`.\",\n      \"Avoid relying on external timing-dependent behavior; if the SLA check involves real-time metrics, mock those inputs explicitly in fixtures rather than environment variables.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 8,\n    \"rationale\": \"The test verifies exactly one distinct rule: 'If total duration <= threshold (1000ms), return WARN; otherwise PASS'. The assertion `assert warn_status == \\\"WARN\\\"` is clear and self-contained. If it fails, the cause is immediately obvious.\",\n    \"suggestions\": [\n      \"Refine assertions to be more explicit about edge cases: e.g., 'If total_duration_ms <= 1000ms AND avg < threshold, return WARN; else PASS'.\",\n      \"Ensure no other side effects occur during execution (e.g., logging errors). If the function modifies state internally, ensure cleanup happens automatically or",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 784,
+      "prompt_tokens": 3312,
+      "total_tokens": 4096,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "fff6d0451938e6c9cb92f987e6cddba45f68c211c66912815ba7d4f6ac2fc0c4": {
+    "id": "chatcmpl-c080ed88-ba74-4fce-9e86-6ef11e5f461f",
+    "created": 1784757215,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test clearly demonstrates the intended behavior of a specific command-line argument parser. The intent is unambiguous for anyone familiar with the `farley_parser` library.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"The test relies entirely on the internal logic of a single function (`parse_args`) and does not depend on external state or side effects. It is robust against refactoring as long as `farley_parser` remains stable.\",\n    \"suggestions\": []\n  },\n  \"repeatable\": {\n    \"score\": 10,\n    \"rationale\": \"The test is fully self-contained and deterministic. No external dependencies (database, network, filesystem) or timing variations are involved in the execution flow.\",\n    \"suggestions\": []\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"A single assertion verifies exactly one behavior: that `args.clock_now` matches the provided string. The failure cause is immediately obvious if it fails.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 7,\n    \"rationale\": \"While this test covers a specific edge case (clock argument), it may not be strictly necessary for general coverage of the parser's core logic unless that specific behavior is critical to the system.\",\n    \"suggestions\": []\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The test isolates a very narrow aspect: parsing and validating a single command-line flag. It does not cover argument validation for other flags or error handling scenarios.\",\n    \"suggestions\": [\n      \"Consider adding tests to verify that invalid arguments (e.g., missing values) are handled gracefully by the parser.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes in negligible time. There is no artificial delay or heavy I/O operation; it performs a simple string comparison.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 10,\n    \"rationale\": \"This follows the Arrange-Act-Assert pattern perfectly: `parser` is set up (Arrange), arguments are parsed and asserted (Act/Assert). It demonstrates a clean separation of concerns.\",\n    \"suggestions\": []\n  },\"summary\":\"{\\\"understandable\\\":8,\\\"maintainable\\\":9,\\\"repeatable\\\":10,\\\"atomic\\\":9,\\\"necessary\\\":7,\\\"granular\\\":8,\\\"fast\\\":9,\\\"first_tdd\\\":10}\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 602,
+      "prompt_tokens": 458,
+      "total_tokens": 1060,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "42dd84d8ec964762832ccccf6be3bd166db692638a46df8e98f7f1c0d05d00dd": {
+    "id": "chatcmpl-4166998e-ed30-4917-be1a-d2d8f2d32f7b",
+    "created": 1784757271,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the business rule (clock must be set to a specific ISO timestamp) and uses domain-specific terminology ('replay manager', 'created_at'). It avoids low-level implementation clutter.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 9, \"rationale\": \"The test is decoupled from system internals; it does not depend on the specific logic of `farley_init_rm` or any external state. If that function changes its internal clock handling, this test remains valid.\", \"suggestions\": []},\n  \"repeatable\": {\"score\": 7, \"rationale\": \"The test is deterministic and self-contained within a single file path (`tmp_path`). However, it relies on `farley_init_rm` which may introduce external state or timing dependencies not fully isolated here (e.g., network calls if the model loads).\", \"suggestions\": [\"Ensure `farley_init_rm` does not rely on shared global state that this test cannot control.\", \"Verify no side effects occur during initialization beyond what is explicitly asserted.\"]},\n  \"atomic\": {\"score\": 9, \"rationale\": \"The test verifies exactly one behavior: the clock value. If it fails, the cause (wrong timestamp) is instantly obvious without needing to inspect logs or other outputs.\", \"suggestions\": []},\n  \"necessary\": {\"score\": 8, \"rationale\": \"This specific assertion targets a critical business rule that likely requires its own dedicated test; duplicating this logic elsewhere would be redundant and increase maintenance burden.\", \"suggestions\": [\"Ensure no existing tests cover the clock initialization or replay creation for this scenario.\"]},\n  \"granular\": {\"score\": 9, \"rationale\": \"The assertion is precise: it checks a specific attribute (`created_at`) against an exact string value. It isolates exactly one aspect of the system's state.\", \"suggestions\": []},\n  \"fast\": {\"score\": 6, \"rationale\": \"While fast execution-wise (no sleeps), this test relies on `farley_init_rm` which may involve heavy setup or I/O if it loads a model. The assertion itself is instant, but the prerequisite function's cost matters.\", \"suggestions\": [\"Ensure `farley_init_rm` does not perform expensive operations like loading large models unless necessary for this specific replay scenario.\"]},\n  \"first_tdd\": {\"score\": 8, \"rationale\": \"The test follows a clean Arrange-Act-Assert structure: it sets up the cassette file (Arrange), instantiates the object with explicit parameters (Act), and asserts the expected state (Assert).\", \"suggestions\": []},\"summary\":\"{\\\"understandable\\\":9,\\\"maintainable\\\":8,\\\"repeatable\\\":7,\\\"atomic\\\":9,\\\"necessary\\\":8,\\\"granular\\\":9,\\\"fast\\\":6,\\\"first_tdd\\\":8}\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 621,
+      "prompt_tokens": 530,
+      "total_tokens": 1151,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "12ea0d5096166f63b5ea6270ce01811fa80c6ea9ae447eafc47c22a2f3d1d7ac": {
+    "id": "chatcmpl-967aeaf6-b129-4966-9e51-45ddef147037",
+    "created": 1784757343,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and code clearly describe the business rule (clock synchronization) without implementation clutter. The domain language is standard for testing replay logic.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 7,\n    \"rationale\": \"While readable, this test relies on `cr_init_rm` which likely contains complex internal state or side effects. It couples the specific clock value to a single instance of initialization logic.\",\n    \"suggestions\": [\n      \"Extract the 'clock_now' parameter into a dedicated fixture or helper function (e.g., `setup_clock`).\",\n      \"Ensure that if `cr_init_rm` changes its internal state based on arguments, this test is resilient.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 6,\n    \"rationale\": \"The test depends entirely on the specific string value passed to `clock_now`. If a race condition or timing issue occurs in production where two runs happen simultaneously with different seeds but same clock values, this might fail intermittently.\",\n    \"suggestions\": [\n      \"Add an explicit assertion that verifies the timestamp is within a small tolerance (e.g., 1 second) rather than exact string equality to account for potential micro-timing drift in test environments.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test isolates exactly one behavior: the creation of a replay manager with a specific clock. The failure mode (assertion error) is immediate and unambiguous.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 8,\n    \"rationale\": \"This test verifies a critical business rule that other tests likely do not cover: the synchronization of replay timestamps. It adds unique value to the suite.\",\n    \"suggestions\": [\n      \"Ensure this specific clock assertion is not redundant with existing 'record' or 'playback' flow tests unless those flows are known to be non-deterministic.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 7,\n    \"rationale\": \"The test targets the initialization phase and a specific timestamp assertion. It is granular enough but could benefit from separating 'setup' (fixture) from 'assertion'.\",\n    \"suggestions\": [\n      \"Move `cassette_file` creation to an explicit fixture function named `create_test_cassette`. This improves clarity of intent regarding test setup.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 8,\n    \"rationale\": \"The test avoids sleeps and heavy I/O. The only potential slowness is the JSON file creation if not using a mock cassette provider.\",\n    \"suggestions\": [\n      \"If `cassette_file` requires actual disk write operations in this specific runner environment (which seems unlikely given it's a unit-like test), ensure the underlying cassette library handles mocking efficiently.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 9,\n    \"rationale\": \"The code follows Arrange-Act-Assert structure. The behavior is specified in the argument (`clock_now`), and the assertion verifies it directly.\",\n    \"suggestions\": [\n      \"Explicitly document that `cr_init_rm` expects a string for clock; if this contract can be enforced via type hints or docstrings, add them to increase maintainability.\"\n    ]\n  },\"summary\":\"{\\\"understandable\\\":8,\\\"maintainable\\\":7,\\\"repeatable\\\":6,\\\"atomic\\\":9,\\\"necessary\\\":8,\\\"granular\\\":7,\\\"fast\\\":8,\\\"first_tdd\\\":9}\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 821,
+      "prompt_tokens": 532,
+      "total_tokens": 1353,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
