@@ -24,6 +24,13 @@ from scripts import llm_adapter
 from scripts import diff_extractor
 from scripts import telemetry_utils
 from scripts.finding_schema import EngineeringFinding
+try:
+    from agentbeats.tracing import trace_span
+except Exception:
+    import contextlib
+    @contextlib.contextmanager
+    def trace_span(*a, **kw):
+        yield None
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CASSETTE_ROOT = (PROJECT_ROOT / "artifacts" / "cassettes").resolve()
@@ -386,6 +393,7 @@ def _init_replay_manager(
     cassette_path: str,
     mode: str,
     model: str,
+    clock_now: str = "",
 ) -> Optional[Any]:
     if ReplayManager is None:
         return None
@@ -396,6 +404,7 @@ def _init_replay_manager(
         cassette_path=cassette_path,
         mode=mode,
         model_config=model_config,
+        created_at=clock_now.strip() or None,
     )
 
 
@@ -600,14 +609,15 @@ async def evaluate_units(
         ]
 
         try:
-            breakdown, raw_str, structured_diagnostics = await llm_adapter.call_structured_with_raw_and_diagnostics(
-                replay_manager=replay_mgr,
-                model=model,
-                messages=messages,
-                schema_name="CodeReviewBreakdown",
-                schema_model=CodeReviewBreakdown,
-                stage="code_review",
-            )
+            with trace_span("code_review_unit", stage="code_review", attributes={"file": file_path, "unit": name}):
+                breakdown, raw_str, structured_diagnostics = await llm_adapter.call_structured_with_raw_and_diagnostics(
+                    replay_manager=replay_mgr,
+                    model=model,
+                    messages=messages,
+                    schema_name="CodeReviewBreakdown",
+                    schema_model=CodeReviewBreakdown,
+                    stage="code_review",
+                )
             # Parse raw response as JSON to inspect raw values for validation context
             try:
                 raw_json = json.loads(raw_str)
@@ -698,6 +708,12 @@ async def main_async():
         default="code_review.json",
         help="Cassette filename relative to artifacts/cassettes",
     )
+    parser.add_argument(
+        "--clock-now",
+        type=str,
+        default=os.getenv("RUN_CLOCK_NOW", ""),
+        help="Inject a fixed ISO timestamp for run records/cassettes",
+    )
     args = parser.parse_args()
 
     try:
@@ -739,6 +755,7 @@ async def main_async():
         str(cassette_path),
         args.mode,
         args.model,
+        clock_now=args.clock_now,
     )
 
     results: List[Dict[str, Any]] = []

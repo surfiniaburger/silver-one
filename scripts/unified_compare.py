@@ -240,7 +240,7 @@ def get_code_review_validation_summary(cassette: Dict[str, Any]) -> Dict[str, An
 
 
 def combine_token_spend(cr_cassette: Dict[str, Any], farley_cassette: Dict[str, Any]) -> str:
-    """Summarize total token spend across both Code Review and Farley runs."""
+    """Summarize total token spend and latency across both Code Review and Farley runs."""
     cr_totals = get_token_totals(cr_cassette, "code_review_usage_summary")
     farley_totals = get_token_totals(farley_cassette, "farley_usage_summary")
 
@@ -250,15 +250,23 @@ def combine_token_spend(cr_cassette: Dict[str, Any], farley_cassette: Dict[str, 
     calls = coerce_int(cr_totals.get("calls")) + coerce_int(farley_totals.get("calls"))
     cost = coerce_float(cr_totals.get("cost_usd")) + coerce_float(farley_totals.get("cost_usd"))
 
+    total_dur_ms = coerce_float(cr_totals.get("total_duration_ms")) + coerce_float(farley_totals.get("total_duration_ms"))
+    max_dur_ms = max(coerce_float(cr_totals.get("max_duration_ms")), coerce_float(farley_totals.get("max_duration_ms")))
+    avg_dur_ms = round(total_dur_ms / calls, 1) if calls > 0 else 0.0
+
+    latency_text = ""
+    if total_dur_ms > 0:
+        latency_text = f"; latency: {total_dur_ms/1000.0:.2f}s total (avg {avg_dur_ms:.1f}ms/call, max {max_dur_ms:.1f}ms)"
+
     if total_tokens == 0:
-        return "**Token spend**: 0 total tokens (all replayed via cassettes)\n\n"
+        return f"**Token spend**: 0 total tokens (all replayed via cassettes){latency_text}\n\n"
 
     return (
         "**Combined Token Spend**: "
         f"{total_tokens} total tokens "
         f"({prompt_tokens} prompt, "
         f"{comp_tokens} completion) "
-        f"across {calls} LLM call(s); "
+        f"across {calls} LLM call(s){latency_text}; "
         f"estimated cost ${cost:.6f}\n\n"
     )
 
@@ -461,6 +469,32 @@ def _get_provider_runtime_metric(cr_data: Dict[str, Any]) -> Optional[Tuple[str,
     return f"{failures} provider failure(s)", status
 
 
+def _get_latency_slo_metric(cr_data: Dict[str, Any], farley_data: Optional[Dict[str, Any]] = None) -> Optional[Tuple[str, str]]:
+    cr_totals = get_token_totals(cr_data, "code_review_usage_summary")
+    farley_totals = get_token_totals(farley_data or {}, "farley_usage_summary")
+
+    cr_calls = coerce_int(cr_totals.get("calls"))
+    farley_calls = coerce_int(farley_totals.get("calls"))
+    calls = cr_calls + farley_calls
+
+    total_dur_ms = coerce_float(cr_totals.get("total_duration_ms")) + coerce_float(farley_totals.get("total_duration_ms"))
+    max_dur_ms = max(coerce_float(cr_totals.get("max_duration_ms")), coerce_float(farley_totals.get("max_duration_ms")))
+    avg_dur_ms = round(total_dur_ms / calls, 1) if calls > 0 else 0.0
+
+    max_call_slo = float(os.getenv("LATENCY_SLO_MAX_CALL_MS", "30000"))
+    max_batch_slo = float(os.getenv("LATENCY_SLO_MAX_BATCH_MS", "300000"))
+
+    status = "PASS"
+    if max_dur_ms > max_call_slo or total_dur_ms > max_batch_slo:
+        status = "WARN"
+
+    if calls == 0 and (math.isclose(total_dur_ms, 0.0, abs_tol=1e-6) or total_dur_ms <= 0):
+        return None
+
+    metric = f"{total_dur_ms/1000.0:.2f}s total ({avg_dur_ms:.1f}ms avg/call, max {max_dur_ms:.1f}ms)"
+    return metric, status
+
+
 def _format_finding_confidence(value: Any) -> str:
     if value is None or isinstance(value, bool):
         return "UNKNOWN"
@@ -641,6 +675,14 @@ def _write_metrics_overview(
         metric, status = provider_metric
         f.write(
             f"| Provider Runtime | Local model/provider execution health "
+            f"| {metric} | **{status}** |\n"
+        )
+
+    latency_metric = _get_latency_slo_metric(cr_data, farley_data)
+    if latency_metric:
+        metric, status = latency_metric
+        f.write(
+            f"| Latency & Speed SLA | Latency budget evaluation and response times "
             f"| {metric} | **{status}** |\n"
         )
 

@@ -28,6 +28,9 @@ jobs:
           # Use a PAT or deploy key if branch protection rules block GITHUB_TOKEN pushes.
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set dynamic run clock
+        run: echo "RUN_CLOCK_NOW=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
+
       - name: Set up uv
         uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:

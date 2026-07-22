@@ -3,6 +3,7 @@ import json
 import fcntl
 import tempfile
 import os
+import time
 import logging
 
 # ``litellm`` is required for the async completion wrapper and the token / cost helpers.
@@ -101,8 +102,11 @@ class LLMCassette:
             if os.path.exists(self.path):
                 with open(self.path, "r") as f:
                     try:
-                        self.data.update(json.load(f))
-                    except: pass
+                        existing = json.load(f)
+                        if isinstance(existing, dict):
+                            self.data.update(existing)
+                    except (json.JSONDecodeError, OSError) as e:
+                        logger.warning("Failed to reload existing cassette %s: %s", self.path, e)
             
             self.data[h] = response
             
@@ -135,9 +139,60 @@ class ReplayManager:
     def reset_usage_events(self) -> None:
         self.usage_events = []
 
+    @staticmethod
+    def _compute_duration_stats(events: List[Dict[str, Any]]) -> Dict[str, float]:
+        durations = [float(ev.get("duration_ms") or 0.0) for ev in events]
+        if not durations:
+            return {
+                "total_duration_ms": 0.0,
+                "avg_duration_ms": 0.0,
+                "max_duration_ms": 0.0,
+                "min_duration_ms": 0.0,
+                "p95_duration_ms": 0.0,
+            }
+        total_dur = sum(durations)
+        sorted_dur = sorted(durations)
+        p95_idx = min(int(0.95 * len(sorted_dur)), len(sorted_dur) - 1)
+        return {
+            "total_duration_ms": round(total_dur, 3),
+            "avg_duration_ms": round(total_dur / len(durations), 3),
+            "max_duration_ms": round(max(durations), 3),
+            "min_duration_ms": round(min(durations), 3),
+            "p95_duration_ms": round(sorted_dur[p95_idx], 3),
+        }
+
+    @staticmethod
+    def _update_group_metric(group_dict: Dict[str, Dict[str, Any]], key: str, ev: Dict[str, Any]) -> None:
+        entry = group_dict.setdefault(
+            key,
+            {
+                "calls": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "cost_usd": 0.0,
+                "total_duration_ms": 0.0,
+                "max_duration_ms": 0.0,
+            },
+        )
+        dur = float(ev.get("duration_ms") or 0.0)
+        entry["calls"] += 1
+        entry["prompt_tokens"] += int(ev.get("prompt_tokens") or 0)
+        entry["completion_tokens"] += int(ev.get("completion_tokens") or 0)
+        entry["total_tokens"] += int(ev.get("total_tokens") or 0)
+        entry["cost_usd"] += float(ev.get("cost_usd") or 0.0)
+        entry["total_duration_ms"] = round(entry["total_duration_ms"] + dur, 3)
+        entry["max_duration_ms"] = max(entry["max_duration_ms"], dur)
+
+    @staticmethod
+    def _finalize_group_stats(group_dict: Dict[str, Dict[str, Any]]) -> None:
+        for entry in group_dict.values():
+            calls = entry.get("calls", 0)
+            entry["avg_duration_ms"] = round(entry["total_duration_ms"] / calls, 3) if calls else 0.0
+
     def get_usage_summary(self) -> Dict[str, Any]:
-        by_stage: Dict[str, Dict[str, float]] = {}
-        by_model: Dict[str, Dict[str, float]] = {}
+        by_stage: Dict[str, Dict[str, Any]] = {}
+        by_model: Dict[str, Dict[str, Any]] = {}
         totals = {
             "calls": 0,
             "prompt_tokens": 0,
@@ -145,37 +200,24 @@ class ReplayManager:
             "total_tokens": 0,
             "cost_usd": 0.0,
             "missing_usage_calls": 0,
+            **self._compute_duration_stats(self.usage_events),
         }
         for ev in self.usage_events:
-            stage = str(ev.get("stage", "unknown"))
-            model = str(ev.get("model", "unknown"))
-            pt = int(ev.get("prompt_tokens") or 0)
-            ct = int(ev.get("completion_tokens") or 0)
-            tt = int(ev.get("total_tokens") or 0)
-            cost = float(ev.get("cost_usd") or 0.0)
-            has_usage = bool(ev.get("has_usage"))
-
             totals["calls"] += 1
-            totals["prompt_tokens"] += pt
-            totals["completion_tokens"] += ct
-            totals["total_tokens"] += tt
-            totals["cost_usd"] += cost
-            if not has_usage:
+            totals["prompt_tokens"] += int(ev.get("prompt_tokens") or 0)
+            totals["completion_tokens"] += int(ev.get("completion_tokens") or 0)
+            totals["total_tokens"] += int(ev.get("total_tokens") or 0)
+            totals["cost_usd"] += float(ev.get("cost_usd") or 0.0)
+            if not ev.get("has_usage"):
                 totals["missing_usage_calls"] += 1
 
-            s = by_stage.setdefault(stage, {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost_usd": 0.0})
-            s["calls"] += 1
-            s["prompt_tokens"] += pt
-            s["completion_tokens"] += ct
-            s["total_tokens"] += tt
-            s["cost_usd"] += cost
+            stage = str(ev.get("stage", "unknown"))
+            model = str(ev.get("model", "unknown"))
+            self._update_group_metric(by_stage, stage, ev)
+            self._update_group_metric(by_model, model, ev)
 
-            m = by_model.setdefault(model, {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost_usd": 0.0})
-            m["calls"] += 1
-            m["prompt_tokens"] += pt
-            m["completion_tokens"] += ct
-            m["total_tokens"] += tt
-            m["cost_usd"] += cost
+        self._finalize_group_stats(by_stage)
+        self._finalize_group_stats(by_model)
 
         return {
             "totals": totals,
@@ -234,27 +276,30 @@ class ReplayManager:
             "total_tokens": total_tokens,
         }
 
+    @staticmethod
+    def _parse_content_field(content: Any) -> Optional[str]:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = [part["text"] for part in content if isinstance(part, dict) and isinstance(part.get("text"), str)]
+            return "\n".join(parts)
+        return None
+
     def _extract_message_text(self, response_obj: Any) -> str:
         payload = self._to_response_dict(response_obj)
         choices = payload.get("choices")
         if not isinstance(choices, list) or not choices:
             return ""
         first = choices[0] if isinstance(choices[0], dict) else {}
+
         msg = first.get("message")
         if isinstance(msg, dict):
-            content = msg.get("content")
-            if isinstance(content, str):
-                return content
-            if isinstance(content, list):
-                out: List[str] = []
-                for part in content:
-                    if isinstance(part, dict) and isinstance(part.get("text"), str):
-                        out.append(part["text"])
-                return "\n".join(out)
+            text = self._parse_content_field(msg.get("content"))
+            if text is not None:
+                return text
+
         text = first.get("text")
-        if isinstance(text, str):
-            return text
-        return ""
+        return text if isinstance(text, str) else ""
 
     def _estimate_tokens(self, model: str, messages: List[Dict[str, Any]], response_obj: Any) -> Tuple[int, int, int]:
         try:
@@ -330,7 +375,16 @@ class ReplayManager:
             pass
         return 0.0
 
-    def _record_usage_event(self, *, stage: str, model: str, messages: List[Dict[str, Any]], response_obj: Any, source: str) -> None:
+    def _record_usage_event(
+        self,
+        *,
+        stage: str,
+        model: str,
+        messages: List[Dict[str, Any]],
+        response_obj: Any,
+        source: str,
+        duration_ms: float = 0.0,
+    ) -> None:
         usage = self._extract_usage(model=model, messages=messages, response_obj=response_obj)
         cost_usd = self._estimate_cost_usd(model, response_obj, usage)
         self.usage_events.append(
@@ -338,6 +392,7 @@ class ReplayManager:
                 "stage": stage,
                 "model": model,
                 "source": source,
+                "duration_ms": round(duration_ms, 3),
                 "generation_params": self.effective_generation_config(model),
                 **usage,
                 "cost_usd": cost_usd,
@@ -446,6 +501,7 @@ class ReplayManager:
 
     async def acompletion(self, model: str, messages: list, **kwargs):
         """Wrapper for litellm.acompletion with record/replay logic (A3)."""
+        start_perf = time.perf_counter()
         # Use the module-level `litellm` binding (may be None in test environments)
         stage = str(kwargs.pop("stage", "unknown"))
         self._apply_generation_config(model, kwargs)
@@ -453,24 +509,25 @@ class ReplayManager:
         # In replay mode, fail loudly if not in cassette
         cached = self.cassette.get_response(model, messages, kwargs)
         if cached:
+            duration_ms = (time.perf_counter() - start_perf) * 1000.0
             # Try to use litellm.ModelResponse when available for compatibility,
             # otherwise return the cached dict/object directly.
-            ModelResponse = None
+            model_response_cls = None
             if litellm is not None:
                 try:
                     from litellm.utils import ModelResponse as _ModelResponse
-                    ModelResponse = _ModelResponse
+                    model_response_cls = _ModelResponse
                 except Exception:
-                    ModelResponse = None
+                    model_response_cls = None
 
-            if ModelResponse is not None and isinstance(cached, dict) and "choices" in cached:
-                response = ModelResponse(**cached)
-                self._record_usage_event(stage=stage, model=model, messages=messages, response_obj=response, source="cache")
+            if model_response_cls is not None and isinstance(cached, dict) and "choices" in cached:
+                response = model_response_cls(**cached)
+                self._record_usage_event(stage=stage, model=model, messages=messages, response_obj=response, source="cache", duration_ms=duration_ms)
                 return response
 
             # Fallback: return the cached object/dict and record usage using it.
             # _record_usage_event accepts either dict-like provider responses or model objects.
-            self._record_usage_event(stage=stage, model=model, messages=messages, response_obj=cached, source="cache_fallback")
+            self._record_usage_event(stage=stage, model=model, messages=messages, response_obj=cached, source="cache_fallback", duration_ms=duration_ms)
             return cached
 
         if self.cassette.mode == "replay":
@@ -481,9 +538,10 @@ class ReplayManager:
         if litellm is None:
             raise RuntimeError("litellm is not available in this environment; cannot perform live completion")
         response = await litellm.acompletion(model=model, messages=messages, **kwargs)
+        duration_ms = (time.perf_counter() - start_perf) * 1000.0
         
         # Save full response
         res_dict = response.model_dump() if hasattr(response, "model_dump") else response
         self.cassette.save_response(model, messages, kwargs, res_dict)
-        self._record_usage_event(stage=stage, model=model, messages=messages, response_obj=response, source="provider")
+        self._record_usage_event(stage=stage, model=model, messages=messages, response_obj=response, source="provider", duration_ms=duration_ms)
         return response
