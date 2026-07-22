@@ -8,9 +8,9 @@ from typing import Any, Dict, Optional
 
 try:
     from agentbeats.tracing import trace_span
-except Exception:
+except ImportError:
     import contextlib
-    @contextlib.contextmanager
+    `@contextlib.contextmanager`
     def trace_span(*a, **kw):
         yield None
 
