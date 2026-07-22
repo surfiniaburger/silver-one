@@ -40,9 +40,13 @@ def test_trace_span_context(tmp_path):
 
 def test_trace_span_error(tmp_path):
     spans_file = tmp_path / "spans.jsonl"
-    with pytest.raises(ValueError, match="Boom"):
+
+    def _trigger_span_error():
         with trace_span("failing_op", stage="test_stage", spans_dir=tmp_path):
             raise ValueError("Boom")
+
+    with pytest.raises(ValueError, match="Boom"):
+        _trigger_span_error()
 
     assert spans_file.exists()
     data = json.loads(spans_file.read_text(encoding="utf-8").strip())
