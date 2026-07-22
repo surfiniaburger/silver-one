@@ -47,7 +47,7 @@ except Exception:
     pass
 from llm_adapter import call_structured
 from path_utils import validate_path
-from telemetry_utils import persist_usage_artifacts as telemetry_persist_usage_artifacts
+from telemetry_utils import persist_usage_artifacts as telemetry_persist_usage_artifacts, trace_span
 
 def log_info(msg: str) -> None:
     print(f"\033[94m{msg}\033[0m")
@@ -288,7 +288,7 @@ def find_target_files(input_paths: List[str]) -> List[str]:
     return target_files
 
 
-def _init_replay_manager(run_id: str, seed: int, cassette: str, mode: str, model: str):
+def _init_replay_manager(run_id: str, seed: int, cassette: str, mode: str, model: str, clock_now: str = ""):
     if ReplayManager is None:
         return None
     return ReplayManager.from_config(
@@ -296,7 +296,8 @@ def _init_replay_manager(run_id: str, seed: int, cassette: str, mode: str, model
         seed=seed,
         cassette_path=cassette,
         mode=mode,
-        model_config={"evaluator": model}
+        model_config={"evaluator": model},
+        created_at=clock_now.strip() or None,
     )
 
 
@@ -507,6 +508,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
             "Omit to evaluate all tests in the supplied paths (full-suite mode)."
         ),
     )
+    parser.add_argument(
+        "--clock-now",
+        type=str,
+        default=os.getenv("RUN_CLOCK_NOW", ""),
+        help="Inject a fixed ISO timestamp for run records/cassettes",
+    )
     return parser
 
 
@@ -644,7 +651,9 @@ async def main_async() -> None:
     log_info(f"Found {len(target_files)} test file(s) to evaluate.")
     log_info(f"Using model: {args.model} | Mode: {args.mode}\n")
 
-    replay_mgr = _init_replay_manager(safe_run_id, args.seed, str(cassette_path), args.mode, args.model)
+    replay_mgr = _init_replay_manager(
+        safe_run_id, args.seed, str(cassette_path), args.mode, args.model, clock_now=getattr(args, "clock_now", "")
+    )
     if args.mode == "replay" and replay_mgr is None:
         log_error("Error: Replay mode requested but ReplayManager (agentbeats) is not available.")
         sys.exit(1)
@@ -708,14 +717,15 @@ async def evaluate_test_case(
     ]
 
     # call_structured handles schema validation and cassette recording/replay automatically
-    result = await call_structured(
-        replay_manager=replay_manager,
-        model=model,
-        messages=messages,
-        schema_name="FarleyScoreBreakdown",
-        schema_model=FarleyScoreBreakdown,
-        stage="farley_evaluation"
-    )
+    with trace_span("farley_eval_unit", stage="farley_evaluation", attributes={"file": filepath, "test": test_case.get("name")}):
+        result = await call_structured(
+            replay_manager=replay_manager,
+            model=model,
+            messages=messages,
+            schema_name="FarleyScoreBreakdown",
+            schema_model=FarleyScoreBreakdown,
+            stage="farley_evaluation"
+        )
     return result
 
 # --- Reporting / Presentation ---
