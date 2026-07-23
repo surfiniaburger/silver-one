@@ -105,6 +105,7 @@ jobs:
         run: |
           uv run --no-sync --no-build --locked python3 scripts/code_review_evaluator.py \
             --base origin/main \
+            --mode record \
             --cassette code_review-PR-${{ env.PR_NUMBER }}.json \
             --run-id pr-cr-${{ env.PR_NUMBER }} \
             --model "ollama/qwen3.5:2b"

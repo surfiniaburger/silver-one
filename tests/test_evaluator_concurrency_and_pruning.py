@@ -126,7 +126,7 @@ async def test_farley_evaluate_files_concurrency():
 
     with patch("scripts.farley_score_evaluator.extract_tests_from_file", return_value=test_cases), \
          patch("scripts.farley_score_evaluator._evaluate_single_test", side_effect=mock_eval_single):
-        indices, count, results = await evaluate_files(
+        indices, count, _ = await evaluate_files(
             replay_mgr=None,
             model="test-model",
             target_files=["tests/test_dummy.py"],

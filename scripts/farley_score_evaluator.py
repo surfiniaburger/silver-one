@@ -724,7 +724,7 @@ async def evaluate_test_case(
     )
 
     class_context = f" inside class {test_case['class_name']}" if test_case['class_name'] else ""
-    code_text = _prune_test_code(str(test_case.get('code', '')))
+    code_text = _prune_test_code(test_case.get('code', ''))
     user_prompt = (
         f"File Path: {filepath}\n"
         f"Test Case: {test_case['name']}{class_context}\n\n"
