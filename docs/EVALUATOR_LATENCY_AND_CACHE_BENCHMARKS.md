@@ -111,8 +111,8 @@ Configuring **`OLLAMA_NUM_PARALLEL: 1`** and **`--max-concurrency 1`** (the defa
 
 ## Governance & Design Rules for Future Evaluators
 
-1. **CPU Runners Require Single-Thread Queueing (`max-concurrency: 1`)**:
-   - On 2 vCPU machines (`ubuntu-latest`), single-thread queueing maximizes memory bandwidth for token generation. Dual/multi-concurrency (`max-concurrency >= 2`) should only be enabled on GPU instances or runners with 4+ vCPUs.
+1. **Single-Thread Queueing for 2-vCPU Local CPU Benchmarks (`max-concurrency: 1`)**:
+   - For the measured 2-vCPU environment (`ubuntu-latest`) running `ollama/qwen3.5:2b` locally on CPU, single-thread queueing maximizes memory bandwidth for token generation. Higher concurrency (`max-concurrency >= 2`) on environments with 4+ vCPUs or GPU acceleration requires separate empirical benchmarking to establish optimal concurrency limits.
 2. **Deterministic System Prefix (`messages[0]`)**:
    - Never inject dynamic variables (timestamps, run IDs) into `messages[0]`. Pinned prefixes ensure 100% KV-cache hit ratios.
 3. **Prune Code Context, Never Skip Units**:
