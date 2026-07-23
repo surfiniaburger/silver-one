@@ -18,6 +18,9 @@ jobs:
         image: ollama/ollama:latest
         ports:
           - 11434:11434
+        env:
+          OLLAMA_NUM_PARALLEL: 1
+          OLLAMA_KEEP_ALIVE: "24h"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -73,6 +76,9 @@ jobs:
         image: ollama/ollama:latest
         ports:
           - 11434:11434
+        env:
+          OLLAMA_NUM_PARALLEL: 1
+          OLLAMA_KEEP_ALIVE: "24h"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -99,6 +105,7 @@ jobs:
         run: |
           uv run --no-sync --no-build --locked python3 scripts/code_review_evaluator.py \
             --base origin/main \
+            --mode record \
             --cassette code_review-PR-${{ env.PR_NUMBER }}.json \
             --run-id pr-cr-${{ env.PR_NUMBER }} \
             --model "ollama/qwen3.5:2b"

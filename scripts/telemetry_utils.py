@@ -164,15 +164,31 @@ def persist_usage_artifacts(
     return payload
 
 
-def coerce_int(value: Any) -> int:
+def prune_code_text(code: Any, max_lines: int = 100) -> str:
+    if not code:
+        return ""
+    if not isinstance(code, str):
+        code = str(code)
+    lines = code.splitlines()
+    if len(lines) <= max_lines:
+        return code
+    keep_head = max_lines // 2
+    keep_tail = max_lines // 2
+    truncated_count = len(lines) - (keep_head + keep_tail)
+    head_part = "\n".join(lines[:keep_head])
+    tail_part = "\n".join(lines[-keep_tail:])
+    return f"{head_part}\n... [{truncated_count} lines truncated for context efficiency] ...\n{tail_part}"
+
+
+def coerce_int(value: Any, default: int = 0) -> int:
     if value is None:
-        return 0
+        return default
     if isinstance(value, bool):
-        return 0
+        return default
     try:
         return int(float(value)) if isinstance(value, str) else int(value)
     except (TypeError, ValueError, OverflowError):
-        return 0
+        return default
 
 
 def coerce_float(value: Any) -> float:

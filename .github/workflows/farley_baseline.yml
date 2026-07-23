@@ -21,6 +21,9 @@ jobs:
         image: ollama/ollama:latest
         ports:
           - 11434:11434
+        env:
+          OLLAMA_NUM_PARALLEL: 1
+          OLLAMA_KEEP_ALIVE: "24h"
     steps:
       - uses: actions/checkout@v4
         with:

@@ -260,9 +260,8 @@ def estimate_pr_tokens(units: Optional[List[Dict[str, Any]]]) -> int:
 def estimate_unit_tokens(unit: Optional[Dict[str, Any]]) -> int:
     if not isinstance(unit, dict) or "code" not in unit:
         return 0
-    code = unit.get("code") or ""
-    if not isinstance(code, str):
-        code = str(code)
+    raw_code = unit.get("code") or ""
+    code = _prune_unit_code(raw_code)
     prompt_overhead = len(SYSTEM_PROMPT) // 4 + 200
     return len(code) // 4 + prompt_overhead
 
@@ -359,6 +358,10 @@ def build_review_coverage(
     }
 
 
+def _prune_unit_code(code: Any, max_lines: int = 100) -> str:
+    return telemetry_utils.prune_code_text(code, max_lines=max_lines)
+
+
 def format_unit(unit: Dict[str, Any]) -> str:
     if not isinstance(unit, dict):
         unit = {}
@@ -368,7 +371,7 @@ def format_unit(unit: Dict[str, Any]) -> str:
     start_line = unit.get("start_line", 0)
     end_line = unit.get("end_line", 0)
     lines_changed = unit.get("lines_changed", 0)
-    code = unit.get("code", "")
+    code = _prune_unit_code(unit.get("code", ""))
     return f"""File: {file_path}
 Unit: {name}{class_info}
 Line range: {start_line} - {end_line}
@@ -582,90 +585,104 @@ def persist_usage_artifacts(
     )
 
 
-async def evaluate_units(
-    replay_mgr: Any, model: str, units: List[Dict[str, Any]]
-) -> List[Dict[str, Any]]:
+async def _process_single_unit_review(
+    unit: Dict[str, Any],
+    model: str,
+    replay_mgr: Any,
+) -> Dict[str, Any]:
     from scripts.finding_schema import UnitReviewArtifact, build_validation_context
-    results = []
-    print(f"\033[94mEvaluating {len(units)} code units...\033[0m")
+    if not isinstance(unit, dict):
+        unit = {}
+    name = unit.get("name", "unknown")
+    file_path = unit.get("file_path", "unknown")
+    class_name = unit.get("class_name")
 
-    for i, unit in enumerate(units, 1):
-        if not isinstance(unit, dict):
-            unit = {}
-        name = unit.get("name", "unknown")
-        file_path = unit.get("file_path", "unknown")
-        class_name = unit.get("class_name")
-        print(f"[{i}/{len(units)}] Reviewing {name} in {file_path}")
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": format_unit(unit)},
+    ]
 
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": format_unit(unit)},
-        ]
-
-        try:
-            with trace_span("code_review_unit", stage="code_review", attributes={"file": file_path, "unit": name}):
-                breakdown, raw_str, structured_diagnostics = await llm_adapter.call_structured_with_raw_and_diagnostics(
-                    replay_manager=replay_mgr,
-                    model=model,
-                    messages=messages,
-                    schema_name="CodeReviewBreakdown",
-                    schema_model=CodeReviewBreakdown,
-                    stage="code_review",
-                )
-            # Parse raw response as JSON to inspect raw values for validation context
-            try:
-                raw_json = json.loads(raw_str)
-            except Exception:
-                raw_json = {}
-                
-            context = build_validation_context(raw_json, breakdown)
-            artifact = UnitReviewArtifact(
-                file_path=file_path,
-                name=name,
-                class_name=class_name,
-                review=breakdown,
-                validation=context,
-                raw_response=raw_str
+    try:
+        with trace_span("code_review_unit", stage="code_review", attributes={"file": file_path, "unit": name}):
+            breakdown, raw_str, structured_diagnostics = await llm_adapter.call_structured_with_raw_and_diagnostics(
+                replay_manager=replay_mgr,
+                model=model,
+                messages=messages,
+                schema_name="CodeReviewBreakdown",
+                schema_model=CodeReviewBreakdown,
+                stage="code_review",
             )
-            artifact_payload = artifact.model_dump()
-            artifact_payload["structured_output"] = structured_diagnostics
-            results.append(artifact_payload)
-        except llm_adapter.StructuredOutputError as exc:
-            print(f"\033[91mRecoverable structured output failure for {name} in {file_path}: {exc}\033[0m")
-            failure_diagnostics = dict(exc.diagnostics)
-            failure_diagnostics["final_failure"] = True
-            results.append({
-                "file_path": file_path,
-                "name": name,
-                "class_name": class_name,
-                "review": None,
-                "validation": {
-                    "repaired": False,
-                    "normalized": False,
-                    "fields": [
-                        {
-                            "field_name": "llm_response",
-                            "status": "INVALID",
-                            "raw_value": exc.raw_response,
-                            "repaired_value": None,
-                            "repair_type": "structured_output",
-                            "repair_reason": failure_diagnostics.get("failure_reason"),
-                        }
-                    ],
-                },
-                "raw_response": exc.raw_response,
-                "structured_output": failure_diagnostics,
-                "recoverable_failure": {
-                    "type": "structured_output",
-                    "schema_name": exc.schema_name,
-                    "message": str(exc),
-                },
-            })
-        except Exception as exc:
-            print(f"\033[91mError reviewing {name} in {file_path}: {exc}\033[0m")
-            results.append(_provider_error_artifact(file_path, name, class_name, exc))
+        try:
+            raw_json = json.loads(raw_str)
+        except Exception:
+            raw_json = {}
 
-    return results
+        context = build_validation_context(raw_json, breakdown)
+        artifact = UnitReviewArtifact(
+            file_path=file_path,
+            name=name,
+            class_name=class_name,
+            review=breakdown,
+            validation=context,
+            raw_response=raw_str,
+        )
+        artifact_payload = artifact.model_dump()
+        artifact_payload["structured_output"] = structured_diagnostics
+        return artifact_payload
+    except llm_adapter.StructuredOutputError as exc:
+        print(f"\033[91mRecoverable structured output failure for {name} in {file_path}: {exc}\033[0m")
+        failure_diagnostics = dict(exc.diagnostics)
+        failure_diagnostics["final_failure"] = True
+        return {
+            "file_path": file_path,
+            "name": name,
+            "class_name": class_name,
+            "review": None,
+            "validation": {
+                "repaired": False,
+                "normalized": False,
+                "fields": [
+                    {
+                        "field_name": "llm_response",
+                        "status": "INVALID",
+                        "raw_value": exc.raw_response,
+                        "repaired_value": None,
+                        "repair_type": "structured_output",
+                        "repair_reason": failure_diagnostics.get("failure_reason"),
+                    }
+                ],
+            },
+            "raw_response": exc.raw_response,
+            "structured_output": failure_diagnostics,
+            "recoverable_failure": {
+                "type": "structured_output",
+                "schema_name": exc.schema_name,
+                "message": str(exc),
+            },
+        }
+    except Exception as exc:
+        print(f"\033[91mError reviewing {name} in {file_path}: {exc}\033[0m")
+        return _provider_error_artifact(file_path, name, class_name, exc)
+
+
+async def evaluate_units(
+    replay_mgr: Any,
+    model: str,
+    units: List[Dict[str, Any]],
+    max_concurrency: int = 2,
+) -> List[Dict[str, Any]]:
+    print(f"\033[94mEvaluating {len(units)} code units (max concurrency: {max_concurrency})...\033[0m")
+    semaphore = asyncio.Semaphore(max(1, max_concurrency))
+
+    async def _review_single(i: int, unit: Dict[str, Any]) -> Dict[str, Any]:
+        async with semaphore:
+            name = unit.get("name", "unknown") if isinstance(unit, dict) else "unknown"
+            file_path = unit.get("file_path", "unknown") if isinstance(unit, dict) else "unknown"
+            print(f"[{i}/{len(units)}] Reviewing {name} in {file_path}")
+            return await _process_single_unit_review(unit, model, replay_mgr)
+
+    tasks = [_review_single(i, unit) for i, unit in enumerate(units, 1)]
+    return list(await asyncio.gather(*tasks))
 
 
 def save_review_cassette(cassette_path: Path, results: List[Dict[str, Any]]):
@@ -707,6 +724,12 @@ async def main_async():
         type=str,
         default=os.getenv("RUN_CLOCK_NOW", ""),
         help="Inject a fixed ISO timestamp for run records/cassettes",
+    )
+    parser.add_argument(
+        "--max-concurrency",
+        type=int,
+        default=telemetry_utils.coerce_int(os.getenv("EVALUATOR_MAX_CONCURRENCY"), default=1),
+        help="Maximum concurrent LLM calls (default: 1)",
     )
     args = parser.parse_args()
 
@@ -755,7 +778,7 @@ async def main_async():
     results: List[Dict[str, Any]] = []
     for batch_index, unit_batch in enumerate(unit_batches, 1):
         print(f"\033[94mStarting review batch {batch_index}/{len(unit_batches)}...\033[0m")
-        results.extend(await evaluate_units(replay_mgr, args.model, unit_batch))
+        results.extend(await evaluate_units(replay_mgr, args.model, unit_batch, max_concurrency=args.max_concurrency))
 
     val_summary = build_validation_summary(results)
     review_coverage = build_review_coverage(
