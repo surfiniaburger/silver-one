@@ -728,8 +728,8 @@ async def main_async():
     parser.add_argument(
         "--max-concurrency",
         type=int,
-        default=telemetry_utils.coerce_int(os.getenv("EVALUATOR_MAX_CONCURRENCY"), default=2),
-        help="Maximum concurrent LLM calls (default: 2)",
+        default=telemetry_utils.coerce_int(os.getenv("EVALUATOR_MAX_CONCURRENCY"), default=1),
+        help="Maximum concurrent LLM calls (default: 1)",
     )
     args = parser.parse_args()
 

@@ -526,8 +526,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--max-concurrency",
         type=int,
-        default=coerce_int(os.getenv("EVALUATOR_MAX_CONCURRENCY"), default=2),
-        help="Maximum concurrent LLM calls (default: 2)",
+        default=coerce_int(os.getenv("EVALUATOR_MAX_CONCURRENCY"), default=1),
+        help="Maximum concurrent LLM calls (default: 1)",
     )
     return parser
 
