@@ -2,7 +2,7 @@
 
 This document details the performance optimization journey, empirical benchmarks, and architectural takeaways from tuning Silver-One's evaluator pipeline (`code_review_evaluator.py`, `farley_score_evaluator.py`, and GitHub Actions CI).
 
-It complements [`docs/AI_REVIEWER_ROUTING_AND_CACHE.md`](file:///Users/surfiniaburger/Desktop/modular-metacog-swarm-v3/agent_training/silver-one/docs/AI_REVIEWER_ROUTING_AND_CACHE.md) by providing empirical benchmark data from CPU-based local model inference (`ollama/qwen3.5:2b`).
+It complements [`docs/AI_REVIEWER_ROUTING_AND_CACHE.md`](AI_REVIEWER_ROUTING_AND_CACHE.md) by providing empirical benchmark data from CPU-based local model inference (`ollama/qwen3.5:2b`).
 
 ---
 
