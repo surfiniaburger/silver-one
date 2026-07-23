@@ -122,6 +122,19 @@ Each lane should have:
 This can still run inside one CI job. The boundary is logical first: one lane,
 one stable prompt shape, one cache-friendly task/session.
 
+## Small Model (SLM) Serving Economics & Memory Contention
+
+A common architectural trap when moving from large frontier models (GPT-4/Claude) to small task-specific models (SLMs like Qwen 2B or MiniLM) is assuming that cheaper per-call tokens automatically reduce total system costs.
+
+In production and CI environments, hardware cost is determined by the GPUs or CPU vCPUs rented over wall-clock time. Standard serving frameworks (`vLLM`, `TEI`, `Ollama`) pre-allocate memory buffers per model instance or concurrency slot. 
+
+Uncoordinated multi-slot or multi-model serving introduces two key failure modes:
+
+1. **Memory Bus & Core Saturation**: Running multiple concurrent inference slots (e.g. `OLLAMA_NUM_PARALLEL: 2`) on constrained hardware (such as 2-vCPU CI runners) causes matrix multiplication threads to compete for memory bandwidth and CPU cache lines. Token generation throughput drops significantly, inflating wall-clock execution time.
+2. **KV-Cache Buffer Eviction**: Splitting inference into uncoordinated parallel slots causes alternating requests to evict KV-cache pages between slots. Even if `messages[0]` is deterministic, slot-switching forces the engine to recalculate prompt prefill states.
+
+As documented in [`docs/EVALUATOR_LATENCY_AND_CACHE_BENCHMARKS.md`](EVALUATOR_LATENCY_AND_CACHE_BENCHMARKS.md), setting `OLLAMA_NUM_PARALLEL: 2` on 2 vCPUs inflated average per-call latency from 59.1s to 124.8s due to CPU cache thrashing. Single-thread queueing (`max-concurrency: 1`) preserves KV-cache warmth and maximizes memory bus throughput.
+
 ## Design Rules
 
 - Route at the task or lane level, not every individual LLM call.
