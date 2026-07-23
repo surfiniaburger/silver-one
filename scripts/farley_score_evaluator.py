@@ -47,7 +47,12 @@ except Exception:
     pass
 from llm_adapter import call_structured
 from path_utils import validate_path
-from telemetry_utils import persist_usage_artifacts as telemetry_persist_usage_artifacts, trace_span
+from telemetry_utils import (
+    persist_usage_artifacts as telemetry_persist_usage_artifacts,
+    trace_span,
+    prune_code_text,
+    coerce_int,
+)
 
 def log_info(msg: str) -> None:
     print(f"\033[94m{msg}\033[0m")
@@ -377,20 +382,19 @@ async def evaluate_files(
     model: str,
     target_files: List[str],
     changed_lines_by_file: Optional[Dict[str, List[int]]] = None,
+    max_concurrency: int = 2,
 ) -> Tuple[List[float], int, List[Dict[str, Any]]]:
-    """Evaluate test files, optionally restricting to diff-intersecting functions.
-
-    Args:
-        changed_lines_by_file: Maps absolute file path → list of changed line
-            numbers (diff-only mode).  ``None`` means evaluate every test
-            (full-suite mode, backward-compatible default).
-    """
+    """Evaluate test files, optionally restricting to diff-intersecting functions."""
     if not target_files:
         return [], 0, []
 
-    all_indices: List[float] = []
-    reviewed_count = 0
-    results = []
+    semaphore = asyncio.Semaphore(max(1, max_concurrency))
+    tasks = []
+
+    async def _bound_eval(tc: Dict[str, Any], filepath: str):
+        async with semaphore:
+            return await _evaluate_single_test(replay_mgr, model, tc, filepath)
+
     for filepath in target_files:
         log_debug(f"Parsing test cases from {filepath}...")
         cl = changed_lines_by_file.get(filepath) if changed_lines_by_file is not None else None
@@ -399,12 +403,17 @@ async def evaluate_files(
             continue
         log_debug(f"Evaluating {len(test_cases)} case(s) in {os.path.basename(filepath)}...")
         for tc in test_cases:
-            result = await _evaluate_single_test(replay_mgr, model, tc, filepath)
-            if result is not None:
-                results.append(result)
-                all_indices.append(result["farley_index"])
-                reviewed_count += 1
-    return all_indices, reviewed_count, results
+            tasks.append(_bound_eval(tc, filepath))
+
+    raw_results = await asyncio.gather(*tasks) if tasks else []
+    all_indices: List[float] = []
+    results = []
+    for res in raw_results:
+        if res is not None:
+            results.append(res)
+            all_indices.append(res["farley_index"])
+
+    return all_indices, len(results), results
 
 
 
@@ -513,6 +522,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default=os.getenv("RUN_CLOCK_NOW", ""),
         help="Inject a fixed ISO timestamp for run records/cassettes",
+    )
+    parser.add_argument(
+        "--max-concurrency",
+        type=int,
+        default=coerce_int(os.getenv("EVALUATOR_MAX_CONCURRENCY"), default=2),
+        help="Maximum concurrent LLM calls (default: 2)",
     )
     return parser
 
@@ -659,7 +674,7 @@ async def main_async() -> None:
         sys.exit(1)
 
     all_indices, reviewed_count, results = await evaluate_files(
-        replay_mgr, args.model, target_files, changed_lines_by_file
+        replay_mgr, args.model, target_files, changed_lines_by_file, max_concurrency=getattr(args, "max_concurrency", 2)
     )
 
     save_farley_cassette(cassette_path, results)
@@ -680,6 +695,10 @@ async def main_async() -> None:
 
 
 # --- LLM Review Orchestrator ---
+
+def _prune_test_code(code: Any, max_lines: int = 100) -> str:
+    return prune_code_text(code, max_lines=max_lines)
+
 
 async def evaluate_test_case(
     replay_manager: ReplayManager,
@@ -705,10 +724,11 @@ async def evaluate_test_case(
     )
 
     class_context = f" inside class {test_case['class_name']}" if test_case['class_name'] else ""
+    code_text = _prune_test_code(str(test_case.get('code', '')))
     user_prompt = (
         f"File Path: {filepath}\n"
         f"Test Case: {test_case['name']}{class_context}\n\n"
-        f"Code:\n```python\n{test_case['code']}\n```"
+        f"Code:\n```python\n{code_text}\n```"
     )
 
     messages = [

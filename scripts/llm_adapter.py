@@ -125,7 +125,8 @@ def _local_ollama_sync_call(model: str, messages: List[Dict], schema_model: Type
         "prompt": messages[-1].get("content", "") if messages else "",
         # Only include system if there is a distinct first message
         "system": messages[0].get("content", "") if len(messages) > 1 else "",
-        "stream": False
+        "stream": False,
+        "keep_alive": "24h",
     }
     if schema_model is not None:
         if hasattr(schema_model, "model_json_schema"):
