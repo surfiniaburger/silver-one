@@ -3122,55 +3122,53 @@
       "file_path": "tests/test_code_review.py",
       "test_name": "test_strict_type_coercion_regressions",
       "class_name": null,
-      "farley_index": 7.875,
+      "farley_index": 8.125,
       "farley_breakdown": {
         "understandable": {
           "score": 8,
-          "rationale": "The test clearly defines the business rule: strict type coercion for PropertyEvaluation and EngineeringFinding models. It avoids low-level implementation clutter by focusing on schema validation logic.",
+          "rationale": "The test clearly defines the business rule: strict type coercion for EngineeringFinding and Evidence models. It avoids low-level implementation clutter by focusing on schema validation logic.",
           "suggestions": []
         },
         "maintainable": {
           "score": 9,
-          "rationale": "Tests are decoupled from system internals; they validate data contracts (schemas) rather than specific business rules or edge cases of the application code itself. They will remain valid even if `PropertyEvaluation` or `EngineeringFinding` schemas change.",
+          "rationale": "Tests are decoupled from system internals; they validate data structure constraints (types) rather than specific business rules or workflows that would break with refactoring. They do not rely on external state like databases.",
           "suggestions": []
         },
         "repeatable": {
           "score": 7,
-          "rationale": "The test is deterministic and self-contained within a single file path (`test_code_review.py`). However, it relies on external shared state: the specific content of `/home/runner/work/silver-one/scripts/finding_schema.py` (specifically `EngineeringFinding`, `Evidence`, and `PropertyEvaluation` models). If these schemas change without updating this test, results will vary.",
+          "rationale": "The test is deterministic and self-contained within the file path provided; however, it relies heavily on `pytest.approx` for floating point comparisons which can be flaky in CI environments due to precision issues. It avoids external shared state.",
           "suggestions": [
-            "Move schema definitions to a dedicated constants module or shared library accessible by all tests. Ensure the import path is stable across CI/CD pipelines."
+            "Replace `pytest.approx(5)` with direct equality checks (`assert p1.score == 5`) or use a dedicated tolerance constant defined at module level."
           ]
         },
         "atomic": {
           "score": 9,
-          "rationale": "Each `test_*` function validates exactly one distinct aspect of the data model (e.g., score formats, confidence mapping, field coercion). There are no overlapping assertions or nested failures that obscure which specific rule failed.",
+          "rationale": "Each test validates exactly one specific schema constraint (e.g., score types, confidence values). If validation fails for any input in the list, it is instantly obvious that the model rejects invalid data.",
           "suggestions": []
         },
         "necessary": {
           "score": 8,
-          "rationale": "The tests cover critical schema validation rules for `PropertyEvaluation`, `EngineeringFinding`, and the `Evidence` model. They do not duplicate coverage of other test files (e.g., integration or unit logic tests) nor trivial things like syntax errors.",
+          "rationale": "These tests cover critical edge cases and type safety requirements. They do not duplicate coverage of other test files (e.g., unit tests for `PropertyEvaluation` or `EngineeringFinding`) which likely exist elsewhere in the codebase.",
           "suggestions": []
         },
         "granular": {
           "score": 7,
-          "rationale": "The assertions are somewhat coarse-grained regarding specific edge cases within the schemas (e.g., accepting `0.8` vs `0.85`). While they cover major categories of input types, they lack fine-tuned granularity for complex nested structures or subtle type mismatches.",
+          "rationale": "The assertions are granular enough to catch specific type mismatches but could be more targeted. For example, distinguishing between a string '5' and an integer `5` is handled by Pydantic's validation logic in the model itself; this test verifies that *all* non-string types fail.",
           "suggestions": [
-            "Add tests specifically targeting deeply nested field validation scenarios and very close numeric tolerances to ensure precision."
+            "Consider adding explicit assertions like `assert isinstance(p1.score, int)` to verify rejection of floats explicitly."
           ]
         },
         "fast": {
-          "score": 6,
-          "rationale": "The test suite includes `pytest.approx` assertions which can be slow if the tolerance is high or flaky. While there are no sleeps, repeated schema model instantiations for every validation rule add overhead compared to pure logic tests.",
-          "suggestions": [
-            "Replace `pytest.approx()` with direct equality checks (`assert p1.score == 5`) where possible to eliminate unnecessary computation and improve speed."
-          ]
+          "score": 8,
+          "rationale": "The tests execute rapidly. They avoid artificial sleeps and heavy setups; the only potential bottleneck is Pydantic's model validation which is fast enough for this scope.",
+          "suggestions": []
         },
         "first_tdd": {
           "score": 9,
-          "rationale": "The test structure follows the Arrange-Act-Assert pattern implicitly: it sets up a valid schema instance (Arrange), performs validation logic (Act/Verify), and asserts specific values. It demonstrates that tests are designed first to verify behavior before implementation.",
+          "rationale": "This test demonstrates a clean Arrange-Act-Assert pattern: it sets up valid payloads (Arrange), validates them against the schema (Act/Verify), and asserts specific behaviors. It explicitly tests design properties like type coercion.",
           "suggestions": []
         },
-        "summary": "This is an excellent, high-quality test suite for data model integrity checks. It strictly adheres to TDD principles by verifying the 'what' of schema validation rather than 'how'. The only minor weaknesses are reliance on external shared state (schemas) and some coarse-grained assertions that could be refined further."
+        "summary": "The test is highly effective at verifying strict type safety for complex schemas, adhering to TDD principles with a clear Arrange-Act-Assert flow. The only minor weakness is the reliance on `pytest.approx` which introduces potential flakiness in CI; replacing it with direct equality checks would further improve maintainability and determinism."
       }
     },
     {
@@ -9089,50 +9087,560 @@
         },
         "summary": "The test is understandable but brittle due to global patching. It lacks necessary coverage for cassette generation logic (granular/first_tdd) and risks duplication if other tests exist. The async mock introduces unnecessary complexity without adding value."
       }
+    },
+    {
+      "id": "tests/test_evaluator_concurrency_and_pruning.py::test_prune_unit_code_short",
+      "file_path": "tests/test_evaluator_concurrency_and_pruning.py",
+      "test_name": "test_prune_unit_code_short",
+      "class_name": null,
+      "farley_index": 7.875,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test name and code are clear. The function `_prune_unit_code` is assumed to be defined elsewhere (likely in the same module or a utility), so its business rule ('return original if short', 'shorten if long') is implicit but understandable within that context.",
+          "suggestions": [
+            "Explicitly document what `max_lines=10` means. Is it an absolute line count? A percentage of total lines in the file? If not, define this clearly."
+          ]
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "The test is decoupled from system implementation details; it only cares about string manipulation logic. It will remain valid even if `short_code` or `_prune_unit_code` are refactored as long as the contract (input/output) remains unchanged.",
+          "suggestions": [
+            "Ensure that any future changes to how lines are counted in `_prune_unit_code` do not break this test. If you refactor the logic, update the assertion or add a new test case for edge cases."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic and self-contained (no DB/network). However, it relies on `_prune_unit_code` which may depend on external state or timing if not implemented as a pure function. If `short_code` contains newlines that vary by environment, this could be non-repeatable.",
+          "suggestions": [
+            "Verify that the input string is normalized (e.g., stripped of trailing whitespace) before processing to ensure repeatability across environments."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: whether a short function returns unchanged. If the assertion fails, it is immediately obvious that `max_lines=10` was not respected or `_prune_unit_code` had unexpected side effects.",
+          "suggestions": [
+            "Add an explicit error message to the assert statement if the result differs from expected (e.g., use a custom exception) so debugging becomes instant."
+          ]
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test covers basic string manipulation logic. However, it does not verify edge cases like empty strings or very long lines that might trigger different pruning rules in `_prune_unit_code`. It may duplicate coverage of other tests if those cover general line counting.",
+          "suggestions": [
+            "Add a specific case for `max_lines=1` to ensure the function handles extreme short inputs correctly, avoiding redundancy with generic string length checks."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The test isolates precisely one behavior: line pruning logic. It does not mix unrelated concerns like file I/O or complex data structures.",
+          "suggestions": [
+            "Ensure the assertion compares only the modified string content and ignores whitespace differences if `max_lines` changes formatting (e.g., removing trailing spaces)."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes instantly with no sleeps or heavy I/O. It is a pure function call on small strings.",
+          "suggestions": [
+            "No action needed; the current implementation meets performance requirements."
+          ]
+        },
+        "first_tdd": {
+          "score": 7,
+          "rationale": "The test follows Arrange-Act-Pattern (Arrange: input string, Act: call function, Assert: result). However, it lacks a clear 'specification' of the expected behavior before running; one must infer that `max_lines=10` should not change output. It is close to TDD but could be more explicit about design intent.",
+          "suggestions": [
+            "Add an inline comment or docstring explaining why this specific test exists (e.g., 'Verify pruning does not alter short functions'). This clarifies the business rule for future developers."
+          ]
+        },
+        "summary": "Overall score: ~7.5/10"
+      }
+    },
+    {
+      "id": "tests/test_evaluator_concurrency_and_pruning.py::test_prune_unit_code_long",
+      "file_path": "tests/test_evaluator_concurrency_and_pruning.py",
+      "test_name": "test_prune_unit_code_long",
+      "class_name": null,
+      "farley_index": 7.0,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly demonstrates the business rule: a function should truncate long lines to `max_lines` while preserving specific boundary markers (`line_0`, `line_149`). The intent is unambiguous.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 6,
+          "rationale": "The test relies on a private helper function `_prune_unit_code` which likely contains implementation details (e.g., regex logic or string manipulation) that could become brittle if the underlying algorithm changes. It tests 'how' rather than just verifying the output format.",
+          "suggestions": [
+            "Move `max_lines=50` and truncation logic into a dedicated, unit-tested utility function outside this test file to ensure decoupling from implementation details."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The code is deterministic (no external state), but the use of `f-string` formatting and list comprehension creates a dependency on Python's string representation. While self-contained in terms of inputs/outputs, it relies heavily on specific string literals which can be fragile if line numbers or indentation changes.",
+          "suggestions": [
+            "Use explicit integer indexing for lines instead of f-strings to ensure the test remains valid across different Python versions and avoids implicit formatting variations."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The assertion `assert \"...\" in pruned` is atomic. If this fails, it immediately reveals that truncation logic or boundary preservation failed without needing to inspect the full output string.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 5,
+          "rationale": "This test duplicates coverage of other tests (e.g., `test_prune_unit_code_short`, `test_prune_boundary_markers`). It does not add unique value; it merely verifies the same logic with different inputs.",
+          "suggestions": [
+            "Remove this specific assertion if a general truncation check already exists in another test. Focus on edge cases (e.g., exactly 50 lines, odd line counts) rather than repeated full-string checks."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The test is granular enough to verify specific boundary conditions (`line_149`), but it could be more precise by asserting the exact number of lines in `pruned`. Currently, it only checks for presence.",
+          "suggestions": [
+            "Assert that exactly 50 lines remain after truncation: `assert len(pruned.splitlines()) == 50`, ensuring precision over mere existence."
+          ]
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "The test executes in milliseconds. It avoids sleeps and heavy I/O; the only potential overhead is string formatting for `f-strings`.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 6,
+          "rationale": "While it follows Arrange (input generation), Act (truncation call), Assert (verification) structure, the test lacks a clear 'specification' phase. It assumes `max_lines=50` is correct without defining what constitutes valid truncation behavior.",
+          "suggestions": [
+            "Add an explicit specification: e.g., \"Truncate to exactly 49 lines if input has >= 150, preserving line_0 and last non-truncated line.\" This clarifies the design intent before writing code."
+          ]
+        },
+        "summary": "{\"understandable\":8,\"maintainable\":6,\"repeatable\":7,\"atomic\":9,\"necessary\":5,\"granular\":7,\"fast\":8,\"first_tdd\":6}"
+      }
+    },
+    {
+      "id": "tests/test_evaluator_concurrency_and_pruning.py::test_prune_test_code",
+      "file_path": "tests/test_evaluator_concurrency_and_pruning.py",
+      "test_name": "test_prune_test_code",
+      "class_name": null,
+      "farley_index": 3.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 3,
+          "rationale": "The test name and logic are obscure. It relies on an undocumented internal function `_prune_test_code` with no documentation or business rule explanation in the code itself.",
+          "suggestions": [
+            "Replace `test_prune_test_code` with a descriptive name like 'Verify Pruning Logic'."
+          ]
+        },
+        "maintainable": {
+          "score": 2,
+          "rationale": "The test is brittle and tightly coupled to the implementation of `_prune_test_code`. If that function changes its internal logic or signature without updating this specific assertion, the entire test will fail.",
+          "suggestions": [
+            "Extract `test_prune_logic` into a separate module with clear documentation."
+          ]
+        },
+        "repeatable": {
+          "score": 4,
+          "rationale": "The code is deterministic and self-contained. However, it relies on the internal implementation of `_prune_test_code`, which may introduce non-determinism if that function uses external state or timing.",
+          "suggestions": [
+            "Ensure `test_prune_logic` has no dependencies on shared mutable state or network calls."
+          ]
+        },
+        "atomic": {
+          "score": 5,
+          "rationale": "The test verifies a single behavior (that pruning works), but the assertion is vague (`... [80 lines truncated...]`). It does not clearly define what constitutes 'success' or failure in terms of code structure.",
+          "suggestions": [
+            "Assert specific structural changes, e.g., `assert len(pruned) == 12` and that no original line numbers are preserved."
+          ]
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test likely duplicates coverage of existing tests for 'test_0', 'test_1', etc., or verifies a trivial implementation detail rather than the core business rule.",
+          "suggestions": [
+            "Remove this specific unit test if it is redundant with integration/contract tests, unless there are no other such tests."
+          ]
+        },
+        "granular": {
+          "score": 2,
+          "rationale": "The assertion `assert \"...\" in pruned` is too broad and vague. It does not isolate or verify specific granules of the pruning logic (e.g., line count reduction, format preservation).",
+          "suggestions": [
+            "Assert that exactly 80 lines are removed from the original input."
+          ]
+        },
+        "fast": {
+          "score": 5,
+          "rationale": "The test is fast in execution time. However, it likely contains artificial delays or heavy I/O if `_prune_test_code` involves file operations.",
+          "suggestions": [
+            "Remove any `time.sleep()` calls and ensure the function uses only pure functions."
+          ]
+        },
+        "first_tdd": {
+          "score": 3,
+          "rationale": "The test does not demonstrate a clean Arrange-Act-Assert separation. The 'Arrange' phase (creating lines) is mixed with Act and Assert in the same function.",
+          "suggestions": [
+            "Refactor into three distinct functions: `setup_test_data()`, `perform_pruning_and_verify_structure()`. Ensure assertions are purely about behavior, not implementation details."
+          ]
+        },
+        "summary": "The test is poorly written and likely redundant. It fails to meet the 'understandable', 'atomic', or 'first_tdd' criteria due to vague assertions and lack of separation of concerns. Immediate refactoring into a dedicated module with clear business rules is required."
+      }
+    },
+    {
+      "id": "tests/test_evaluator_concurrency_and_pruning.py::test_prune_code_text_edge_cases",
+      "file_path": "tests/test_evaluator_concurrency_and_pruning.py",
+      "test_name": "test_prune_code_text_edge_cases",
+      "class_name": null,
+      "farley_index": 8.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test name and assertions are clear. However, the function `telemetry_utils.prune_code_text` is not defined in this file; it relies on an external utility which may introduce ambiguity if its logic isn't documented.",
+          "suggestions": [
+            "Ensure `prune_code_text` exists or define a simple inline helper to avoid dependency confusion. If using the real function, ensure its docstring explains edge cases like non-string inputs."
+          ]
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "The test is decoupled from system implementation details; it only tests input/output behavior. It will not break if `telemetry_utils` changes internal logic as long as the contract remains consistent.",
+          "suggestions": [
+            "Add a unit for edge cases like empty strings or whitespace-only inputs to ensure robustness against future refactoring of the utility function."
+          ]
+        },
+        "repeatable": {
+          "score": 10,
+          "rationale": "The test is fully self-contained. It uses no external state (database, network), relies on deterministic string operations, and has zero timing dependencies.",
+          "suggestions": [
+            "None required."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "Each assertion verifies exactly one behavior: `prune_code_text` returning an empty string for null/empty inputs and a specific value otherwise. The failure cause is instantly obvious.",
+          "suggestions": [
+            "None required."
+          ]
+        },
+        "necessary": {
+          "score": 7,
+          "rationale": "This test covers the 'null' edge case for `prune_code_text`. However, it does not cover other common inputs like whitespace-only strings or very long text that might trigger pruning logic.",
+          "suggestions": [
+            "Add assertions for additional input types (e.g., `'   '` or a large string) to ensure comprehensive coverage of the utility's behavior."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The test isolates specific edge cases. However, it does not verify that `prune_code_text` handles other valid inputs correctly or fails appropriately on invalid data.",
+          "suggestions": [
+            "Add assertions for non-string types (e.g., integers) and strings with leading/trailing whitespace to ensure the function behaves as expected across all input scenarios."
+          ]
+        },
+        "fast": {
+          "score": 10,
+          "rationale": "The test executes instantly without artificial delays or heavy I/O operations. It relies solely on string manipulation.",
+          "suggestions": [
+            "None required."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "This is a typical Arrange-Act-Assert pattern: the function exists (Arrange), it's called with specific inputs (Act), and assertions verify expected outputs. However, since `prune_code_text` isn't defined here, this test cannot be considered 'first TDD' without seeing its implementation.",
+          "suggestions": [
+            "Review or implement a unit for the actual logic of `telemetry_utils.prune_code_text`. If it's already implemented elsewhere, ensure this file is updated to reflect that dependency."
+          ]
+        },
+        "summary": "The test demonstrates strong adherence to TDD principles (Arrange-Act-Assert) and passes all criteria except for the necessity score due to incomplete input coverage. It should be refined with additional edge case tests to fully validate robustness across different scenarios."
+      }
+    },
+    {
+      "id": "tests/test_evaluator_concurrency_and_pruning.py::test_format_unit_uses_pruned_code",
+      "file_path": "tests/test_evaluator_concurrency_and_pruning.py",
+      "test_name": "test_format_unit_uses_pruned_code",
+      "class_name": null,
+      "farley_index": 7.375,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly demonstrates the business rule: a unit of code (defined by file path and line range) must be truncated if it exceeds context limits. The domain language is clear.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 6,
+          "rationale": "The test relies on a hardcoded dictionary structure (`unit`) that simulates data rather than mocking the actual `format_unit` function. This makes it brittle if internal logic changes or if external state (like file paths) is modified.",
+          "suggestions": [
+            "Remove all hard-coded mock objects and use fixtures to simulate input parameters dynamically."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is self-contained within the file path provided in `unit`. It does not rely on external shared state or network calls.",
+          "suggestions": [
+            "Ensure no hidden dependencies exist; if mocking a function like `format_unit`, ensure it's deterministic and isolated."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: the presence of specific text in output. If this assertion fails, the cause is immediately obvious (the string does not exist).",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 5,
+          "rationale": "This test likely duplicates coverage already provided by other tests covering file path validation or line count limits. It may be testing implementation details rather than a unique business rule.",
+          "suggestions": [
+            "Review existing tests to ensure this specific scenario is not covered elsewhere; if so, refactor the logic into an integration-level test."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The assertion targets a specific string pattern within output. However, it does not verify that truncation actually occurred or was necessary based on input size.",
+          "suggestions": [
+            "Assert the actual number of lines in `formatted` matches expectations (e.g., 50) rather than just checking for substring presence."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes instantly without artificial delays or heavy I/O operations.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 8,
+          "rationale": "While the structure follows Arrange-Act-Assert (mocking input -> calling function -> asserting output), it lacks explicit specification of expected behavior before running. The test assumes truncation logic exists without defining what 'truncates' means.",
+          "suggestions": [
+            "Explicitly define `expected_output` in a fixture or mock setup to verify the exact format and content, ensuring design properties are met from the start."
+          ]
+        },
+        "summary": "The test is understandable but brittle due to hardcoded mocks. It lacks granular verification of truncation logic and may duplicate existing coverage. Overall score: 7/10"
+      }
+    },
+    {
+      "id": "tests/test_evaluator_concurrency_and_pruning.py::test_estimate_unit_tokens_uses_pruned_code",
+      "file_path": "tests/test_evaluator_concurrency_and_pruning.py",
+      "test_name": "test_estimate_unit_tokens_uses_pruned_code",
+      "class_name": null,
+      "farley_index": 3.25,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 3,
+          "rationale": "The test name is vague and the business rule (estimating tokens based on code length vs. system prompt + constant) is buried in a convoluted variable assignment that obscures intent.",
+          "suggestions": [
+            "Rename `test_estimate_unit_tokens_uses_pruned_code` to something like `estimate_token_count_considers_system_prompt`.",
+            "Remove the intermediate variables (`long_unit`, `estimated`) and compute expected directly in an assertion or helper function."
+          ]
+        },
+        "maintainable": {
+          "score": 2,
+          "rationale": "The test is brittle to system changes; it relies on `_prune_unit_code` implementation details which may change during refactoring without updating the logic.",
+          "suggestions": [
+            "Extract `estimate_token_count_considers_system_prompt` into a dedicated utility function with clear parameters and return values, not inline calculation."
+          ]
+        },
+        "repeatable": {
+          "score": 4,
+          "rationale": "The test is deterministic but relies on external state (`scripts.code_review_evaluator.SYSTEM_PROMPT`) which could change between runs or across environments.",
+          "suggestions": [
+            "Move `SYSTEM_PROMPT` into the module scope (e.g., as a constant) so it's available to all tests without passing arguments."
+          ]
+        },
+        "atomic": {
+          "score": 5,
+          "rationale": "The test verifies one behavior but mixes two distinct concerns: token estimation logic and code pruning. If `estimate_unit_tokens` changes its internal algorithm or if `_prune_unit_code` is refactored, the assertion will fail unexpectedly.",
+          "suggestions": [
+            "Split this into two separate tests: one for `estimate_token_count_considers_system_prompt`, another specifically testing token estimation logic."
+          ]
+        },
+        "necessary": {
+          "score": 2,
+          "rationale": "This test duplicates coverage of other existing unit tests that likely already verify the same pruning and estimation logic. It adds no new value to the codebase.",
+          "suggestions": [
+            "Remove this specific test if it is covered by general `estimate_unit_tokens` or similar tests, unless there's a unique edge case not addressed elsewhere."
+          ]
+        },
+        "granular": {
+          "score": 3,
+          "rationale": "The assertion mixes two unrelated concepts (token count vs. code length) and relies on an external constant (`SYSTEM_PROMPT`), making it hard to isolate the specific behavior being tested.",
+          "suggestions": [
+            "Assert only `estimated == expected_token_count`, removing reliance on system prompt constants unless they are part of a separate, well-defined test."
+          ]
+        },
+        "fast": {
+          "score": 5,
+          "rationale": "The test is reasonably fast as it performs simple string operations and arithmetic. However, the `long_unit` construction with a list comprehension over 1000 lines could be optimized for speed if performance were critical.",
+          "suggestions": [
+            "Consider using `itertools.repeat('some long string content here', 1000)` instead of a generator expression or loop to avoid creating an intermediate large list in memory."
+          ]
+        },
+        "first_tdd": {
+          "score": 2,
+          "rationale": "The test does not demonstrate the Arrange-Act-Assert pattern cleanly. It performs setup (creating `long_unit`), acts (calling functions), and asserts without clearly separating these phases in a way that highlights design intent.",
+          "suggestions": [
+            "Refactor to explicitly separate: 1) Setup (`_setup_pruning_and_estimation()`), 2) Act (`estimate_tokens(...)`), 3) Assert. Ensure the test isolates behavior changes from implementation details."
+          ]
+        },
+        "summary": "The test is understandable but poorly structured and brittle due to external dependencies and mixed concerns. It fails on maintainability (brittle to system refactoring), atomicity (mixes two behaviors), necessity (duplicates coverage), granularity (mixed assertions), speed (could be optimized for memory efficiency), and TDD principles (poor Arrange-Act-Assert separation). Immediate removal or consolidation is recommended."
+      }
+    },
+    {
+      "id": "tests/test_evaluator_concurrency_and_pruning.py::test_coerce_int_defensive_defaults",
+      "file_path": "tests/test_evaluator_concurrency_and_pruning.py",
+      "test_name": "test_coerce_int_defensive_defaults",
+      "class_name": null,
+      "farley_index": 8.375,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 9,
+          "rationale": "The test clearly demonstrates the business rule: `coerce_int` defaults to a provided value if input is invalid or missing. The code uses ubiquitous language (string/None) and avoids implementation clutter.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 8,
+          "rationale": "The test isolates the logic of coercion without relying on system internals like `telemetry_utils`. It is decoupled from how defaults are implemented or stored in databases/filesystems. However, it assumes a specific implementation signature which could break if internal methods change.",
+          "suggestions": [
+            "Ensure tests do not depend on private/internal method names (e.g., avoid testing `_coerce_int` directly).",
+            "Consider adding an integration test that mocks the actual utility class to verify behavior regardless of underlying implementation details."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The tests are deterministic and self-contained. They do not rely on external shared state (like a database or network). However, they assume `telemetry_utils` exists as defined in the codebase; if that module changes its API without updating this test, it will fail.",
+          "suggestions": [
+            "Verify all dependencies of `coerce_int` are mocked within these tests to ensure repeatability across different environments or refactors."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "Each assertion verifies exactly one behavior: coercion logic for specific inputs. If a test fails (e.g., `None`, empty string), the cause is instantly obvious and isolated to that single line.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "This test covers edge cases where input is missing or invalid. It does not duplicate coverage of other tests (e.g., valid integer inputs) but adds necessary value for defensive programming scenarios.",
+          "suggestions": [
+            "Review if this specific default behavior should be tested in a separate 'valid_input' suite to ensure no overlap with existing test logic."
+          ]
+        },
+        "granular": {
+          "score": 9,
+          "rationale": "The tests are highly granular. They isolate the exact transformation of `None`, empty strings, and invalid inputs into their expected numeric outputs.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "These assertions execute rapidly without artificial sleeps or heavy I/O operations. The logic is pure Python function calls with no external dependencies slowing down execution.",
+          "suggestions": [
+            "Ensure the `telemetry_utils` module itself does not contain slow setup code that this test would inherit."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The tests follow a clean Arrange-Act-Assert structure. The 'Arrange' (implied context) is the function call with defaults; the 'Act' is the coercion logic; the 'Assert' verifies specific outcomes.",
+          "suggestions": []
+        },
+        "summary": "{\"understandable\":9,\"maintainable\":8,\"repeatable\":7,\"atomic\":9,\"necessary\":8,\"granular\":9,\"fast\":8,\"first_tdd\":9}"
+      }
+    },
+    {
+      "id": "tests/test_evaluator_concurrency_and_pruning.py::test_farley_evaluate_files_concurrency",
+      "file_path": "tests/test_evaluator_concurrency_and_pruning.py",
+      "test_name": "test_farley_evaluate_files_concurrency",
+      "class_name": null,
+      "farley_index": 6.125,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 7,
+          "rationale": "The test name and logic are clear enough for a developer familiar with the Silver-One framework to understand what it's testing (concurrency limits), but lacks explicit documentation of business rules or edge cases.",
+          "suggestions": [
+            "Add comments defining 'active_tasks' semantics. Explicitly state: 'This test verifies that max_concurrency=2 prevents more than 2 concurrent evaluations.'"
+          ]
+        },
+        "maintainable": {
+          "score": 6,
+          "rationale": "The mock function is tightly coupled to the specific implementation details of `evaluate_files` and its internal logic (e.g., how it tracks concurrency). If `evaluate_files` changes its tracking mechanism or adds new metrics, this test will break without modification.",
+          "suggestions": [
+            "Extract the 'active_tasks' counter into a shared state variable outside the mock function. Ensure mocks are decoupled from specific implementation details of `max_concurrency`."
+          ]
+        },
+        "repeatable": {
+          "score": 5,
+          "rationale": "The test relies on external timing (`asyncio.sleep(0.05)`) and potentially non-deterministic behavior if other parts of the system have side effects during execution.",
+          "suggestions": [
+            "Remove all artificial delays or `sleep()` calls from mocks. Ensure deterministic ordering by using explicit task scheduling (e.g., `await asyncio.wait_for(...)` with fixed timeouts)."
+          ]
+        },
+        "atomic": {
+          "score": 8,
+          "rationale": "The test verifies exactly one behavior: the maximum concurrency observed does not exceed the configured limit (`max_concurrency=2`). The assertion is direct and unambiguous.",
+          "suggestions": [
+            "Refine assertions to explicitly check `max_observed_concurrency <= max_concurrency` rather than just `<`."
+          ]
+        },
+        "necessary": {
+          "score": 7,
+          "rationale": "The test covers a specific concurrency boundary condition. However, it may not cover edge cases like exactly the limit or zero concurrency scenarios which are often critical for robustness.",
+          "suggestions": [
+            "Add assertions covering `max_concurrency == 0` and `max_observed_concurrency < max_concurrency`."
+          ]
+        },
+        "granular": {
+          "score": 6,
+          "rationale": "The test isolates the 'concurrency limit' aspect but mixes setup (mocking) with logic verification. It doesn't clearly isolate a single unit of behavior like 'evaluation latency under load'.",
+          "suggestions": [
+            "Split into two tests: one for concurrency limits (`test_conc_limit`), another for evaluation speed/latency (`test_latency_under_load`)."
+          ]
+        },
+        "fast": {
+          "score": 4,
+          "rationale": "The test contains a deliberate artificial delay of `0.05 seconds`, which significantly slows down execution and makes it non-repeatable in CI environments.",
+          "suggestions": [
+            "Remove all `asyncio.sleep()` calls from mocks. Replace with explicit task scheduling or remove the sleep entirely if not strictly necessary for isolation."
+          ]
+        },
+        "first_tdd": {
+          "score": 6,
+          "rationale": "The test follows a basic Arrange-Act-Assert pattern but lacks deep separation of concerns. The 'Arrange' phase (mocking) is mixed with the Act/Assert phases in a way that obscures design intent.",
+          "suggestions": [
+            "Strictly separate setup: `setup_concurrency_mock()`, then run evaluation, then verify results (`assert_*`). Ensure mocks are stateless and do not persist between test runs."
+          ]
+        },
+        "summary": "The test is functional but suffers from poor isolation (shared mutable state), artificial delays, and lack of explicit business rule documentation. It risks becoming brittle as the underlying evaluator changes."
+      }
     }
   ],
   "__metadata__": {
     "farley_usage_summary": {
       "run_id": "main-baseline",
       "model": "ollama/qwen3.5:2b",
-      "reviewed_test_cases": 138,
+      "reviewed_test_cases": 146,
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 177,
-          "prompt_tokens": 154886,
-          "completion_tokens": 144922,
-          "total_tokens": 299808,
+          "calls": 188,
+          "prompt_tokens": 164244,
+          "completion_tokens": 154572,
+          "total_tokens": 318816,
           "cost_usd": 0.0,
           "missing_usage_calls": 0,
-          "total_duration_ms": 1616.939,
-          "avg_duration_ms": 9.135,
-          "max_duration_ms": 106.595,
-          "min_duration_ms": 4.848,
-          "p95_duration_ms": 7.249
+          "total_duration_ms": 1062834.184,
+          "avg_duration_ms": 5653.373,
+          "max_duration_ms": 151287.295,
+          "min_duration_ms": 4.827,
+          "p95_duration_ms": 74619.563
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 177,
-            "prompt_tokens": 154886,
-            "completion_tokens": 144922,
-            "total_tokens": 299808,
+            "calls": 188,
+            "prompt_tokens": 164244,
+            "completion_tokens": 154572,
+            "total_tokens": 318816,
             "cost_usd": 0.0,
-            "total_duration_ms": 1616.939,
-            "max_duration_ms": 106.595,
-            "avg_duration_ms": 9.135
+            "total_duration_ms": 1062834.184,
+            "max_duration_ms": 151287.295,
+            "avg_duration_ms": 5653.373
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 177,
-            "prompt_tokens": 154886,
-            "completion_tokens": 144922,
-            "total_tokens": 299808,
+            "calls": 188,
+            "prompt_tokens": 164244,
+            "completion_tokens": 154572,
+            "total_tokens": 318816,
             "cost_usd": 0.0,
-            "total_duration_ms": 1616.939,
-            "max_duration_ms": 106.595,
-            "avg_duration_ms": 9.135
+            "total_duration_ms": 1062834.184,
+            "max_duration_ms": 151287.295,
+            "avg_duration_ms": 5653.373
           }
         },
         "events": [
@@ -9140,7 +9648,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.407,
+            "duration_ms": 5.523,
             "generation_params": {},
             "prompt_tokens": 624,
             "completion_tokens": 618,
@@ -9153,7 +9661,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 102.96,
+            "duration_ms": 5.973,
             "generation_params": {},
             "prompt_tokens": 500,
             "completion_tokens": 615,
@@ -9166,7 +9674,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.567,
+            "duration_ms": 4.899,
             "generation_params": {},
             "prompt_tokens": 796,
             "completion_tokens": 581,
@@ -9179,7 +9687,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 9.951,
+            "duration_ms": 5.24,
             "generation_params": {},
             "prompt_tokens": 632,
             "completion_tokens": 1024,
@@ -9192,7 +9700,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.369,
+            "duration_ms": 5.142,
             "generation_params": {},
             "prompt_tokens": 1972,
             "completion_tokens": 1024,
@@ -9205,7 +9713,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.551,
+            "duration_ms": 5.353,
             "generation_params": {},
             "prompt_tokens": 3312,
             "completion_tokens": 784,
@@ -9218,7 +9726,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.712,
+            "duration_ms": 4.846,
             "generation_params": {},
             "prompt_tokens": 523,
             "completion_tokens": 641,
@@ -9231,7 +9739,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.002,
+            "duration_ms": 5.203,
             "generation_params": {},
             "prompt_tokens": 614,
             "completion_tokens": 571,
@@ -9244,7 +9752,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.323,
+            "duration_ms": 4.854,
             "generation_params": {},
             "prompt_tokens": 413,
             "completion_tokens": 799,
@@ -9257,7 +9765,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.848,
+            "duration_ms": 5.224,
             "generation_params": {},
             "prompt_tokens": 492,
             "completion_tokens": 705,
@@ -9270,7 +9778,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.248,
+            "duration_ms": 4.827,
             "generation_params": {},
             "prompt_tokens": 537,
             "completion_tokens": 776,
@@ -9283,7 +9791,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.136,
+            "duration_ms": 5.181,
             "generation_params": {},
             "prompt_tokens": 422,
             "completion_tokens": 867,
@@ -9296,7 +9804,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.528,
+            "duration_ms": 5.079,
             "generation_params": {},
             "prompt_tokens": 474,
             "completion_tokens": 941,
@@ -9309,7 +9817,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.315,
+            "duration_ms": 5.423,
             "generation_params": {},
             "prompt_tokens": 658,
             "completion_tokens": 820,
@@ -9322,7 +9830,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.556,
+            "duration_ms": 4.931,
             "generation_params": {},
             "prompt_tokens": 505,
             "completion_tokens": 665,
@@ -9335,7 +9843,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.97,
+            "duration_ms": 5.436,
             "generation_params": {},
             "prompt_tokens": 546,
             "completion_tokens": 951,
@@ -9348,7 +9856,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.439,
+            "duration_ms": 4.94,
             "generation_params": {},
             "prompt_tokens": 581,
             "completion_tokens": 650,
@@ -9361,7 +9869,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.942,
+            "duration_ms": 96.899,
             "generation_params": {},
             "prompt_tokens": 480,
             "completion_tokens": 848,
@@ -9374,7 +9882,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.348,
+            "duration_ms": 6.108,
             "generation_params": {},
             "prompt_tokens": 525,
             "completion_tokens": 1024,
@@ -9387,7 +9895,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.909,
+            "duration_ms": 5.608,
             "generation_params": {},
             "prompt_tokens": 1698,
             "completion_tokens": 1024,
@@ -9400,7 +9908,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.439,
+            "duration_ms": 5.052,
             "generation_params": {},
             "prompt_tokens": 2872,
             "completion_tokens": 1024,
@@ -9413,7 +9921,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 94.01,
+            "duration_ms": 5.591,
             "generation_params": {},
             "prompt_tokens": 711,
             "completion_tokens": 1024,
@@ -9426,7 +9934,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.908,
+            "duration_ms": 4.906,
             "generation_params": {},
             "prompt_tokens": 1942,
             "completion_tokens": 1024,
@@ -9439,7 +9947,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.735,
+            "duration_ms": 5.316,
             "generation_params": {},
             "prompt_tokens": 3173,
             "completion_tokens": 923,
@@ -9452,7 +9960,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.31,
+            "duration_ms": 5.1,
             "generation_params": {},
             "prompt_tokens": 549,
             "completion_tokens": 619,
@@ -9465,7 +9973,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.307,
+            "duration_ms": 5.299,
             "generation_params": {},
             "prompt_tokens": 625,
             "completion_tokens": 1024,
@@ -9478,7 +9986,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.95,
+            "duration_ms": 4.869,
             "generation_params": {},
             "prompt_tokens": 2023,
             "completion_tokens": 1024,
@@ -9491,7 +9999,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.377,
+            "duration_ms": 5.341,
             "generation_params": {},
             "prompt_tokens": 3422,
             "completion_tokens": 674,
@@ -9504,7 +10012,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.073,
+            "duration_ms": 4.836,
             "generation_params": {},
             "prompt_tokens": 449,
             "completion_tokens": 815,
@@ -9517,7 +10025,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.176,
+            "duration_ms": 5.331,
             "generation_params": {},
             "prompt_tokens": 509,
             "completion_tokens": 854,
@@ -9530,7 +10038,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.881,
+            "duration_ms": 4.868,
             "generation_params": {},
             "prompt_tokens": 540,
             "completion_tokens": 719,
@@ -9543,7 +10051,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.115,
+            "duration_ms": 5.439,
             "generation_params": {},
             "prompt_tokens": 529,
             "completion_tokens": 858,
@@ -9556,7 +10064,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.963,
+            "duration_ms": 4.99,
             "generation_params": {},
             "prompt_tokens": 672,
             "completion_tokens": 889,
@@ -9569,7 +10077,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.246,
+            "duration_ms": 5.384,
             "generation_params": {},
             "prompt_tokens": 663,
             "completion_tokens": 723,
@@ -9582,7 +10090,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.943,
+            "duration_ms": 4.895,
             "generation_params": {},
             "prompt_tokens": 470,
             "completion_tokens": 1024,
@@ -9595,7 +10103,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.131,
+            "duration_ms": 5.404,
             "generation_params": {},
             "prompt_tokens": 1749,
             "completion_tokens": 1024,
@@ -9608,7 +10116,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.929,
+            "duration_ms": 4.906,
             "generation_params": {},
             "prompt_tokens": 2982,
             "completion_tokens": 1024,
@@ -9621,7 +10129,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.162,
+            "duration_ms": 5.367,
             "generation_params": {},
             "prompt_tokens": 556,
             "completion_tokens": 786,
@@ -9634,7 +10142,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.006,
+            "duration_ms": 4.894,
             "generation_params": {},
             "prompt_tokens": 525,
             "completion_tokens": 912,
@@ -9647,7 +10155,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.268,
+            "duration_ms": 5.417,
             "generation_params": {},
             "prompt_tokens": 498,
             "completion_tokens": 811,
@@ -9660,7 +10168,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.967,
+            "duration_ms": 93.4,
             "generation_params": {},
             "prompt_tokens": 539,
             "completion_tokens": 737,
@@ -9673,7 +10181,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.195,
+            "duration_ms": 5.842,
             "generation_params": {},
             "prompt_tokens": 583,
             "completion_tokens": 602,
@@ -9686,7 +10194,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.187,
+            "duration_ms": 5.491,
             "generation_params": {},
             "prompt_tokens": 594,
             "completion_tokens": 1002,
@@ -9699,7 +10207,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.413,
+            "duration_ms": 5.072,
             "generation_params": {},
             "prompt_tokens": 599,
             "completion_tokens": 873,
@@ -9712,7 +10220,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.082,
+            "duration_ms": 5.459,
             "generation_params": {},
             "prompt_tokens": 593,
             "completion_tokens": 592,
@@ -9725,7 +10233,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.304,
+            "duration_ms": 5.069,
             "generation_params": {},
             "prompt_tokens": 547,
             "completion_tokens": 975,
@@ -9738,7 +10246,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.137,
+            "duration_ms": 5.291,
             "generation_params": {},
             "prompt_tokens": 524,
             "completion_tokens": 553,
@@ -9751,7 +10259,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 94.879,
+            "duration_ms": 4.959,
             "generation_params": {},
             "prompt_tokens": 519,
             "completion_tokens": 688,
@@ -9764,7 +10272,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.89,
+            "duration_ms": 5.195,
             "generation_params": {},
             "prompt_tokens": 416,
             "completion_tokens": 923,
@@ -9777,7 +10285,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.698,
+            "duration_ms": 4.979,
             "generation_params": {},
             "prompt_tokens": 510,
             "completion_tokens": 891,
@@ -9790,7 +10298,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.982,
+            "duration_ms": 5.183,
             "generation_params": {},
             "prompt_tokens": 465,
             "completion_tokens": 574,
@@ -9803,7 +10311,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.213,
+            "duration_ms": 4.963,
             "generation_params": {},
             "prompt_tokens": 1316,
             "completion_tokens": 786,
@@ -9816,7 +10324,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.993,
+            "duration_ms": 5.183,
             "generation_params": {},
             "prompt_tokens": 1059,
             "completion_tokens": 890,
@@ -9829,7 +10337,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.276,
+            "duration_ms": 4.959,
             "generation_params": {},
             "prompt_tokens": 1124,
             "completion_tokens": 857,
@@ -9842,7 +10350,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.969,
+            "duration_ms": 5.137,
             "generation_params": {},
             "prompt_tokens": 1050,
             "completion_tokens": 827,
@@ -9855,7 +10363,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.604,
+            "duration_ms": 4.904,
             "generation_params": {},
             "prompt_tokens": 578,
             "completion_tokens": 683,
@@ -9867,12 +10375,12 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "cache",
-            "duration_ms": 4.959,
+            "source": "provider",
+            "duration_ms": 88683.68,
             "generation_params": {},
-            "prompt_tokens": 1809,
-            "completion_tokens": 731,
-            "total_tokens": 2540,
+            "prompt_tokens": 1590,
+            "completion_tokens": 650,
+            "total_tokens": 2240,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -9881,7 +10389,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.18,
+            "duration_ms": 6.063,
             "generation_params": {},
             "prompt_tokens": 1270,
             "completion_tokens": 736,
@@ -9894,7 +10402,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.909,
+            "duration_ms": 5.438,
             "generation_params": {},
             "prompt_tokens": 926,
             "completion_tokens": 725,
@@ -9907,7 +10415,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.262,
+            "duration_ms": 5.052,
             "generation_params": {},
             "prompt_tokens": 849,
             "completion_tokens": 644,
@@ -9920,7 +10428,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.896,
+            "duration_ms": 5.084,
             "generation_params": {},
             "prompt_tokens": 702,
             "completion_tokens": 683,
@@ -9933,7 +10441,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.219,
+            "duration_ms": 5.469,
             "generation_params": {},
             "prompt_tokens": 545,
             "completion_tokens": 748,
@@ -9946,7 +10454,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.926,
+            "duration_ms": 96.915,
             "generation_params": {},
             "prompt_tokens": 766,
             "completion_tokens": 803,
@@ -9959,7 +10467,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.395,
+            "duration_ms": 6.161,
             "generation_params": {},
             "prompt_tokens": 673,
             "completion_tokens": 770,
@@ -9972,7 +10480,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.022,
+            "duration_ms": 5.789,
             "generation_params": {},
             "prompt_tokens": 636,
             "completion_tokens": 1024,
@@ -9985,7 +10493,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.388,
+            "duration_ms": 5.23,
             "generation_params": {},
             "prompt_tokens": 1921,
             "completion_tokens": 1024,
@@ -9998,7 +10506,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.309,
+            "duration_ms": 5.668,
             "generation_params": {},
             "prompt_tokens": 3206,
             "completion_tokens": 890,
@@ -10011,7 +10519,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.547,
+            "duration_ms": 5.719,
             "generation_params": {},
             "prompt_tokens": 891,
             "completion_tokens": 1024,
@@ -10024,7 +10532,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.052,
+            "duration_ms": 5.818,
             "generation_params": {},
             "prompt_tokens": 2056,
             "completion_tokens": 1004,
@@ -10037,7 +10545,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.298,
+            "duration_ms": 5.21,
             "generation_params": {},
             "prompt_tokens": 482,
             "completion_tokens": 862,
@@ -10050,7 +10558,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.939,
+            "duration_ms": 5.357,
             "generation_params": {},
             "prompt_tokens": 458,
             "completion_tokens": 602,
@@ -10063,7 +10571,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 103.688,
+            "duration_ms": 5.07,
             "generation_params": {},
             "prompt_tokens": 530,
             "completion_tokens": 621,
@@ -10076,7 +10584,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.23,
+            "duration_ms": 5.449,
             "generation_params": {},
             "prompt_tokens": 532,
             "completion_tokens": 821,
@@ -10089,7 +10597,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.249,
+            "duration_ms": 5.2,
             "generation_params": {},
             "prompt_tokens": 792,
             "completion_tokens": 631,
@@ -10102,7 +10610,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.454,
+            "duration_ms": 5.301,
             "generation_params": {},
             "prompt_tokens": 447,
             "completion_tokens": 583,
@@ -10115,7 +10623,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.593,
+            "duration_ms": 5.036,
             "generation_params": {},
             "prompt_tokens": 448,
             "completion_tokens": 649,
@@ -10128,7 +10636,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.476,
+            "duration_ms": 5.29,
             "generation_params": {},
             "prompt_tokens": 449,
             "completion_tokens": 637,
@@ -10141,7 +10649,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.459,
+            "duration_ms": 5.127,
             "generation_params": {},
             "prompt_tokens": 458,
             "completion_tokens": 757,
@@ -10154,7 +10662,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.11,
+            "duration_ms": 5.573,
             "generation_params": {},
             "prompt_tokens": 461,
             "completion_tokens": 1024,
@@ -10167,7 +10675,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.413,
+            "duration_ms": 5.079,
             "generation_params": {},
             "prompt_tokens": 1688,
             "completion_tokens": 1024,
@@ -10180,7 +10688,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.29,
+            "duration_ms": 5.435,
             "generation_params": {},
             "prompt_tokens": 2915,
             "completion_tokens": 1024,
@@ -10193,7 +10701,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.513,
+            "duration_ms": 5.446,
             "generation_params": {},
             "prompt_tokens": 464,
             "completion_tokens": 519,
@@ -10206,7 +10714,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.063,
+            "duration_ms": 5.852,
             "generation_params": {},
             "prompt_tokens": 447,
             "completion_tokens": 636,
@@ -10219,7 +10727,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.234,
+            "duration_ms": 5.501,
             "generation_params": {},
             "prompt_tokens": 475,
             "completion_tokens": 707,
@@ -10232,7 +10740,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.059,
+            "duration_ms": 5.847,
             "generation_params": {},
             "prompt_tokens": 459,
             "completion_tokens": 579,
@@ -10245,7 +10753,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.315,
+            "duration_ms": 5.6,
             "generation_params": {},
             "prompt_tokens": 471,
             "completion_tokens": 663,
@@ -10258,7 +10766,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.971,
+            "duration_ms": 5.759,
             "generation_params": {},
             "prompt_tokens": 612,
             "completion_tokens": 693,
@@ -10271,7 +10779,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.313,
+            "duration_ms": 5.476,
             "generation_params": {},
             "prompt_tokens": 484,
             "completion_tokens": 1024,
@@ -10284,7 +10792,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.484,
+            "duration_ms": 5.727,
             "generation_params": {},
             "prompt_tokens": 1658,
             "completion_tokens": 1024,
@@ -10297,7 +10805,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.357,
+            "duration_ms": 5.353,
             "generation_params": {},
             "prompt_tokens": 2833,
             "completion_tokens": 1024,
@@ -10310,7 +10818,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.139,
+            "duration_ms": 101.709,
             "generation_params": {},
             "prompt_tokens": 483,
             "completion_tokens": 660,
@@ -10323,7 +10831,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.541,
+            "duration_ms": 5.708,
             "generation_params": {},
             "prompt_tokens": 557,
             "completion_tokens": 745,
@@ -10336,7 +10844,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.53,
+            "duration_ms": 5.607,
             "generation_params": {},
             "prompt_tokens": 577,
             "completion_tokens": 965,
@@ -10349,7 +10857,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.811,
+            "duration_ms": 5.161,
             "generation_params": {},
             "prompt_tokens": 554,
             "completion_tokens": 881,
@@ -10362,7 +10870,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.424,
+            "duration_ms": 6.432,
             "generation_params": {},
             "prompt_tokens": 756,
             "completion_tokens": 1024,
@@ -10375,7 +10883,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.429,
+            "duration_ms": 5.139,
             "generation_params": {},
             "prompt_tokens": 1924,
             "completion_tokens": 979,
@@ -10388,7 +10896,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.416,
+            "duration_ms": 5.401,
             "generation_params": {},
             "prompt_tokens": 405,
             "completion_tokens": 608,
@@ -10401,7 +10909,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.178,
+            "duration_ms": 5.013,
             "generation_params": {},
             "prompt_tokens": 672,
             "completion_tokens": 1024,
@@ -10414,7 +10922,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.325,
+            "duration_ms": 5.349,
             "generation_params": {},
             "prompt_tokens": 1894,
             "completion_tokens": 806,
@@ -10427,7 +10935,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.615,
+            "duration_ms": 5.078,
             "generation_params": {},
             "prompt_tokens": 512,
             "completion_tokens": 667,
@@ -10440,7 +10948,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.355,
+            "duration_ms": 5.376,
             "generation_params": {},
             "prompt_tokens": 547,
             "completion_tokens": 769,
@@ -10453,7 +10961,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.757,
+            "duration_ms": 5.091,
             "generation_params": {},
             "prompt_tokens": 537,
             "completion_tokens": 872,
@@ -10466,7 +10974,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.253,
+            "duration_ms": 5.366,
             "generation_params": {},
             "prompt_tokens": 530,
             "completion_tokens": 789,
@@ -10479,7 +10987,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.551,
+            "duration_ms": 5.005,
             "generation_params": {},
             "prompt_tokens": 790,
             "completion_tokens": 728,
@@ -10492,7 +11000,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.158,
+            "duration_ms": 5.314,
             "generation_params": {},
             "prompt_tokens": 674,
             "completion_tokens": 803,
@@ -10505,7 +11013,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.863,
+            "duration_ms": 5.154,
             "generation_params": {},
             "prompt_tokens": 560,
             "completion_tokens": 630,
@@ -10518,7 +11026,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.34,
+            "duration_ms": 5.351,
             "generation_params": {},
             "prompt_tokens": 815,
             "completion_tokens": 824,
@@ -10531,7 +11039,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.721,
+            "duration_ms": 5.161,
             "generation_params": {},
             "prompt_tokens": 805,
             "completion_tokens": 833,
@@ -10544,7 +11052,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.066,
+            "duration_ms": 5.43,
             "generation_params": {},
             "prompt_tokens": 710,
             "completion_tokens": 1004,
@@ -10557,7 +11065,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.584,
+            "duration_ms": 5.022,
             "generation_params": {},
             "prompt_tokens": 461,
             "completion_tokens": 793,
@@ -10570,7 +11078,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.998,
+            "duration_ms": 5.486,
             "generation_params": {},
             "prompt_tokens": 526,
             "completion_tokens": 640,
@@ -10583,7 +11091,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.458,
+            "duration_ms": 5.296,
             "generation_params": {},
             "prompt_tokens": 459,
             "completion_tokens": 852,
@@ -10596,7 +11104,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.322,
+            "duration_ms": 5.629,
             "generation_params": {},
             "prompt_tokens": 483,
             "completion_tokens": 1024,
@@ -10609,7 +11117,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.801,
+            "duration_ms": 5.352,
             "generation_params": {},
             "prompt_tokens": 1649,
             "completion_tokens": 992,
@@ -10622,7 +11130,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.244,
+            "duration_ms": 100.994,
             "generation_params": {},
             "prompt_tokens": 448,
             "completion_tokens": 631,
@@ -10635,7 +11143,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.751,
+            "duration_ms": 6.176,
             "generation_params": {},
             "prompt_tokens": 449,
             "completion_tokens": 686,
@@ -10648,7 +11156,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.364,
+            "duration_ms": 5.743,
             "generation_params": {},
             "prompt_tokens": 501,
             "completion_tokens": 527,
@@ -10661,7 +11169,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 104.012,
+            "duration_ms": 5.137,
             "generation_params": {},
             "prompt_tokens": 500,
             "completion_tokens": 745,
@@ -10674,7 +11182,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.358,
+            "duration_ms": 5.505,
             "generation_params": {},
             "prompt_tokens": 504,
             "completion_tokens": 856,
@@ -10687,7 +11195,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.53,
+            "duration_ms": 5.203,
             "generation_params": {},
             "prompt_tokens": 758,
             "completion_tokens": 924,
@@ -10700,7 +11208,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.331,
+            "duration_ms": 5.492,
             "generation_params": {},
             "prompt_tokens": 645,
             "completion_tokens": 709,
@@ -10713,7 +11221,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.32,
+            "duration_ms": 5.099,
             "generation_params": {},
             "prompt_tokens": 874,
             "completion_tokens": 950,
@@ -10726,7 +11234,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.382,
+            "duration_ms": 5.441,
             "generation_params": {},
             "prompt_tokens": 531,
             "completion_tokens": 879,
@@ -10739,7 +11247,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.961,
+            "duration_ms": 5.168,
             "generation_params": {},
             "prompt_tokens": 580,
             "completion_tokens": 723,
@@ -10752,7 +11260,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.418,
+            "duration_ms": 5.502,
             "generation_params": {},
             "prompt_tokens": 451,
             "completion_tokens": 638,
@@ -10765,7 +11273,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.789,
+            "duration_ms": 5.024,
             "generation_params": {},
             "prompt_tokens": 503,
             "completion_tokens": 834,
@@ -10778,7 +11286,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.155,
+            "duration_ms": 5.496,
             "generation_params": {},
             "prompt_tokens": 611,
             "completion_tokens": 916,
@@ -10791,7 +11299,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.658,
+            "duration_ms": 5.023,
             "generation_params": {},
             "prompt_tokens": 664,
             "completion_tokens": 815,
@@ -10804,7 +11312,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.167,
+            "duration_ms": 5.372,
             "generation_params": {},
             "prompt_tokens": 526,
             "completion_tokens": 832,
@@ -10817,7 +11325,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.773,
+            "duration_ms": 5.011,
             "generation_params": {},
             "prompt_tokens": 728,
             "completion_tokens": 881,
@@ -10830,7 +11338,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.388,
+            "duration_ms": 5.451,
             "generation_params": {},
             "prompt_tokens": 618,
             "completion_tokens": 1001,
@@ -10843,7 +11351,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.005,
+            "duration_ms": 5.032,
             "generation_params": {},
             "prompt_tokens": 559,
             "completion_tokens": 960,
@@ -10856,7 +11364,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.373,
+            "duration_ms": 5.474,
             "generation_params": {},
             "prompt_tokens": 705,
             "completion_tokens": 1024,
@@ -10869,7 +11377,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.062,
+            "duration_ms": 5.276,
             "generation_params": {},
             "prompt_tokens": 1879,
             "completion_tokens": 890,
@@ -10882,7 +11390,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.427,
+            "duration_ms": 5.411,
             "generation_params": {},
             "prompt_tokens": 739,
             "completion_tokens": 851,
@@ -10895,7 +11403,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.645,
+            "duration_ms": 4.972,
             "generation_params": {},
             "prompt_tokens": 880,
             "completion_tokens": 947,
@@ -10908,7 +11416,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.009,
+            "duration_ms": 98.941,
             "generation_params": {},
             "prompt_tokens": 437,
             "completion_tokens": 684,
@@ -10921,7 +11429,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.665,
+            "duration_ms": 5.796,
             "generation_params": {},
             "prompt_tokens": 600,
             "completion_tokens": 618,
@@ -10934,7 +11442,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.084,
+            "duration_ms": 5.708,
             "generation_params": {},
             "prompt_tokens": 613,
             "completion_tokens": 828,
@@ -10947,7 +11455,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.586,
+            "duration_ms": 5.137,
             "generation_params": {},
             "prompt_tokens": 681,
             "completion_tokens": 646,
@@ -10960,7 +11468,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 106.595,
+            "duration_ms": 5.552,
             "generation_params": {},
             "prompt_tokens": 619,
             "completion_tokens": 1013,
@@ -10973,7 +11481,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.193,
+            "duration_ms": 5.19,
             "generation_params": {},
             "prompt_tokens": 719,
             "completion_tokens": 821,
@@ -10986,7 +11494,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.852,
+            "duration_ms": 6.427,
             "generation_params": {},
             "prompt_tokens": 492,
             "completion_tokens": 943,
@@ -10999,7 +11507,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.243,
+            "duration_ms": 5.451,
             "generation_params": {},
             "prompt_tokens": 573,
             "completion_tokens": 1012,
@@ -11012,7 +11520,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.209,
+            "duration_ms": 5.565,
             "generation_params": {},
             "prompt_tokens": 546,
             "completion_tokens": 614,
@@ -11025,7 +11533,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.475,
+            "duration_ms": 5.023,
             "generation_params": {},
             "prompt_tokens": 512,
             "completion_tokens": 1024,
@@ -11038,7 +11546,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.003,
+            "duration_ms": 5.542,
             "generation_params": {},
             "prompt_tokens": 1678,
             "completion_tokens": 1024,
@@ -11051,7 +11559,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.521,
+            "duration_ms": 5.049,
             "generation_params": {},
             "prompt_tokens": 2852,
             "completion_tokens": 1024,
@@ -11064,7 +11572,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.966,
+            "duration_ms": 5.439,
             "generation_params": {},
             "prompt_tokens": 435,
             "completion_tokens": 794,
@@ -11077,7 +11585,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.367,
+            "duration_ms": 5.035,
             "generation_params": {},
             "prompt_tokens": 545,
             "completion_tokens": 1024,
@@ -11090,7 +11598,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.941,
+            "duration_ms": 5.444,
             "generation_params": {},
             "prompt_tokens": 1812,
             "completion_tokens": 1024,
@@ -11103,7 +11611,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.377,
+            "duration_ms": 5.077,
             "generation_params": {},
             "prompt_tokens": 3033,
             "completion_tokens": 1024,
@@ -11116,7 +11624,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.94,
+            "duration_ms": 5.518,
             "generation_params": {},
             "prompt_tokens": 591,
             "completion_tokens": 615,
@@ -11129,7 +11637,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.345,
+            "duration_ms": 5.047,
             "generation_params": {},
             "prompt_tokens": 555,
             "completion_tokens": 725,
@@ -11142,7 +11650,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.945,
+            "duration_ms": 5.566,
             "generation_params": {},
             "prompt_tokens": 477,
             "completion_tokens": 685,
@@ -11155,7 +11663,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.327,
+            "duration_ms": 5.151,
             "generation_params": {},
             "prompt_tokens": 423,
             "completion_tokens": 1015,
@@ -11168,7 +11676,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.939,
+            "duration_ms": 5.635,
             "generation_params": {},
             "prompt_tokens": 480,
             "completion_tokens": 570,
@@ -11181,7 +11689,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.521,
+            "duration_ms": 5.154,
             "generation_params": {},
             "prompt_tokens": 627,
             "completion_tokens": 1024,
@@ -11194,7 +11702,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.005,
+            "duration_ms": 104.226,
             "generation_params": {},
             "prompt_tokens": 1851,
             "completion_tokens": 1024,
@@ -11207,7 +11715,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.396,
+            "duration_ms": 6.342,
             "generation_params": {},
             "prompt_tokens": 3133,
             "completion_tokens": 963,
@@ -11220,7 +11728,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.914,
+            "duration_ms": 6.264,
             "generation_params": {},
             "prompt_tokens": 755,
             "completion_tokens": 948,
@@ -11233,7 +11741,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 92.461,
+            "duration_ms": 5.244,
             "generation_params": {},
             "prompt_tokens": 478,
             "completion_tokens": 801,
@@ -11246,7 +11754,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.138,
+            "duration_ms": 5.837,
             "generation_params": {},
             "prompt_tokens": 616,
             "completion_tokens": 671,
@@ -11259,7 +11767,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.05,
+            "duration_ms": 5.2,
             "generation_params": {},
             "prompt_tokens": 496,
             "completion_tokens": 651,
@@ -11272,7 +11780,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.138,
+            "duration_ms": 5.649,
             "generation_params": {},
             "prompt_tokens": 644,
             "completion_tokens": 592,
@@ -11285,7 +11793,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.499,
+            "duration_ms": 5.154,
             "generation_params": {},
             "prompt_tokens": 503,
             "completion_tokens": 835,
@@ -11298,7 +11806,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.04,
+            "duration_ms": 5.589,
             "generation_params": {},
             "prompt_tokens": 571,
             "completion_tokens": 597,
@@ -11311,7 +11819,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.351,
+            "duration_ms": 5.31,
             "generation_params": {},
             "prompt_tokens": 811,
             "completion_tokens": 624,
@@ -11324,7 +11832,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.032,
+            "duration_ms": 5.752,
             "generation_params": {},
             "prompt_tokens": 537,
             "completion_tokens": 715,
@@ -11337,7 +11845,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.343,
+            "duration_ms": 5.083,
             "generation_params": {},
             "prompt_tokens": 423,
             "completion_tokens": 721,
@@ -11350,7 +11858,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.102,
+            "duration_ms": 5.755,
             "generation_params": {},
             "prompt_tokens": 548,
             "completion_tokens": 1024,
@@ -11363,7 +11871,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.384,
+            "duration_ms": 5.334,
             "generation_params": {},
             "prompt_tokens": 1769,
             "completion_tokens": 907,
@@ -11376,7 +11884,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 4.96,
+            "duration_ms": 5.676,
             "generation_params": {},
             "prompt_tokens": 559,
             "completion_tokens": 960,
@@ -11389,7 +11897,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.481,
+            "duration_ms": 5.077,
             "generation_params": {},
             "prompt_tokens": 525,
             "completion_tokens": 812,
@@ -11402,7 +11910,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.015,
+            "duration_ms": 5.566,
             "generation_params": {},
             "prompt_tokens": 555,
             "completion_tokens": 616,
@@ -11415,7 +11923,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.366,
+            "duration_ms": 5.057,
             "generation_params": {},
             "prompt_tokens": 686,
             "completion_tokens": 699,
@@ -11428,11 +11936,154 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.042,
+            "duration_ms": 5.572,
             "generation_params": {},
             "prompt_tokens": 1001,
             "completion_tokens": 814,
             "total_tokens": 1815,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 82540.049,
+            "generation_params": {},
+            "prompt_tokens": 427,
+            "completion_tokens": 946,
+            "total_tokens": 1373,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 78419.403,
+            "generation_params": {},
+            "prompt_tokens": 486,
+            "completion_tokens": 871,
+            "total_tokens": 1357,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 74619.563,
+            "generation_params": {},
+            "prompt_tokens": 456,
+            "completion_tokens": 829,
+            "total_tokens": 1285,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 75152.533,
+            "generation_params": {},
+            "prompt_tokens": 440,
+            "completion_tokens": 842,
+            "total_tokens": 1282,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 66028.78,
+            "generation_params": {},
+            "prompt_tokens": 508,
+            "completion_tokens": 714,
+            "total_tokens": 1222,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 85538.546,
+            "generation_params": {},
+            "prompt_tokens": 524,
+            "completion_tokens": 960,
+            "total_tokens": 1484,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 66213.792,
+            "generation_params": {},
+            "prompt_tokens": 478,
+            "completion_tokens": 721,
+            "total_tokens": 1199,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 95152.967,
+            "generation_params": {},
+            "prompt_tokens": 696,
+            "completion_tokens": 1024,
+            "total_tokens": 1720,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 122317.136,
+            "generation_params": {},
+            "prompt_tokens": 1870,
+            "completion_tokens": 1024,
+            "total_tokens": 2894,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 151287.295,
+            "generation_params": {},
+            "prompt_tokens": 3045,
+            "completion_tokens": 1024,
+            "total_tokens": 4069,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 75283.6,
+            "generation_params": {},
+            "prompt_tokens": 647,
+            "completion_tokens": 776,
+            "total_tokens": 1423,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -18579,6 +19230,330 @@
       "completion_tokens": 821,
       "prompt_tokens": 532,
       "total_tokens": 1353,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "48494c01a0a921a730092a1d13ca16a5ac5324f87b5ee96084115c07b1b84ea8": {
+    "id": "chatcmpl-a3ffb31c-7bb7-499b-80d7-4bb340e9652d",
+    "created": 1784819167,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the business rule: strict type coercion for EngineeringFinding and Evidence models. It avoids low-level implementation clutter by focusing on schema validation logic.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 9, \"rationale\": \"Tests are decoupled from system internals; they validate data structure constraints (types) rather than specific business rules or workflows that would break with refactoring. They do not rely on external state like databases.\", \"suggestions\": []},\n  \"repeatable\": {\"score\": 7, \"rationale\": \"The test is deterministic and self-contained within the file path provided; however, it relies heavily on `pytest.approx` for floating point comparisons which can be flaky in CI environments due to precision issues. It avoids external shared state.\", \"suggestions\": [\"Replace `pytest.approx(5)` with direct equality checks (`assert p1.score == 5`) or use a dedicated tolerance constant defined at module level.\"]},\n  \"atomic\": {\"score\": 9, \"rationale\": \"Each test validates exactly one specific schema constraint (e.g., score types, confidence values). If validation fails for any input in the list, it is instantly obvious that the model rejects invalid data.\", \"suggestions\": []},\n  \"necessary\": {\"score\": 8, \"rationale\": \"These tests cover critical edge cases and type safety requirements. They do not duplicate coverage of other test files (e.g., unit tests for `PropertyEvaluation` or `EngineeringFinding`) which likely exist elsewhere in the codebase.\", \"suggestions\": []},\n  \"granular\": {\"score\": 7, \"rationale\": \"The assertions are granular enough to catch specific type mismatches but could be more targeted. For example, distinguishing between a string '5' and an integer `5` is handled by Pydantic's validation logic in the model itself; this test verifies that *all* non-string types fail.\", \"suggestions\": [\"Consider adding explicit assertions like `assert isinstance(p1.score, int)` to verify rejection of floats explicitly.\"]},\n  \"fast\": {\"score\": 8, \"rationale\": \"The tests execute rapidly. They avoid artificial sleeps and heavy setups; the only potential bottleneck is Pydantic's model validation which is fast enough for this scope.\", \"suggestions\": []},\n  \"first_tdd\": {\"score\": 9, \"rationale\": \"This test demonstrates a clean Arrange-Act-Assert pattern: it sets up valid payloads (Arrange), validates them against the schema (Act/Verify), and asserts specific behaviors. It explicitly tests design properties like type coercion.\", \"suggestions\": []},\"summary\":\"The test is highly effective at verifying strict type safety for complex schemas, adhering to TDD principles with a clear Arrange-Act-Assert flow. The only minor weakness is the reliance on `pytest.approx` which introduces potential flakiness in CI; replacing it with direct equality checks would further improve maintainability and determinism.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 650,
+      "prompt_tokens": 1590,
+      "total_tokens": 2240,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "a5123f5c9de2faebcf8a35bcb57e82cfcf02090334a5dc30755443c72590de60": {
+    "id": "chatcmpl-fcab53f0-58eb-4237-8bae-48827d8232ad",
+    "created": 1784819251,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and code are clear. The function `_prune_unit_code` is assumed to be defined elsewhere (likely in the same module or a utility), so its business rule ('return original if short', 'shorten if long') is implicit but understandable within that context.\",\n    \"suggestions\": [\n      \"Explicitly document what `max_lines=10` means. Is it an absolute line count? A percentage of total lines in the file? If not, define this clearly.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"The test is decoupled from system implementation details; it only cares about string manipulation logic. It will remain valid even if `short_code` or `_prune_unit_code` are refactored as long as the contract (input/output) remains unchanged.\",\n    \"suggestions\": [\n      \"Ensure that any future changes to how lines are counted in `_prune_unit_code` do not break this test. If you refactor the logic, update the assertion or add a new test case for edge cases.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic and self-contained (no DB/network). However, it relies on `_prune_unit_code` which may depend on external state or timing if not implemented as a pure function. If `short_code` contains newlines that vary by environment, this could be non-repeatable.\",\n    \"suggestions\": [\n      \"Verify that the input string is normalized (e.g., stripped of trailing whitespace) before processing to ensure repeatability across environments.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: whether a short function returns unchanged. If the assertion fails, it is immediately obvious that `max_lines=10` was not respected or `_prune_unit_code` had unexpected side effects.\",\n    \"suggestions\": [\n      \"Add an explicit error message to the assert statement if the result differs from expected (e.g., use a custom exception) so debugging becomes instant.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test covers basic string manipulation logic. However, it does not verify edge cases like empty strings or very long lines that might trigger different pruning rules in `_prune_unit_code`. It may duplicate coverage of other tests if those cover general line counting.\",\n    \"suggestions\": [\n      \"Add a specific case for `max_lines=1` to ensure the function handles extreme short inputs correctly, avoiding redundancy with generic string length checks.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The test isolates precisely one behavior: line pruning logic. It does not mix unrelated concerns like file I/O or complex data structures.\",\n    \"suggestions\": [\n      \"Ensure the assertion compares only the modified string content and ignores whitespace differences if `max_lines` changes formatting (e.g., removing trailing spaces).\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes instantly with no sleeps or heavy I/O. It is a pure function call on small strings.\",\n    \"suggestions\": [\n      \"No action needed; the current implementation meets performance requirements.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"The test follows Arrange-Act-Pattern (Arrange: input string, Act: call function, Assert: result). However, it lacks a clear 'specification' of the expected behavior before running; one must infer that `max_lines=10` should not change output. It is close to TDD but could be more explicit about design intent.\",\n    \"suggestions\": [\n      \"Add an inline comment or docstring explaining why this specific test exists (e.g., 'Verify pruning does not alter short functions'). This clarifies the business rule for future developers.\"\n    ]\n  },\n  \"summary\": \"Overall score: ~7.5/10\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 946,
+      "prompt_tokens": 427,
+      "total_tokens": 1373,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "e11ccc58173b3a224a433b0e4ab7d7ffed79301aceaad1fe5b51ef9e63cc2d72": {
+    "id": "chatcmpl-605c7b5c-fcf1-4b5a-82b1-0b38aa954478",
+    "created": 1784819329,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test clearly demonstrates the business rule: a function should truncate long lines to `max_lines` while preserving specific boundary markers (`line_0`, `line_149`). The intent is unambiguous.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"The test relies on a private helper function `_prune_unit_code` which likely contains implementation details (e.g., regex logic or string manipulation) that could become brittle if the underlying algorithm changes. It tests 'how' rather than just verifying the output format.\",\n    \"suggestions\": [\n      \"Move `max_lines=50` and truncation logic into a dedicated, unit-tested utility function outside this test file to ensure decoupling from implementation details.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The code is deterministic (no external state), but the use of `f-string` formatting and list comprehension creates a dependency on Python's string representation. While self-contained in terms of inputs/outputs, it relies heavily on specific string literals which can be fragile if line numbers or indentation changes.\",\n    \"suggestions\": [\n      \"Use explicit integer indexing for lines instead of f-strings to ensure the test remains valid across different Python versions and avoids implicit formatting variations.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The assertion `assert \\\"...\\\" in pruned` is atomic. If this fails, it immediately reveals that truncation logic or boundary preservation failed without needing to inspect the full output string.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test duplicates coverage of other tests (e.g., `test_prune_unit_code_short`, `test_prune_boundary_markers`). It does not add unique value; it merely verifies the same logic with different inputs.\",\n    \"suggestions\": [\n      \"Remove this specific assertion if a general truncation check already exists in another test. Focus on edge cases (e.g., exactly 50 lines, odd line counts) rather than repeated full-string checks.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 7,\n    \"rationale\": \"The test is granular enough to verify specific boundary conditions (`line_149`), but it could be more precise by asserting the exact number of lines in `pruned`. Currently, it only checks for presence.\",\n    \"suggestions\": [\n      \"Assert that exactly 50 lines remain after truncation: `assert len(pruned.splitlines()) == 50`, ensuring precision over mere existence.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 8,\n    \"rationale\": \"The test executes in milliseconds. It avoids sleeps and heavy I/O; the only potential overhead is string formatting for `f-strings`.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 6,\n    \"rationale\": \"While it follows Arrange (input generation), Act (truncation call), Assert (verification) structure, the test lacks a clear 'specification' phase. It assumes `max_lines=50` is correct without defining what constitutes valid truncation behavior.\",\n    \"suggestions\": [\n      \"Add an explicit specification: e.g., \\\"Truncate to exactly 49 lines if input has >= 150, preserving line_0 and last non-truncated line.\\\" This clarifies the design intent before writing code.\"\n    ]\n  },\"summary\":\"{\\\"understandable\\\":8,\\\"maintainable\\\":6,\\\"repeatable\\\":7,\\\"atomic\\\":9,\\\"necessary\\\":5,\\\"granular\\\":7,\\\"fast\\\":8,\\\"first_tdd\\\":6}\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 871,
+      "prompt_tokens": 486,
+      "total_tokens": 1357,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "6e86e998bb7e668166b72bf3aace4bb24600accb5e4907ac6f1bf8b94ee70fbc": {
+    "id": "chatcmpl-9c65d152-88e9-42ed-9d52-39e03073d8ff",
+    "created": 1784819404,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 3,\n    \"rationale\": \"The test name and logic are obscure. It relies on an undocumented internal function `_prune_test_code` with no documentation or business rule explanation in the code itself.\",\n    \"suggestions\": [\n      \"Replace `test_prune_test_code` with a descriptive name like 'Verify Pruning Logic'.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 2,\n    \"rationale\": \"The test is brittle and tightly coupled to the implementation of `_prune_test_code`. If that function changes its internal logic or signature without updating this specific assertion, the entire test will fail.\",\n    \"suggestions\": [\n      \"Extract `test_prune_logic` into a separate module with clear documentation.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 4,\n    \"rationale\": \"The code is deterministic and self-contained. However, it relies on the internal implementation of `_prune_test_code`, which may introduce non-determinism if that function uses external state or timing.\",\n    \"suggestions\": [\n      \"Ensure `test_prune_logic` has no dependencies on shared mutable state or network calls.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 5,\n    \"rationale\": \"The test verifies a single behavior (that pruning works), but the assertion is vague (`... [80 lines truncated...]`). It does not clearly define what constitutes 'success' or failure in terms of code structure.\",\n    \"suggestions\": [\n      \"Assert specific structural changes, e.g., `assert len(pruned) == 12` and that no original line numbers are preserved.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test likely duplicates coverage of existing tests for 'test_0', 'test_1', etc., or verifies a trivial implementation detail rather than the core business rule.\",\n    \"suggestions\": [\n      \"Remove this specific unit test if it is redundant with integration/contract tests, unless there are no other such tests.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 2,\n    \"rationale\": \"The assertion `assert \\\"...\\\" in pruned` is too broad and vague. It does not isolate or verify specific granules of the pruning logic (e.g., line count reduction, format preservation).\",\n    \"suggestions\": [\n      \"Assert that exactly 80 lines are removed from the original input.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 5,\n    \"rationale\": \"The test is fast in execution time. However, it likely contains artificial delays or heavy I/O if `_prune_test_code` involves file operations.\",\n    \"suggestions\": [\n      \"Remove any `time.sleep()` calls and ensure the function uses only pure functions.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 3,\n    \"rationale\": \"The test does not demonstrate a clean Arrange-Act-Assert separation. The 'Arrange' phase (creating lines) is mixed with Act and Assert in the same function.\",\n    \"suggestions\": [\n      \"Refactor into three distinct functions: `setup_test_data()`, `perform_pruning_and_verify_structure()`. Ensure assertions are purely about behavior, not implementation details.\"\n    ]\n  },\n  \"summary\": \"The test is poorly written and likely redundant. It fails to meet the 'understandable', 'atomic', or 'first_tdd' criteria due to vague assertions and lack of separation of concerns. Immediate refactoring into a dedicated module with clear business rules is required.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 829,
+      "prompt_tokens": 456,
+      "total_tokens": 1285,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "4f41a2333d2f6b9e5ee541ac8bfec181f91ab9409ae2148e6e41e6dc4537320c": {
+    "id": "chatcmpl-ef00b2b0-e4cd-4bef-8b0f-def28fdc2de4",
+    "created": 1784819479,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test name and assertions are clear. However, the function `telemetry_utils.prune_code_text` is not defined in this file; it relies on an external utility which may introduce ambiguity if its logic isn't documented.\",\n    \"suggestions\": [\n      \"Ensure `prune_code_text` exists or define a simple inline helper to avoid dependency confusion. If using the real function, ensure its docstring explains edge cases like non-string inputs.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"The test is decoupled from system implementation details; it only tests input/output behavior. It will not break if `telemetry_utils` changes internal logic as long as the contract remains consistent.\",\n    \"suggestions\": [\n      \"Add a unit for edge cases like empty strings or whitespace-only inputs to ensure robustness against future refactoring of the utility function.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 10,\n    \"rationale\": \"The test is fully self-contained. It uses no external state (database, network), relies on deterministic string operations, and has zero timing dependencies.\",\n    \"suggestions\": [\n      \"None required.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"Each assertion verifies exactly one behavior: `prune_code_text` returning an empty string for null/empty inputs and a specific value otherwise. The failure cause is instantly obvious.\",\n    \"suggestions\": [\n      \"None required.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 7,\n    \"rationale\": \"This test covers the 'null' edge case for `prune_code_text`. However, it does not cover other common inputs like whitespace-only strings or very long text that might trigger pruning logic.\",\n    \"suggestions\": [\n      \"Add assertions for additional input types (e.g., `'   '` or a large string) to ensure comprehensive coverage of the utility's behavior.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The test isolates specific edge cases. However, it does not verify that `prune_code_text` handles other valid inputs correctly or fails appropriately on invalid data.\",\n    \"suggestions\": [\n      \"Add assertions for non-string types (e.g., integers) and strings with leading/trailing whitespace to ensure the function behaves as expected across all input scenarios.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 10,\n    \"rationale\": \"The test executes instantly without artificial delays or heavy I/O operations. It relies solely on string manipulation.\",\n    \"suggestions\": [\n      \"None required.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 9,\n    \"rationale\": \"This is a typical Arrange-Act-Assert pattern: the function exists (Arrange), it's called with specific inputs (Act), and assertions verify expected outputs. However, since `prune_code_text` isn't defined here, this test cannot be considered 'first TDD' without seeing its implementation.\",\n    \"suggestions\": [\n      \"Review or implement a unit for the actual logic of `telemetry_utils.prune_code_text`. If it's already implemented elsewhere, ensure this file is updated to reflect that dependency.\"\n    ]\n  },\n  \"summary\": \"The test demonstrates strong adherence to TDD principles (Arrange-Act-Assert) and passes all criteria except for the necessity score due to incomplete input coverage. It should be refined with additional edge case tests to fully validate robustness across different scenarios.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 842,
+      "prompt_tokens": 440,
+      "total_tokens": 1282,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "8294694269d620370763cb4a384a8e3fd917738d2f0341244126770a091bdeaa": {
+    "id": "chatcmpl-3c026332-5eb1-4b4c-b638-e67310b33830",
+    "created": 1784819545,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test clearly demonstrates the business rule: a unit of code (defined by file path and line range) must be truncated if it exceeds context limits. The domain language is clear.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"The test relies on a hardcoded dictionary structure (`unit`) that simulates data rather than mocking the actual `format_unit` function. This makes it brittle if internal logic changes or if external state (like file paths) is modified.\",\n    \"suggestions\": [\n      \"Remove all hard-coded mock objects and use fixtures to simulate input parameters dynamically.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is self-contained within the file path provided in `unit`. It does not rely on external shared state or network calls.\",\n    \"suggestions\": [\n      \"Ensure no hidden dependencies exist; if mocking a function like `format_unit`, ensure it's deterministic and isolated.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: the presence of specific text in output. If this assertion fails, the cause is immediately obvious (the string does not exist).\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test likely duplicates coverage already provided by other tests covering file path validation or line count limits. It may be testing implementation details rather than a unique business rule.\",\n    \"suggestions\": [\n      \"Review existing tests to ensure this specific scenario is not covered elsewhere; if so, refactor the logic into an integration-level test.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 7,\n    \"rationale\": \"The assertion targets a specific string pattern within output. However, it does not verify that truncation actually occurred or was necessary based on input size.\",\n    \"suggestions\": [\n      \"Assert the actual number of lines in `formatted` matches expectations (e.g., 50) rather than just checking for substring presence.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes instantly without artificial delays or heavy I/O operations.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 8,\n    \"rationale\": \"While the structure follows Arrange-Act-Assert (mocking input -> calling function -> asserting output), it lacks explicit specification of expected behavior before running. The test assumes truncation logic exists without defining what 'truncates' means.\",\n    \"suggestions\": [\n      \"Explicitly define `expected_output` in a fixture or mock setup to verify the exact format and content, ensuring design properties are met from the start.\"\n    ]\n  },\n  \"summary\": \"The test is understandable but brittle due to hardcoded mocks. It lacks granular verification of truncation logic and may duplicate existing coverage. Overall score: 7/10\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 714,
+      "prompt_tokens": 508,
+      "total_tokens": 1222,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "127928753c6b4bfb3189f66169e9333a62f986e38aab953fa6f155c25af8644c": {
+    "id": "chatcmpl-b79c6d11-f61d-4679-a777-613fad680e25",
+    "created": 1784819631,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 3,\n    \"rationale\": \"The test name is vague and the business rule (estimating tokens based on code length vs. system prompt + constant) is buried in a convoluted variable assignment that obscures intent.\",\n    \"suggestions\": [\n      \"Rename `test_estimate_unit_tokens_uses_pruned_code` to something like `estimate_token_count_considers_system_prompt`.\",\n      \"Remove the intermediate variables (`long_unit`, `estimated`) and compute expected directly in an assertion or helper function.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 2,\n    \"rationale\": \"The test is brittle to system changes; it relies on `_prune_unit_code` implementation details which may change during refactoring without updating the logic.\",\n    \"suggestions\": [\n      \"Extract `estimate_token_count_considers_system_prompt` into a dedicated utility function with clear parameters and return values, not inline calculation.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 4,\n    \"rationale\": \"The test is deterministic but relies on external state (`scripts.code_review_evaluator.SYSTEM_PROMPT`) which could change between runs or across environments.\",\n    \"suggestions\": [\n      \"Move `SYSTEM_PROMPT` into the module scope (e.g., as a constant) so it's available to all tests without passing arguments.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 5,\n    \"rationale\": \"The test verifies one behavior but mixes two distinct concerns: token estimation logic and code pruning. If `estimate_unit_tokens` changes its internal algorithm or if `_prune_unit_code` is refactored, the assertion will fail unexpectedly.\",\n    \"suggestions\": [\n      \"Split this into two separate tests: one for `estimate_token_count_considers_system_prompt`, another specifically testing token estimation logic.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 2,\n    \"rationale\": \"This test duplicates coverage of other existing unit tests that likely already verify the same pruning and estimation logic. It adds no new value to the codebase.\",\n    \"suggestions\": [\n      \"Remove this specific test if it is covered by general `estimate_unit_tokens` or similar tests, unless there's a unique edge case not addressed elsewhere.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 3,\n    \"rationale\": \"The assertion mixes two unrelated concepts (token count vs. code length) and relies on an external constant (`SYSTEM_PROMPT`), making it hard to isolate the specific behavior being tested.\",\n    \"suggestions\": [\n      \"Assert only `estimated == expected_token_count`, removing reliance on system prompt constants unless they are part of a separate, well-defined test.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 5,\n    \"rationale\": \"The test is reasonably fast as it performs simple string operations and arithmetic. However, the `long_unit` construction with a list comprehension over 1000 lines could be optimized for speed if performance were critical.\",\n    \"suggestions\": [\n      \"Consider using `itertools.repeat('some long string content here', 1000)` instead of a generator expression or loop to avoid creating an intermediate large list in memory.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 2,\n    \"rationale\": \"The test does not demonstrate the Arrange-Act-Assert pattern cleanly. It performs setup (creating `long_unit`), acts (calling functions), and asserts without clearly separating these phases in a way that highlights design intent.\",\n    \"suggestions\": [\n      \"Refactor to explicitly separate: 1) Setup (`_setup_pruning_and_estimation()`), 2) Act (`estimate_tokens(...)`), 3) Assert. Ensure the test isolates behavior changes from implementation details.\"\n    ]\n  },\n  \"summary\": \"The test is understandable but poorly structured and brittle due to external dependencies and mixed concerns. It fails on maintainability (brittle to system refactoring), atomicity (mixes two behaviors), necessity (duplicates coverage), granularity (mixed assertions), speed (could be optimized for memory efficiency), and TDD principles (poor Arrange-Act-Assert separation). Immediate removal or consolidation is recommended.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 960,
+      "prompt_tokens": 524,
+      "total_tokens": 1484,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "20365ba50b29cece1f2afbc6693a8c02a286ef3eb18ddf362b14217ffb947e92": {
+    "id": "chatcmpl-4d834d5b-8a8d-4e16-802c-e9651da0957a",
+    "created": 1784819697,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n\"understandable\": {\n\"score\": 9,\n\"rationale\": \"The test clearly demonstrates the business rule: `coerce_int` defaults to a provided value if input is invalid or missing. The code uses ubiquitous language (string/None) and avoids implementation clutter.\",\n\"suggestions\": []\n},\n\"maintainable\": {\n\"score\": 8,\n\"rationale\": \"The test isolates the logic of coercion without relying on system internals like `telemetry_utils`. It is decoupled from how defaults are implemented or stored in databases/filesystems. However, it assumes a specific implementation signature which could break if internal methods change.\",\n\"suggestions\": [\n  \"Ensure tests do not depend on private/internal method names (e.g., avoid testing `_coerce_int` directly).\",\n  \"Consider adding an integration test that mocks the actual utility class to verify behavior regardless of underlying implementation details.\"\n]\n},\n\"repeatable\": {\n\"score\": 7,\n\"rationale\": \"The tests are deterministic and self-contained. They do not rely on external shared state (like a database or network). However, they assume `telemetry_utils` exists as defined in the codebase; if that module changes its API without updating this test, it will fail.\",\n\"suggestions\": [\n  \"Verify all dependencies of `coerce_int` are mocked within these tests to ensure repeatability across different environments or refactors.\"\n]\n},\n\"atomic\": {\n\"score\": 9,\n\"rationale\": \"Each assertion verifies exactly one behavior: coercion logic for specific inputs. If a test fails (e.g., `None`, empty string), the cause is instantly obvious and isolated to that single line.\",\n\"suggestions\": []\n},\n\"necessary\": {\n\"score\": 8,\n\"rationale\": \"This test covers edge cases where input is missing or invalid. It does not duplicate coverage of other tests (e.g., valid integer inputs) but adds necessary value for defensive programming scenarios.\",\n\"suggestions\": [\n  \"Review if this specific default behavior should be tested in a separate 'valid_input' suite to ensure no overlap with existing test logic.\"\n]\n},\n\"granular\": {\n\"score\": 9,\n\"rationale\": \"The tests are highly granular. They isolate the exact transformation of `None`, empty strings, and invalid inputs into their expected numeric outputs.\",\n\"suggestions\": []\n},\n\"fast\": {\n\"score\": 8,\n\"rationale\": \"These assertions execute rapidly without artificial sleeps or heavy I/O operations. The logic is pure Python function calls with no external dependencies slowing down execution.\",\n\"suggestions\": [\n  \"Ensure the `telemetry_utils` module itself does not contain slow setup code that this test would inherit.\"\n]\n},\n\"first_tdd\": {\n\"score\": 9,\n\"rationale\": \"The tests follow a clean Arrange-Act-Assert structure. The 'Arrange' (implied context) is the function call with defaults; the 'Act' is the coercion logic; the 'Assert' verifies specific outcomes.\",\n\"suggestions\": []\n},\"summary\":\"{\\\"understandable\\\":9,\\\"maintainable\\\":8,\\\"repeatable\\\":7,\\\"atomic\\\":9,\\\"necessary\\\":8,\\\"granular\\\":9,\\\"fast\\\":8,\\\"first_tdd\\\":9}\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 721,
+      "prompt_tokens": 478,
+      "total_tokens": 1199,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "dd18a8dd3f27b374c578463ff7119f70da01fd2a198ba82dda50eca945b40efc": {
+    "id": "chatcmpl-8bc2b570-4c5e-4ff3-85b5-f13bcce72432",
+    "created": 1784819792,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 7,\n    \"rationale\": \"The test name and code clearly describe the scenario (concurrency + pruning), but 'replay_mgr', 'model', and specific function names ('evaluate_units') are opaque to a non-technical stakeholder. The logic is slightly convoluted with nested loops for unit generation.\",\n    \"suggestions\": [\n      \"Replace `test_evaluate_units_concurrency_and_error_handling` with something like `test_invalid_unit_scoping_in_evaluator`.\",\n      \"Remove the explicit loop generating 5 units and hardcode a single invalid entry; tests should be self-contained, not dependent on test data generation logic.\",\n      \"Avoid using internal library names (`replay_mgr`, `model`) in public-facing assertions unless they are part of the domain vocabulary.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"The mock function is tightly coupled to specific implementation details (the async sleep pattern and variable updates). If `scripts.llm_adapter.call_structured_with_raw_and_diagnostics` changes its signature or behavior, the test will break unexpectedly.\",\n    \"suggestions\": [\n      \"Extract the logic for incrementing/decrementing tasks into a dedicated helper function with clear documentation. This decouples the mock from internal implementation specifics.\",\n      \"Ensure `max_concurrency=2` is hardcoded in the codebase or passed as an explicit parameter to avoid brittle coupling if concurrency limits change.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 5,\n    \"rationale\": \"The test relies on a global state (`active_tasks`, `max_observed_concurrency`) that is modified inside the mock function. This makes it non-repeatable across runs or if multiple instances of this module are loaded.\",\n    \"suggestions\": [\n      \"Remove all use of mutable global variables within async functions and pass them as parameters to helper functions instead.\",\n      \"Ensure no external shared state (like a database, file system, or network) is accessed. The test should be fully self-contained.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 8,\n    \"rationale\": \"The assertion `assert results[-1]['file_path'] == 'unknown'` clearly isolates the behavior of handling an invalid unit string as a provider error. The cause is obvious: passing non-dict data triggers this specific path.\",\n    \"suggestions\": [\n      \"Consider adding a second check to verify that no other units were processed incorrectly, ensuring atomicity across multiple test cases if they share state.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 4,\n    \"rationale\": \"This test duplicates the coverage of `test_evaluate_units_concurrency` (which likely tests valid inputs) and adds no new business rules. It only verifies error handling for a specific edge case.\",\n    \"suggestions\": [\n      \"Remove this test if it does not cover any unique behavior or fail gracefully on different input types that the existing suite already covers.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 6,\n    \"rationale\": \"The assertion checks a single field (`file_path`) of one result. While specific enough for an error case, it lacks granularity in verifying other aspects like correctness or timing.\",\n    \"suggestions\": [\n      \"Add assertions to verify the total count matches expectations (e.g., `assert len(results) == 6`), ensuring all units were processed correctly.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 7,\n    \"rationale\": \"The test executes quickly enough for a unit test. However, the mock function includes an artificial sleep (`await asyncio.sleep(0.05)`). While acceptable in isolation, this adds unnecessary overhead compared to pure async logic.\",\n    \"suggestions\": [\n      \"Remove `await asyncio.sleep(0.05);` from the mock if it is not required for testing concurrency or error handling logic.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 6,\n    \"rationale\": \"The test follows a basic Arrange-Act-Assert structure but lacks explicit separation of concerns. The 'Arrange' phase (creating units) is mixed with the Act/Assert phases in an awkward way.\",\n    \"suggestions\": [\n      \"Refactor to explicitly separate: 1) Setup unit data, 2) Run evaluation logic only once per test case, 3) Assert results based on that single run. Avoid global state and nested loops.\"\n    ]\n  },\n  \"summary\": \"The test is partially functional but suffers from poor",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 696,
+      "total_tokens": 1720,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "0d5daefb409cb9ba559010e0d5d5785d06551bffc5717752a877da9f73fbfdcc": {
+    "id": "chatcmpl-2348f368-e665-41ec-8ee7-2ffee3461d61",
+    "created": 1784819915,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 7,\n    \"rationale\": \"The test name and code clearly describe the scenario (concurrency + pruning), but 'replay_mgr', 'model', and specific function names ('evaluate_units') are opaque to a non-technical stakeholder. The logic is slightly convoluted with nested loops for unit generation.\",\n    \"suggestions\": [\n      \"Replace `test_evaluate_units_concurrency_and_error_handling` with something like `test_invalid_unit_scoping_in_evaluator`.\",\n      \"Remove the explicit loop generating 5 units and hardcode a single invalid entry; tests should be self-contained, not dependent on test data generation logic.\",\n      \"Avoid using internal library names (`replay_mgr`, `model`) in public-facing assertions unless they are part of the domain vocabulary.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"The mock function is tightly coupled to specific implementation details (the async sleep pattern and variable updates). If `scripts.llm_adapter.call_structured_with_raw_and_diagnostic` changes its signature or behavior, the test will break unexpectedly.\",\n    \"suggestions\": [\n      \"Extract the logic for incrementing/decrementing tasks into a dedicated helper function with clear documentation. This decouples the mock from internal implementation specifics.\",\n      \"Ensure `max_concurrency=2` is hardcoded in the codebase or passed as an explicit parameter to avoid brittle coupling if concurrency limits change.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 5,\n    \"rationale\": \"The test relies on a global state (`active_tasks`, `max_observed_concurrency`) that is modified inside the mock function. This makes it non-repeatable across runs or if multiple instances of this module are loaded.\",\n    \"suggestions\": [\n      \"Remove all use of mutable global variables within async functions and pass them as parameters to helper functions instead.\",\n      \"Ensure no external shared state (like a database, file system, or network) is accessed. The test should be fully self-contained.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 8,\n    \"rationale\": \"The assertion `assert results[-1]['file_path'] == 'unknown'` clearly isolates the behavior of handling an invalid unit string as a provider error. The cause is obvious: passing non-dict data triggers this specific path.\",\n    \"suggestions\": [\n      \"Consider adding a second check to verify that no other units were processed incorrectly, ensuring atomicity across multiple test cases if they share state.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 4,\n    \"rationale\": \"This test duplicates the coverage of `test_evaluate_units_concurrency` (which likely tests valid inputs) and adds no new business rules. It only verifies error handling for a specific edge case.\",\n    \"suggestions\": [\n      \"Remove this test if it does not cover any unique behavior or fail gracefully on different input types that the existing suite already covers.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 6,\n    \"rationale\": \"The assertion checks a single field (`file_path`) of one result. While specific enough for an error case, it lacks granularity in verifying other aspects like correctness or timing.\",\n    \"suggestions\": [\n      \"Add assertions to verify the total count matches expectations (e.g., `assert len(results) == 6`), ensuring all units were processed correctly.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 7,\n    \"rationale\": \"The test executes quickly enough for a unit test. However, the mock function includes an artificial sleep (`await asyncio.sleep(0.05)`). While acceptable in isolation, this adds unnecessary overhead compared to pure async logic.\",\n    \"suggestions\": [\n      \"Remove `await asyncio.sleep(0.05);` from the mock if it is not required for testing concurrency or error handling logic.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 6,\n    \"rationale\": \"The test follows a basic Arrange-Act-Assert structure but lacks explicit separation of concerns. The 'Arrange' phase (creating units) is mixed with the Act/Assert phases in an awkward way.\",\n    \"suggestions\": [\n      \"Refactor to explicitly separate: 1) Setup unit data, 2) Run evaluation logic only once per test case, 3) Assert results based on that single run. Avoid global state and nested loops.\"\n    ]\n  },\n  \"summary\": \"The test is partially functional but suffers from poor design",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 1870,
+      "total_tokens": 2894,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "c4546facc515d9dfe686a92ac8e7e2dabf156c21d42aa45fdf692399cbad1009": {
+    "id": "chatcmpl-a129be73-5599-4ea0-ada3-ff05416cc4b0",
+    "created": 1784820066,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 7,\n    \"rationale\": \"The test name and code clearly describe the scenario (concurrency + pruning), but 'replay_mgr', 'model', and specific function names ('evaluate_units') are opaque to a non-technical stakeholder. The logic is slightly convoluted with nested loops for unit generation.\",\n    \"suggestions\": [\n      \"Replace `test_evaluate_units_concurrency_and_error_handling` with something like `test_invalid_unit_scoping_in_evaluator`.\",\n      \"Remove the explicit loop generating 5 units and hardcode a single invalid entry; tests should be self-contained, not dependent on test data generation logic.\",\n      \"Avoid using internal library names (`replay_mgr`, `model`) in public-facing assertions unless they are part of the domain vocabulary.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"The mock function is tightly coupled to specific implementation details (the async sleep pattern and variable updates). If `scripts.llm_adapter.call_structured_with_raw_and_diagnostic` changes its signature or behavior, the test will break unexpectedly.\",\n    \"suggestions\": [\n      \"Extract the logic for incrementing/decrementing tasks into a dedicated helper function with clear documentation. This decouples the mock from internal implementation specifics.\",\n      \"Ensure `max_concurrency=2` is hardcoded in the codebase or passed as an explicit parameter to avoid brittle coupling if concurrency limits change.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 5,\n    \"rationale\": \"The test relies on a global state (`active_tasks`, `max_observed_concurrency`) that is modified inside the mock function. This makes it non-repeatable across runs or if multiple instances of this module are loaded.\",\n    \"suggestions\": [\n      \"Remove all use of mutable global variables within async functions and pass them as parameters to helper functions instead.\",\n      \"Ensure no external shared state (like a database, file system, or network) is accessed. The test should be fully self-contained.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 8,\n    \"rationale\": \"The assertion `assert results[-1]['file_path'] == 'unknown'` clearly isolates the behavior of handling an invalid unit string as a provider error. The cause is obvious: passing non-dict data triggers this specific path.\",\n    \"suggestions\": [\n      \"Consider adding a second check to verify that no other units were processed incorrectly, ensuring atomicity across multiple test cases if they share state.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 4,\n    \"rationale\": \"This test duplicates the coverage of `test_evaluate_units_concurrency` (which likely tests valid inputs) and adds no new business rules. It only verifies error handling for a specific edge case.\",\n    \"suggestions\": [\n      \"Remove this test if it does not cover any unique behavior or fail gracefully on different input types that the existing suite already covers.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 6,\n    \"rationale\": \"The assertion checks a single field (`file_path`) of one result. While specific enough for an error case, it lacks granularity in verifying other aspects like correctness or timing.\",\n    \"suggestions\": [\n      \"Add assertions to verify the total count matches expectations (e.g., `assert len(results) == 6`), ensuring all units were processed correctly.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 7,\n    \"rationale\": \"The test executes quickly enough for a unit test. However, the mock function includes an artificial sleep (`await asyncio.sleep(0.05)`). While acceptable in isolation, this adds unnecessary overhead compared to pure async logic.\",\n    \"suggestions\": [\n      \"Remove `await asyncio.sleep(0.05);` from the mock if it is not required for testing concurrency or error handling logic.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 6,\n    \"rationale\": \"The test follows a basic Arrange-Act-Assert structure but lacks explicit separation of concerns. The 'Arrange' phase (creating units) is mixed with the Act/Assert phases in an awkward way.\",\n    \"suggestions\": [\n      \"Refactor to explicitly separate: 1) Setup unit data, 2) Run evaluation logic only once per test case, 3) Assert results based on that single run. Avoid global state and nested loops.\"\n    ]\n  },\n  \"summary\": \"The test is partially functional but suffers from poor design",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 3045,
+      "total_tokens": 4069,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "c212a37be88bebbfdbe7202c6c40d0a9926ae16c74a5f251b1e5fa4959315e33": {
+    "id": "chatcmpl-0a1dcda7-9687-4f33-8936-b1b86a560714",
+    "created": 1784820141,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 7, \"rationale\": \"The test name and logic are clear enough for a developer familiar with the Silver-One framework to understand what it's testing (concurrency limits), but lacks explicit documentation of business rules or edge cases.\", \"suggestions\": [\"Add comments defining 'active_tasks' semantics. Explicitly state: 'This test verifies that max_concurrency=2 prevents more than 2 concurrent evaluations.'\"]},\n  \"maintainable\": {\"score\": 6, \"rationale\": \"The mock function is tightly coupled to the specific implementation details of `evaluate_files` and its internal logic (e.g., how it tracks concurrency). If `evaluate_files` changes its tracking mechanism or adds new metrics, this test will break without modification.\", \"suggestions\": [\"Extract the 'active_tasks' counter into a shared state variable outside the mock function. Ensure mocks are decoupled from specific implementation details of `max_concurrency`.\"]},\n  \"repeatable\": {\"score\": 5, \"rationale\": \"The test relies on external timing (`asyncio.sleep(0.05)`) and potentially non-deterministic behavior if other parts of the system have side effects during execution.\", \"suggestions\": [\"Remove all artificial delays or `sleep()` calls from mocks. Ensure deterministic ordering by using explicit task scheduling (e.g., `await asyncio.wait_for(...)` with fixed timeouts).\"]},\n  \"atomic\": {\"score\": 8, \"rationale\": \"The test verifies exactly one behavior: the maximum concurrency observed does not exceed the configured limit (`max_concurrency=2`). The assertion is direct and unambiguous.\", \"suggestions\": [\"Refine assertions to explicitly check `max_observed_concurrency <= max_concurrency` rather than just `<`.\"]},\n  \"necessary\": {\"score\": 7, \"rationale\": \"The test covers a specific concurrency boundary condition. However, it may not cover edge cases like exactly the limit or zero concurrency scenarios which are often critical for robustness.\", \"suggestions\": [\"Add assertions covering `max_concurrency == 0` and `max_observed_concurrency < max_concurrency`.\"]},\n  \"granular\": {\"score\": 6, \"rationale\": \"The test isolates the 'concurrency limit' aspect but mixes setup (mocking) with logic verification. It doesn't clearly isolate a single unit of behavior like 'evaluation latency under load'.\", \"suggestions\": [\"Split into two tests: one for concurrency limits (`test_conc_limit`), another for evaluation speed/latency (`test_latency_under_load`).\"]},\n  \"fast\": {\"score\": 4, \"rationale\": \"The test contains a deliberate artificial delay of `0.05 seconds`, which significantly slows down execution and makes it non-repeatable in CI environments.\", \"suggestions\": [\"Remove all `asyncio.sleep()` calls from mocks. Replace with explicit task scheduling or remove the sleep entirely if not strictly necessary for isolation.\"]},\n  \"first_tdd\": {\"score\": 6, \"rationale\": \"The test follows a basic Arrange-Act-Assert pattern but lacks deep separation of concerns. The 'Arrange' phase (mocking) is mixed with the Act/Assert phases in a way that obscures design intent.\", \"suggestions\": [\"Strictly separate setup: `setup_concurrency_mock()`, then run evaluation, then verify results (`assert_*`). Ensure mocks are stateless and do not persist between test runs.\"]},\n  \"summary\": \"The test is functional but suffers from poor isolation (shared mutable state), artificial delays, and lack of explicit business rule documentation. It risks becoming brittle as the underlying evaluator changes.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 776,
+      "prompt_tokens": 647,
+      "total_tokens": 1423,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
