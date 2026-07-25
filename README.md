@@ -278,33 +278,34 @@ Use this exact flow when you want attempts-level soft checks captured and scored
 # Re-run a record run to generate attempts with soft_checks
 
 uv run python scenarios/debate/run_batch.py \
-  --run-id pilot-v1-calibrated-i \
+  --run-id pilot-v1-calibrated-m \
   --seed 42 \
   --mode record \
-  --clock-now 2026-07-24T11:22:53Z \
+  --max-concurrency 4 \
+  --clock-now 2026-07-25T21:32:53Z \
   --seeds scenarios/debate/cve_seeds_test.jsonl \
-  --output training_corpus_calibrated_i.jsonl \
-  --attempts-out artifacts/attempts/pilot-v1-calibrated-i.jsonl
+  --output training_corpus_calibrated_m.jsonl \
+  --attempts-out artifacts/attempts/pilot-v1-calibrated-m.jsonl
 
 
 # Compute B metrics + soft-check rates
 
 ./scripts/run_b_gate.sh \
-  training_corpus_calibrated_i.jsonl \
-  artifacts/attempts/pilot-v1-calibrated-i.jsonl \
-  artifacts/metrics/b_gate-pilot-v1-calibrated-i.json
+  training_corpus_calibrated_m.jsonl \
+  artifacts/attempts/pilot-v1-calibrated-m.jsonl \
+  artifacts/metrics/b_gate-pilot-v1-calibrated-m.json
 
 
 #To compute benchmark metrics for a single run:
 
-uv run python3 scripts/debate_telemetry.py --run-id pilot-v1-calibrated-i
+uv run python3 scripts/debate_telemetry.py --run-id pilot-v1-calibrated-m
 
 # To run an A/B comparison between baseline and candidate runs with a Markdown report:
 
 uv run python3 scripts/debate_telemetry.py \
-  --run-id pilot-v1-calibrated-j \
+  --run-id pilot-v1-calibrated-m \
   --baseline-json artifacts/metrics/debate_benchmark-pilot-v1-calibrated-i.json \
-  --output-markdown reports/debate_benchmark_comparison_i_vs_j.md
+  --output-markdown reports/debate_benchmark_comparison_i_vs_m.md
 
 ```
 

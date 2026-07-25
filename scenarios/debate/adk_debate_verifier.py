@@ -124,6 +124,7 @@ Perform a bit-level data-flow trace to confirm or debunk the claim.
                 repair_on_fail=True,
                 repair_model=verifier_model,
                 stage="verifier_audit",
+                options={"keep_alive": "24h"},
             )
             usage_summary = replay_manager.get_usage_summary()
             
@@ -151,6 +152,7 @@ async def main():
     parser = argparse.ArgumentParser(description="Run the In-Varia Predictive Verifier Agent.")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind the server")
     parser.add_argument("--port", type=int, default=9020, help="Port to bind the server")
+    parser.add_argument("--card-url", type=str, help="External URL to provide in the agent card")
     parser.add_argument("--model", type=str, default=os.getenv("VERIFIER_MODEL", "ollama/deepseek-v3.1:671b-cloud"), help="Model to use for verification")
     args = parser.parse_args()
 
@@ -158,7 +160,8 @@ async def main():
     executor = GreenExecutor(agent)
     
     # Simple card for discovery
-    agent_url = f"http://{args.host}:{args.port}/"
+    scheme = os.getenv("SERVER_SCHEME", "http")
+    agent_url = args.card_url or f"{scheme}://{args.host}:{args.port}/"  # NOSONAR
     agent_card = debate_judge_agent_card("DebateVerifierADK", agent_url)
 
     request_handler = DefaultRequestHandler(

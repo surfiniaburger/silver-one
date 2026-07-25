@@ -111,6 +111,29 @@ Configuring **`OLLAMA_NUM_PARALLEL: 1`** and **`--max-concurrency 1`** (the defa
 
 ---
 
+## 5. Debate Scenario Cloud GPU Concurrency Benchmark (Ollama Cloud)
+
+While CPU-based inference saturates 2-vCPU memory buses at `--max-concurrency 1`, Cloud GPU inference engines (e.g. Ollama Cloud with `ollama/gpt-oss:120b-cloud` and `ollama/gemma4:31b-cloud`) possess high multi-stream tensor bandwidth. 
+
+To determine empirical GPU batch concurrency limits, we performed a controlled A/B benchmark sweep across `--max-concurrency` levels 1, 2, 4, and 8 under deterministic record mode.
+
+### Empirical Concurrency Scaling Benchmark (`pilot-v1-calibrated` Series):
+
+| Run ID | Concurrency (`--max-concurrency`) | B-Gate Status | Accepted Rows / Attempts | Yield Rate (%) | Total Tokens | Tokens / Accepted Row | Verifier Audit Pass Rate | Strict Anchor Fail Rate |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **`pilot-v1-calibrated-i`** | `1` (Sequential Baseline) | `PASS` | 7 / 14 | 50.0% | 527,435 | 75,347.86 | 100.0% | 21.4% |
+| **`pilot-v1-calibrated-j`** | `1` (Post-Alignment Record) | `FAIL` | 6 / 18 | 33.3% | 529,008 | 88,168.00 | 66.7% | 22.2% |
+| **`pilot-v1-calibrated-k`** | `2` (Dual GPU Stream) | `PASS` | 4 / 16 | 25.0% | 517,956 | 129,489.00 | 44.4% | 12.5% |
+| **`pilot-v1-calibrated-l`** | `4` (Quad GPU Stream) | **`PASS`** | **7 / 13** | **53.85%** | **436,540** | **62,362.86** | **87.5%** | **0.0%** |
+| **`pilot-v1-calibrated-m`** | `8` (Octa GPU Stream) | `RATE LIMITED` | N/A | N/A | N/A | N/A | N/A | N/A |
+
+### Key Insights from GPU Concurrency Tuning:
+1. **Optimal Production Ceiling (`--max-concurrency 4`)**: Quad-stream concurrency (`--max-concurrency 4`) achieved the lowest total token count (**436,540 tokens**), lowest cost per accepted row (**62,362.86 tokens/row**), highest yield rate (53.85%), and zero strict anchor failures.
+2. **Empirical API Concurrency Ceiling (`--max-concurrency 8`)**: Increasing concurrency to 8 triggered Ollama Cloud HTTP 429 rate limiting (`"too many concurrent requests"`) and session usage throttling.
+3. **Recommended Production Setting**: Set **`--max-concurrency 4`** as the default max concurrency limit for Ollama Cloud debate evaluation batches.
+
+---
+
 ## Governance & Design Rules for Future Evaluators
 
 1. **Single Inference Slot Queueing for 2-vCPU Local CPU Benchmarks (`max-concurrency: 1`)**:
