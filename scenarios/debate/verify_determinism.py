@@ -22,8 +22,14 @@ def verify_determinism():
     cmd_record = f"uv run python scenarios/debate/run_batch.py --run-id {run_id} --seed {seed} --mode record --seeds scenarios/debate/cve_seeds_test.jsonl --output {output_file}"
     res1 = run_cmd(cmd_record)
     if res1.returncode != 0 or not os.path.exists(output_file):
-        print("Record mode skipped: requires active live LLM servers")
-        return
+        if res1.stderr:
+            print(f"Record failed stderr: {res1.stderr}")
+        is_conn_error = "Connection" in res1.stderr or "11434" in res1.stderr or "9009" in res1.stderr or "refused" in res1.stderr
+        if is_conn_error:
+            print("Record mode skipped: requires active live LLM servers")
+            return
+        else:
+            raise RuntimeError(f"Record mode failed with error: {res1.stderr or res1.stdout}")
         
     with open(output_file, "r") as f:
         content1 = f.read()

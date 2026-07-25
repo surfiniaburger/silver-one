@@ -21,6 +21,16 @@ from pydantic import BaseModel
 from agentbeats.clock import RunClock
 from agentbeats.tracing import trace_span
 
+class ReplayError(Exception):
+    """Base exception for replay and cassette determinism errors."""
+    pass
+
+
+class OfflineReplayError(ReplayError):
+    """Raised when an LLM call misses the cassette cache in replay mode."""
+    pass
+
+
 class RunRecord(BaseModel):
     run_id: str
     rng_seed: int
@@ -579,7 +589,7 @@ class ReplayManager:
 
             if self.cassette.mode == "replay":
                 span.attributes.update({"source": "replay_miss", "cache_hit": False})
-                raise RuntimeError(f"Offline Replay Error: No cached response for {model} with hash {self.cassette._hash(model, messages, kwargs)}")
+                raise OfflineReplayError(f"Offline Replay Error: No cached response for {model} with hash {self.cassette._hash(model, messages, kwargs)}")
 
             # Make real call with increased timeout
             kwargs.setdefault("timeout", 1200)

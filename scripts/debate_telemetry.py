@@ -120,6 +120,57 @@ def _determine_accepted_rows(b_gate: Dict[str, Any], attempts: List[Dict[str, An
     return accepted_rows
 
 
+def _record_stage_stats(
+    stage_durations: Dict[str, List[float]],
+    stage_prompt_tokens: Dict[str, int],
+    stage_completion_tokens: Dict[str, int],
+    stage_calls: Dict[str, int],
+    stage: str,
+    calls: int,
+    p_tok: int,
+    c_tok: int,
+    dur_ms: float,
+) -> None:
+    """Record call metrics and duration for a single stage."""
+    stage_calls[stage] = stage_calls.get(stage, 0) + calls
+    stage_prompt_tokens[stage] = stage_prompt_tokens.get(stage, 0) + p_tok
+    stage_completion_tokens[stage] = stage_completion_tokens.get(stage, 0) + c_tok
+    if dur_ms > 0:
+        stage_durations.setdefault(stage, []).append(dur_ms)
+
+
+def _process_attempt_events(
+    events: List[Dict[str, Any]],
+    stage_durations: Dict[str, List[float]],
+    stage_prompt_tokens: Dict[str, int],
+    stage_completion_tokens: Dict[str, int],
+    stage_calls: Dict[str, int],
+) -> None:
+    """Process event-level telemetry records for an attempt."""
+    for ev in events:
+        stage = ev.get("stage", "unknown")
+        dur_ms = ev.get("duration_ms", 0.0)
+        p_tok = ev.get("prompt_tokens", 0)
+        c_tok = ev.get("completion_tokens", 0)
+        _record_stage_stats(stage_durations, stage_prompt_tokens, stage_completion_tokens, stage_calls, stage, 1, p_tok, c_tok, dur_ms)
+
+
+def _process_attempt_by_stage(
+    by_stage: Dict[str, Any],
+    stage_durations: Dict[str, List[float]],
+    stage_prompt_tokens: Dict[str, int],
+    stage_completion_tokens: Dict[str, int],
+    stage_calls: Dict[str, int],
+) -> None:
+    """Process stage-level aggregate telemetry records for an attempt."""
+    for stage, stats in by_stage.items():
+        calls = stats.get("calls", 0)
+        p_tok = stats.get("prompt_tokens", 0)
+        c_tok = stats.get("completion_tokens", 0)
+        dur_ms = stats.get("total_duration_ms") or stats.get("avg_duration_ms") or stats.get("duration_ms") or 0.0
+        _record_stage_stats(stage_durations, stage_prompt_tokens, stage_completion_tokens, stage_calls, stage, calls, p_tok, c_tok, dur_ms)
+
+
 def _aggregate_attempt_usage(attempts: List[Dict[str, Any]], b_gate: Dict[str, Any]) -> Dict[str, Any]:
     stage_durations: Dict[str, List[float]] = {}
     stage_prompt_tokens: Dict[str, int] = {}
@@ -136,23 +187,21 @@ def _aggregate_attempt_usage(attempts: List[Dict[str, Any]], b_gate: Dict[str, A
 
     for attempt in attempts:
         llm_usage = attempt.get("llm_usage", {})
-        by_stage = llm_usage.get("by_stage", {})
-        for stage, stats in by_stage.items():
-            calls = stats.get("calls", 0)
-            p_tok = stats.get("prompt_tokens", 0)
-            c_tok = stats.get("completion_tokens", 0)
-            dur_ms = stats.get("duration_ms", 0.0)
-
-            stage_calls[stage] = stage_calls.get(stage, 0) + calls
-            stage_prompt_tokens[stage] = stage_prompt_tokens.get(stage, 0) + p_tok
-            stage_completion_tokens[stage] = stage_completion_tokens.get(stage, 0) + c_tok
-            if stage not in stage_durations:
-                stage_durations[stage] = []
-            if dur_ms > 0:
-                stage_durations[stage].append(dur_ms)
+        events = llm_usage.get("events", [])
+        if events:
+            _process_attempt_events(events, stage_durations, stage_prompt_tokens, stage_completion_tokens, stage_calls)
+        else:
+            _process_attempt_by_stage(
+                llm_usage.get("by_stage", {}),
+                stage_durations,
+                stage_prompt_tokens,
+                stage_completion_tokens,
+                stage_calls,
+            )
 
         tot = llm_usage.get("totals", {})
-        total_wall_clock_ms += tot.get("duration_ms", 0.0)
+        dur_tot = tot.get("total_duration_ms") or tot.get("duration_ms") or 0.0
+        total_wall_clock_ms += dur_tot
         if not has_b_gate_totals:
             total_prompt_tokens += tot.get("prompt_tokens", 0)
             total_completion_tokens += tot.get("completion_tokens", 0)
@@ -363,6 +412,8 @@ def compute_ab_benchmark_comparison(
 
 
 def _format_summary_section(run_id: str, summary: Dict[str, Any], tok: Dict[str, Any], cache: Dict[str, Any]) -> List[str]:
+    wall_sec = summary.get("total_wall_clock_seconds", 0.0)
+    wall_str = f"{wall_sec:.1f}s" if wall_sec and wall_sec > 0 else "n/a"
     lines = [
         f"# Debate Benchmark Telemetry: `{run_id}`",
         "",
@@ -374,7 +425,7 @@ def _format_summary_section(run_id: str, summary: Dict[str, Any], tok: Dict[str,
         f"| **Total Attempts** | {summary.get('total_attempts', 0)} |",
         f"| **Accepted Rows** | {summary.get('accepted_rows', 0)} |",
         f"| **Yield Pass Rate** | {summary.get('yield_rate', 0.0) * 100:.1f}% |",
-        f"| **Total Wall-Clock Time** | {summary.get('total_wall_clock_seconds', 0.0):.1f}s |",
+        f"| **Total Wall-Clock Time** | {wall_str} |",
         f"| **Total Prompt Tokens** | {tok.get('prompt_tokens_total', 0):,} |",
         f"| **Total Completion Tokens** | {tok.get('completion_tokens_total', 0):,} |",
         f"| **Tokens / Accepted Row** | {tok.get('tokens_per_accepted_row', 0.0):,} |",
@@ -397,8 +448,10 @@ def _format_ab_comparison_section(comparison: Dict[str, Any]) -> List[str]:
     c_ptot = f"{cand_metrics.get('prompt_tokens', 0):,}" if "prompt_tokens" in cand_metrics else "—"
     b_per_acc = f"{b_metrics.get('tokens_per_accepted_row', 0.0):,.2f}" if "tokens_per_accepted_row" in b_metrics else "—"
     c_per_acc = f"{cand_metrics.get('tokens_per_accepted_row', 0.0):,.2f}" if "tokens_per_accepted_row" in cand_metrics else "—"
-    b_dur = f"{b_metrics.get('wall_clock_ms', 0.0) / 1000.0:.1f}s" if "wall_clock_ms" in b_metrics else "—"
-    c_dur = f"{cand_metrics.get('wall_clock_ms', 0.0) / 1000.0:.1f}s" if "wall_clock_ms" in cand_metrics else "—"
+    b_wall = b_metrics.get("wall_clock_ms", 0.0)
+    c_wall = cand_metrics.get("wall_clock_ms", 0.0)
+    b_dur = f"{b_wall / 1000.0:.1f}s" if b_wall and b_wall > 0 else "n/a"
+    c_dur = f"{c_wall / 1000.0:.1f}s" if c_wall and c_wall > 0 else "n/a"
     b_hit = f"{b_metrics.get('cache_hit_rate_pct', 0.0):.1f}%" if "cache_hit_rate_pct" in b_metrics else "—"
     c_hit = f"{cand_metrics.get('cache_hit_rate_pct', 0.0):.1f}%" if "cache_hit_rate_pct" in cand_metrics else "—"
 

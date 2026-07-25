@@ -93,6 +93,7 @@ def _build_payload(
 
 async def _process_seed(
     sem: asyncio.Semaphore,
+    manifest_lock: asyncio.Lock,
     i: int,
     seed: dict,
     args: argparse.Namespace,
@@ -103,49 +104,41 @@ async def _process_seed(
     total_seeds: int,
     judge_url: str = "http://127.0.0.1:9009",
 ) -> None:
-    def write_manifest() -> None:
-        save_checkpoint(manifest_path, manifest, clock_now=batch_started_at)
+    async def write_manifest(status: str, response_excerpt: str | None = None, error: str | None = None) -> None:
+        async with manifest_lock:
+            manifest_item = manifest["items"][i]
+            manifest_item["status"] = status
+            if response_excerpt is not None:
+                manifest_item["response_excerpt"] = response_excerpt
+            if error is not None:
+                manifest_item["error"] = error
+            save_checkpoint(manifest_path, manifest, clock_now=batch_started_at)
 
     async with sem:
         item_seed = args.seed + i
         instruction = f"Analyze this input for the condition: {seed['predicate']}"
         checkpoint_path = os.path.join(args.checkpoint_dir, args.run_id, f"{item_seed}.json")
         record_path = args.record_path or os.path.join(args.record_dir, args.run_id, f"{item_seed}.json")
-        manifest_item = {
-            "index": i,
-            "seed": item_seed,
-            "instruction": instruction,
-            "predicate": seed["predicate"],
-            "checkpoint_path": checkpoint_path,
-            "record_path": record_path,
-            "status": "pending",
-        }
-        manifest["items"].append(manifest_item)
-        write_manifest()
 
         if instruction in processed_predicates:
             print(f"Skipping seed {i+1} (already processed).")
-            manifest_item["status"] = "skipped_existing_output"
-            write_manifest()
+            await write_manifest("skipped_existing_output")
             return
 
         print(f"\n>>> [{i+1}/{total_seeds}] Seed Predicate: {seed.get('predicate')[:80]}...")
-        manifest_item["status"] = "running"
-        write_manifest()
+        await write_manifest("running")
 
         payload = _build_payload(args, item_seed, checkpoint_path, record_path, batch_started_at, seed)
 
         try:
             result = await send_message(json.dumps(payload), judge_url)
             print(f"  Result received for seed {i+1}. Status: {result.get('status')}")
-            manifest_item["status"] = result.get("status") or "completed"
-            manifest_item["response_excerpt"] = str(result.get("response", ""))[:500]
+            status = result.get("status") or "completed"
+            excerpt = str(result.get("response", ""))[:500]
+            await write_manifest(status, response_excerpt=excerpt)
         except Exception as e:
             print(f"  ERROR: Seed {i+1} failed: {e}")
-            manifest_item["status"] = "error"
-            manifest_item["error"] = str(e)
-        finally:
-            write_manifest()
+            await write_manifest("error", error=str(e))
 
 
 async def run_batch():
@@ -167,6 +160,19 @@ async def run_batch():
     processed_predicates = await asyncio.to_thread(_load_processed_predicates, args.output)
     seeds = await asyncio.to_thread(_load_seeds, args.seeds)
 
+    manifest_items = [
+        {
+            "index": i,
+            "seed": args.seed + i,
+            "instruction": f"Analyze this input for the condition: {s['predicate']}",
+            "predicate": s["predicate"],
+            "checkpoint_path": os.path.join(args.checkpoint_dir, args.run_id, f"{args.seed + i}.json"),
+            "record_path": args.record_path or os.path.join(args.record_dir, args.run_id, f"{args.seed + i}.json"),
+            "status": "pending",
+        }
+        for i, s in enumerate(seeds)
+    ]
+
     manifest = {
         "schema_version": 1,
         "run_id": args.run_id,
@@ -181,7 +187,7 @@ async def run_batch():
         "cassette_path": args.cassette_path or f"artifacts/cassettes/{args.run_id}.json",
         "checkpoint_dir": args.checkpoint_dir,
         "record_dir": args.record_dir,
-        "items": [],
+        "items": manifest_items,
     }
 
     save_checkpoint(manifest_path, manifest, clock_now=batch_started_at)
@@ -190,11 +196,13 @@ async def run_batch():
     print(f"Run ID: {args.run_id} | Base seed: {args.seed} | Mode: {args.mode} | Concurrency: {args.max_concurrency}")
     
     sem = asyncio.Semaphore(args.max_concurrency)
+    manifest_lock = asyncio.Lock()
 
     await asyncio.gather(
         *(
             _process_seed(
                 sem,
+                manifest_lock,
                 i,
                 s,
                 args,

@@ -31,7 +31,7 @@ from agentbeats.structured_output import (
 )
 from debate_judge_common import DebateEval, VerifierReport, debate_judge_agent_card
 from data_generator import BarredDataGenerator
-from agentbeats.replay import ReplayManager
+from agentbeats.replay import ReplayManager, OfflineReplayError, ReplayError
 from agentbeats.checkpoint import (
     CheckpointError,
     load_checkpoint,
@@ -1022,7 +1022,7 @@ class DebateJudgeADK(GreenAgent):
             )
 
         transcript = ""
-        for j, (pro, con) in enumerate(zip(debate["pro_debater"], debate["con_debater"]), start=1):
+        for j, (pro, con) in enumerate(zip(debate["pro_debater"], debate["con_debater"], strict=True), start=1):
             transcript += f"pro_debater (Round {j}): {pro}\n"
             transcript += f"con_debater (Round {j}): {con}\n"
 
@@ -1091,6 +1091,8 @@ Debate Transcript:
                     last_judge_reason=debate_eval.reason,
                 )
             return debate_eval, debate_eval.reason
+        except ( ReplayError):
+            raise
         except Exception as e:
             logger.exception(f"Judge structured output failed: {e}")
             reason = f"Failed to parse judge response: {e}"
@@ -1202,12 +1204,7 @@ Debate Transcript:
                         "verifier_report": debate_eval.verifier_report,
                         "winner": debate_eval.winner,
                     },
-                    "soft_checks": {
-                        "predicate_quality": predicate_quality,
-                        "predicate_aboutness": aboutness,
-                        "mechanism_grounding": mech_grounding,
-                        "mechanism_evidence": mech_evidence,
-                    },
+                    "soft_checks": soft_checks,
                     "support_level": debate_eval.support_level,
                 },
             )
@@ -1300,6 +1297,8 @@ Debate Transcript:
         debate_eval: DebateEval,
         current_sample_block: str,
         normalized_anchors: list[str],
+        sample_data: dict,
+        debate: dict,
         active_checkpoint: dict | None,
         checkpoint_phase: str,
         default_meta: VerifierMeta,
@@ -1322,10 +1321,10 @@ Debate Transcript:
         ctx.write_checkpoint(
             "verifier_complete",
             i,
-            sample_data=active_checkpoint.get("sample_data") if active_checkpoint else {},
+            sample_data=sample_data,
             current_sample_block=current_sample_block,
             current_sample_block_sha256=_sha256_text(current_sample_block),
-            debate=active_checkpoint.get("debate") if active_checkpoint else {},
+            debate=debate,
             judge_eval=debate_eval.model_dump(),
             normalized_anchors=normalized_anchors,
             verifier=verifier_meta,
@@ -1396,6 +1395,8 @@ Debate Transcript:
         current_sample_block: str,
         normalized_anchors: list[str],
         soft_checks: dict,
+        sample_data: dict,
+        debate: dict,
         active_checkpoint: dict | None,
         checkpoint_phase: str,
         updater: TaskUpdater,
@@ -1414,10 +1415,34 @@ Debate Transcript:
         }
 
         if debate_eval.winner != "pro_debater":
+            ctx.append_attempt(
+                {
+                    "run_id": ctx.run_id,
+                    "seed": ctx.seed,
+                    "mode": ctx.mode,
+                    "refinement_round": i,
+                    "predicate": ctx.predicate,
+                    "target_verdict": ctx.target_verdict,
+                    "target_dimension": ctx.target_dimension,
+                    "decision": "rejected",
+                    "reject_reason": "con_win_not_applicable",
+                    "sample_sha256": _sha256_text(current_sample_block),
+                    "judge_eval": {
+                        "predicate": debate_eval.predicate,
+                        "anchors": normalized_anchors,
+                        "support_level": debate_eval.support_level,
+                        "verifier_report": debate_eval.verifier_report,
+                        "winner": debate_eval.winner,
+                    },
+                    "soft_checks": soft_checks,
+                    "verifier": verifier_meta,
+                    "support_level": debate_eval.support_level,
+                },
+            )
             return False, None, verifier_meta, debate_eval.reason
 
         verifier_audit, verifier_meta = await self._restore_or_call_verifier(
-            ctx, i, debate_eval, current_sample_block, normalized_anchors, active_checkpoint, checkpoint_phase, verifier_meta, updater
+            ctx, i, debate_eval, current_sample_block, normalized_anchors, sample_data, debate, active_checkpoint, checkpoint_phase, verifier_meta, updater
         )
         is_valid, reason = self._evaluate_verifier_audit(
             ctx, i, verifier_audit, verifier_meta, debate_eval, normalized_anchors, soft_checks, current_sample_block
@@ -1599,7 +1624,7 @@ Debate Transcript:
 
         # Step 5: Verifier Audit
         is_valid, verifier_audit, verifier_meta, v_reason = await self._process_verifier_audit(
-            ctx, i, debate_eval, current_sample_block, normalized_anchors, soft_checks, active_checkpoint, checkpoint_phase, updater
+            ctx, i, debate_eval, current_sample_block, normalized_anchors, soft_checks, sample_data, debate, active_checkpoint, checkpoint_phase, updater
         )
         if not is_valid:
             return False, v_reason
