@@ -70,32 +70,34 @@ Introduced `telemetry_utils.prune_code_text()` used by `_prune_unit_code()` and 
 
 ---
 
-## 3. The CPU Concurrency Paradox: 2 vCPUs vs. 1 CPU Thread
+## 3. The CPU Concurrency Paradox: Dual Parallel Slots vs. Single Inference Slot
 
 ### Initial Hypothesis:
 On GitHub Actions `ubuntu-latest` (2 vCPUs), setting `OLLAMA_NUM_PARALLEL: 2` and `--max-concurrency 2` would allow two unit evaluations to execute in parallel, halving total wall-clock time.
 
 ### Empirical Failure:
-- Average call latency spiked from **61.1s up to 124.8s (+104% increase)**.
+- Average call latency spiked from **61.1s (unpruned baseline) / 59.1s (optimized single-slot) up to 124.8s (+104% increase)**.
 - Total wall-clock runtime inflated to **87.4 minutes**.
 
-### Root Cause Analysis:
+### Architectural Rationale & Root Cause Analysis:
+
+As analyzed in production SLM serving literature (e.g. *Why Small Models Alone Don't Reduce Inference Costs* by Avi Chawla), serving multiple model instances or concurrent slots without coordinated memory management leads to hardware over-provisioning and resource contention.
 
 ```text
-Dual-CPU Concurrency (OLLAMA_NUM_PARALLEL: 2):
-vCPU 0: [ Slot 1 Matrix Mult ] <--- Thread Thrashing & Memory Bus Contention ---> [ Slot 2 Matrix Mult ] vCPU 1
+Dual-Slot Concurrency (OLLAMA_NUM_PARALLEL: 2):
+vCPU 0: [ Slot 1 Matrix Mult ] <--- Memory Bus Contention & CPU Cache Thrashing ---> [ Slot 2 Matrix Mult ] vCPU 1
 Result: Both streams drop from ~9.8 tokens/sec down to ~3.2 tokens/sec. Latency = 124.8s.
 
-Single-CPU Thread (OLLAMA_NUM_PARALLEL: 1):
-vCPU 0 & 1: [ Slot 1 Matrix Mult (Dedicated Memory Bus & L2/L3 Cache) ]
+Single Inference Slot (OLLAMA_NUM_PARALLEL: 1):
+vCPU 0 & 1: [ Slot 1 Matrix Mult (Dedicated Memory Bandwidth across both vCPUs) ]
 Result: Token decoding speed = ~9.8 tokens/sec. Latency = 59.1s.
 ```
 
-1. **CPU Memory Bus Saturation**:
-   - Local LLM inference during the **Decode Phase** (generating ~627–884 output tokens per call) is strictly memory-bandwidth bound.
-   - Running two matrix multiplication streams simultaneously on 2 vCPUs saturates the CPU memory bus, causing L2/L3 cache misses and slowing token generation from ~9.8 tokens/sec down to ~3.2 tokens/sec.
-2. **Context Buffer Eviction**:
-   - Dual slot execution split Ollama's internal CPU memory pages into two separate buffers, causing back-and-forth KV-cache buffer evictions between alternating units.
+1. **CPU Memory Bus Saturation & Static Memory Slicing (Hypothesized Mechanism)**:
+   - Local LLM inference during the **Decode Phase** (generating ~627–884 output tokens per call) is memory-bandwidth bound.
+   - Enabling `OLLAMA_NUM_PARALLEL: 2` pre-allocates two distinct memory context slices. Running two matrix multiplication streams simultaneously on 2 vCPUs saturates the CPU memory bus, causing L2/L3 cache misses and slowing token generation from ~9.8 tokens/sec down to ~3.2 tokens/sec per slot.
+2. **Uncoordinated Context Buffer Eviction (Hypothesized Mechanism)**:
+   - Dual-slot execution splits Ollama's internal CPU memory pages into two separate buffers. Alternating unit evaluation requests between Slot 1 and Slot 2 can cause back-and-forth KV-cache page evictions, repeatedly invalidating the warm `messages[0]` system prompt context and forcing prompt prefill recalculation.
 
 ---
 
@@ -111,8 +113,8 @@ Configuring **`OLLAMA_NUM_PARALLEL: 1`** and **`--max-concurrency 1`** (the defa
 
 ## Governance & Design Rules for Future Evaluators
 
-1. **Single-Thread Queueing for 2-vCPU Local CPU Benchmarks (`max-concurrency: 1`)**:
-   - For the measured 2-vCPU environment (`ubuntu-latest`) running `ollama/qwen3.5:2b` locally on CPU, single-thread queueing maximizes memory bandwidth for token generation. Higher concurrency (`max-concurrency >= 2`) on environments with 4+ vCPUs or GPU acceleration requires separate empirical benchmarking to establish optimal concurrency limits.
+1. **Single Inference Slot Queueing for 2-vCPU Local CPU Benchmarks (`max-concurrency: 1`)**:
+   - For the measured 2-vCPU environment (`ubuntu-latest`) running `ollama/qwen3.5:2b` locally on CPU, single-inference-slot queueing maximizes memory bandwidth for token generation. Higher concurrency (`max-concurrency >= 2`) on environments with 4+ vCPUs or GPU acceleration requires separate empirical benchmarking to establish optimal concurrency limits.
 2. **Deterministic System Prefix (`messages[0]`)**:
    - Never inject dynamic variables (timestamps, run IDs) into `messages[0]`. Pinned prefixes ensure 100% KV-cache hit ratios.
 3. **Prune Code Context, Never Skip Units**:
