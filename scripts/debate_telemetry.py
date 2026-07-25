@@ -167,7 +167,10 @@ def _process_attempt_by_stage(
         calls = stats.get("calls", 0)
         p_tok = stats.get("prompt_tokens", 0)
         c_tok = stats.get("completion_tokens", 0)
-        dur_ms = stats.get("total_duration_ms") or stats.get("avg_duration_ms") or stats.get("duration_ms") or 0.0
+        avg_dur = stats.get("avg_duration_ms")
+        if avg_dur is None and calls > 0 and stats.get("total_duration_ms"):
+            avg_dur = stats["total_duration_ms"] / calls
+        dur_ms = avg_dur or stats.get("duration_ms") or 0.0
         _record_stage_stats(stage_durations, stage_prompt_tokens, stage_completion_tokens, stage_calls, stage, calls, p_tok, c_tok, dur_ms)
 
 
@@ -413,6 +416,8 @@ def compute_ab_benchmark_comparison(
 
 def _format_summary_section(run_id: str, summary: Dict[str, Any], tok: Dict[str, Any], cache: Dict[str, Any]) -> List[str]:
     wall_sec = summary.get("total_wall_clock_seconds", 0.0)
+    if not wall_sec and summary.get("total_wall_clock_ms"):
+        wall_sec = summary["total_wall_clock_ms"] / 1000.0
     wall_str = f"{wall_sec:.1f}s" if wall_sec and wall_sec > 0 else "n/a"
     lines = [
         f"# Debate Benchmark Telemetry: `{run_id}`",

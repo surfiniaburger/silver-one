@@ -17,7 +17,7 @@ from agentbeats.green_executor import GreenAgent, GreenExecutor
 from agentbeats.models import EvalRequest, EvalResult
 from agentbeats.tool_provider import ToolProvider
 from agentbeats.structured_output import call_structured
-from agentbeats.replay import ReplayManager
+from agentbeats.replay import ReplayManager, ReplayError
 from debate_judge_common import VerifierReport, debate_judge_agent_card
 
 logging.basicConfig(level=logging.INFO)
@@ -144,6 +144,8 @@ Perform a bit-level data-flow trace to confirm or debunk the claim.
             # Note: In the ADK framework, we can return JSON in the final response
             logger.info(f"Verification complete. Pass: {report.passes_audit}")
             
+        except ReplayError:
+            raise
         except Exception as e:
             logger.exception("Verifier failed during structured call.")
             raise RuntimeError(f"Verification error: {e}") from e

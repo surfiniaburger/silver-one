@@ -892,9 +892,9 @@ class DebateJudgeADK(GreenAgent):
             meta["from_cache"] = True
         else:
             if replay_manager.cassette.mode == "replay":
-                logger.warning("No cached verifier response. Skipping audit.")
+                logger.warning("No cached verifier response in replay mode.")
                 meta["error"] = "replay_cache_miss"
-                return None, meta
+                raise OfflineReplayError(f"Offline Replay Error: No cached verifier response for {pseudo_model}")
             
             try:
                 response_text = await self._tool_provider.talk_to_agent(prompt, self.verifier_url, new_conversation=True)
@@ -1091,7 +1091,7 @@ Debate Transcript:
                     last_judge_reason=debate_eval.reason,
                 )
             return debate_eval, debate_eval.reason
-        except ( ReplayError):
+        except ReplayError:
             raise
         except Exception as e:
             logger.exception(f"Judge structured output failed: {e}")

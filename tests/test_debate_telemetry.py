@@ -190,3 +190,33 @@ def test_ab_benchmark_comparison():
     assert "# Debate Benchmark Telemetry: `cand-run`" in report
     assert "A/B Comparison" in report
     assert "-50.00%" in report
+
+
+def test_process_attempt_by_stage_duration_normalization():
+    """Verify that _process_attempt_by_stage normalizes total_duration_ms to per-call average."""
+    from scripts.debate_telemetry import _process_attempt_by_stage
+
+    stage_durations = {}
+    stage_prompt_tokens = {}
+    stage_completion_tokens = {}
+    stage_calls = {}
+
+    by_stage = {
+        "judge_adjudication": {
+            "calls": 4,
+            "prompt_tokens": 4000,
+            "completion_tokens": 1000,
+            "total_duration_ms": 40000.0,
+        }
+    }
+
+    _process_attempt_by_stage(
+        by_stage,
+        stage_durations,
+        stage_prompt_tokens,
+        stage_completion_tokens,
+        stage_calls,
+    )
+
+    assert stage_calls["judge_adjudication"] == 4
+    assert stage_durations["judge_adjudication"] == [10000.0]

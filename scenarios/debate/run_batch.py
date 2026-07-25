@@ -112,7 +112,7 @@ async def _process_seed(
                 manifest_item["response_excerpt"] = response_excerpt
             if error is not None:
                 manifest_item["error"] = error
-            save_checkpoint(manifest_path, manifest, clock_now=batch_started_at)
+            await asyncio.to_thread(save_checkpoint, manifest_path, manifest, clock_now=batch_started_at)
 
     async with sem:
         item_seed = args.seed + i
