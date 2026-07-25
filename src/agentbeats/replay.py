@@ -562,7 +562,7 @@ class ReplayManager:
                     try:
                         from litellm.utils import ModelResponse as _ModelResponse
                         model_response_cls = _ModelResponse
-                    except Exception:
+                    except (ImportError, AttributeError):
                         model_response_cls = None
 
                 if model_response_cls is not None and isinstance(cached, dict) and "choices" in cached:

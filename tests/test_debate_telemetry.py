@@ -2,8 +2,6 @@
 """Unit tests for scripts/debate_telemetry.py."""
 
 import json
-import pytest
-from pathlib import Path
 
 from scripts.debate_telemetry import (
     compute_debate_benchmark_metrics,
@@ -115,6 +113,41 @@ def test_compute_debate_benchmark_metrics(tmp_path):
     assert metrics["token_efficiency"]["total_tokens_total"] == 1200
     assert metrics["token_efficiency"]["tokens_per_accepted_row"] == 1200.0
     assert metrics["b_gate_quality"]["pass"] is True
+
+
+def test_compute_debate_benchmark_metrics_fallback_multi_attempt(tmp_path):
+    """Test token summation across multiple attempts when b_gate file is missing."""
+    attempts_file = tmp_path / "multi_attempts.jsonl"
+    attempt_1 = json.dumps({
+        "seed": 1,
+        "decision": "rejected",
+        "llm_usage": {
+            "by_stage": {"generator_boundary": {"calls": 1, "prompt_tokens": 500, "completion_tokens": 100, "duration_ms": 300.0}},
+            "totals": {"calls": 1, "prompt_tokens": 500, "completion_tokens": 100, "total_tokens": 600, "duration_ms": 300.0},
+        },
+    })
+    attempt_2 = json.dumps({
+        "seed": 2,
+        "decision": "accepted",
+        "llm_usage": {
+            "by_stage": {"judge_adjudication": {"calls": 2, "prompt_tokens": 700, "completion_tokens": 150, "duration_ms": 400.0}},
+            "totals": {"calls": 2, "prompt_tokens": 700, "completion_tokens": 150, "total_tokens": 850, "duration_ms": 400.0},
+        },
+    })
+    attempts_file.write_text(attempt_1 + "\n" + attempt_2 + "\n", encoding="utf-8")
+
+    metrics = compute_debate_benchmark_metrics(
+        run_id="fallback-run",
+        attempts_path=attempts_file,
+        b_gate_path=tmp_path / "non_existent_b_gate.json",
+    )
+
+    assert metrics["summary"]["total_attempts"] == 2
+    assert metrics["summary"]["accepted_rows"] == 1
+    assert metrics["token_efficiency"]["prompt_tokens_total"] == 1200
+    assert metrics["token_efficiency"]["completion_tokens_total"] == 250
+    assert metrics["token_efficiency"]["total_tokens_total"] == 1450
+    assert metrics["token_efficiency"]["total_llm_calls"] == 3
 
 
 def test_ab_benchmark_comparison():

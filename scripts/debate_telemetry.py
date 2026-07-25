@@ -10,17 +10,20 @@ token spend reductions, and wall-clock execution time).
 
 import argparse
 import json
+import logging
 import math
 import os
 import sys
 from pathlib import Path
-from statistics import mean, median
-from typing import Any, Dict, List, Optional, Tuple
+from statistics import mean
+from typing import Any, Dict, List, Optional
 
 # Enable relative imports from parent directory
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from scripts.path_utils import validate_input_path, validate_output_path
+
+logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 METRICS_ROOT = (PROJECT_ROOT / "artifacts" / "metrics").resolve()
@@ -60,7 +63,7 @@ def load_spans_for_run(spans_path: Path, run_id: str) -> List[Dict[str, Any]]:
         return []
     matching = []
     with spans_path.open("r", encoding="utf-8") as f:
-        for line in f:
+        for lineno, line in enumerate(f, start=1):
             line = line.strip()
             if not line:
                 continue
@@ -69,7 +72,8 @@ def load_spans_for_run(spans_path: Path, run_id: str) -> List[Dict[str, Any]]:
                 attrs = data.get("attributes", {})
                 if attrs.get("run_id") == run_id:
                     matching.append(data)
-            except Exception:
+            except Exception as exc:
+                logger.warning("[debate-telemetry] Failed to parse span line %d in %s: %s", lineno, spans_path, exc)
                 continue
     return matching
 
@@ -80,13 +84,14 @@ def load_attempts_for_run(attempts_path: Path) -> List[Dict[str, Any]]:
         return []
     attempts = []
     with attempts_path.open("r", encoding="utf-8") as f:
-        for line in f:
+        for lineno, line in enumerate(f, start=1):
             line = line.strip()
             if not line:
                 continue
             try:
                 attempts.append(json.loads(line))
-            except Exception:
+            except Exception as exc:
+                logger.warning("[debate-telemetry] Failed to parse attempt line %d in %s: %s", lineno, attempts_path, exc)
                 continue
     return attempts
 
@@ -98,7 +103,8 @@ def load_b_gate_metrics(b_gate_path: Path) -> Dict[str, Any]:
     try:
         with b_gate_path.open("r", encoding="utf-8") as f:
             return json.load(f)
-    except Exception:
+    except Exception as exc:
+        logger.warning("[debate-telemetry] Failed to load b_gate JSON from %s: %s", b_gate_path, exc)
         return {}
 
 
@@ -126,6 +132,8 @@ def _aggregate_attempt_usage(attempts: List[Dict[str, Any]], b_gate: Dict[str, A
     total_calls = b_gate.get("usage_calls_total", 0)
     total_wall_clock_ms = 0.0
 
+    has_b_gate_totals = bool(total_prompt_tokens or total_tokens)
+
     for attempt in attempts:
         llm_usage = attempt.get("llm_usage", {})
         by_stage = llm_usage.get("by_stage", {})
@@ -145,7 +153,7 @@ def _aggregate_attempt_usage(attempts: List[Dict[str, Any]], b_gate: Dict[str, A
 
         tot = llm_usage.get("totals", {})
         total_wall_clock_ms += tot.get("duration_ms", 0.0)
-        if not total_prompt_tokens:
+        if not has_b_gate_totals:
             total_prompt_tokens += tot.get("prompt_tokens", 0)
             total_completion_tokens += tot.get("completion_tokens", 0)
             total_tokens += tot.get("total_tokens", 0)
@@ -325,6 +333,20 @@ def compute_ab_benchmark_comparison(
     return {
         "baseline_run_id": baseline["run_id"],
         "candidate_run_id": candidate["run_id"],
+        "baseline_metrics": {
+            "total_tokens": base_tok,
+            "prompt_tokens": base_p_tok,
+            "tokens_per_accepted_row": base_per_acc,
+            "wall_clock_ms": base_clock,
+            "cache_hit_rate_pct": base_hit,
+        },
+        "candidate_metrics": {
+            "total_tokens": cand_tok,
+            "prompt_tokens": cand_p_tok,
+            "tokens_per_accepted_row": cand_per_acc,
+            "wall_clock_ms": cand_clock,
+            "cache_hit_rate_pct": cand_hit,
+        },
         "deltas": {
             "total_tokens_diff": tok_diff,
             "total_tokens_pct": round(tok_pct, 2),
@@ -340,6 +362,91 @@ def compute_ab_benchmark_comparison(
     }
 
 
+def _format_summary_section(run_id: str, summary: Dict[str, Any], tok: Dict[str, Any], cache: Dict[str, Any]) -> List[str]:
+    lines = [
+        f"# Debate Benchmark Telemetry: `{run_id}`",
+        "",
+        "## Executive Summary",
+        "",
+        "| Metric | Value |",
+        "| :--- | :--- |",
+        f"| **Run ID** | `{run_id}` |",
+        f"| **Total Attempts** | {summary.get('total_attempts', 0)} |",
+        f"| **Accepted Rows** | {summary.get('accepted_rows', 0)} |",
+        f"| **Yield Pass Rate** | {summary.get('yield_rate', 0.0) * 100:.1f}% |",
+        f"| **Total Wall-Clock Time** | {summary.get('total_wall_clock_seconds', 0.0):.1f}s |",
+        f"| **Total Prompt Tokens** | {tok.get('prompt_tokens_total', 0):,} |",
+        f"| **Total Completion Tokens** | {tok.get('completion_tokens_total', 0):,} |",
+        f"| **Tokens / Accepted Row** | {tok.get('tokens_per_accepted_row', 0.0):,} |",
+        f"| **Cache Hit Rate** | {cache.get('cache_hit_rate_pct', 0.0):.1f}% ({cache.get('cache_hits', 0)} hits / {cache.get('cache_misses', 0)} misses) |",
+        "",
+    ]
+    return lines
+
+
+def _format_ab_comparison_section(comparison: Dict[str, Any]) -> List[str]:
+    lines = []
+    c_delta = comparison.get("deltas", {})
+    c_stages = comparison.get("stage_deltas", {})
+    b_metrics = comparison.get("baseline_metrics", {})
+    cand_metrics = comparison.get("candidate_metrics", {})
+
+    b_tot = f"{b_metrics.get('total_tokens', 0):,}" if "total_tokens" in b_metrics else "—"
+    c_tot = f"{cand_metrics.get('total_tokens', 0):,}" if "total_tokens" in cand_metrics else "—"
+    b_ptot = f"{b_metrics.get('prompt_tokens', 0):,}" if "prompt_tokens" in b_metrics else "—"
+    c_ptot = f"{cand_metrics.get('prompt_tokens', 0):,}" if "prompt_tokens" in cand_metrics else "—"
+    b_per_acc = f"{b_metrics.get('tokens_per_accepted_row', 0.0):,.2f}" if "tokens_per_accepted_row" in b_metrics else "—"
+    c_per_acc = f"{cand_metrics.get('tokens_per_accepted_row', 0.0):,.2f}" if "tokens_per_accepted_row" in cand_metrics else "—"
+    b_dur = f"{b_metrics.get('wall_clock_ms', 0.0) / 1000.0:.1f}s" if "wall_clock_ms" in b_metrics else "—"
+    c_dur = f"{cand_metrics.get('wall_clock_ms', 0.0) / 1000.0:.1f}s" if "wall_clock_ms" in cand_metrics else "—"
+    b_hit = f"{b_metrics.get('cache_hit_rate_pct', 0.0):.1f}%" if "cache_hit_rate_pct" in b_metrics else "—"
+    c_hit = f"{cand_metrics.get('cache_hit_rate_pct', 0.0):.1f}%" if "cache_hit_rate_pct" in cand_metrics else "—"
+
+    lines.append(f"## A/B Comparison: Candidate `{comparison.get('candidate_run_id', '')}` vs Baseline `{comparison.get('baseline_run_id', '')}`")
+    lines.append("")
+    lines.append("| Dimension | Baseline | Candidate | Delta / Speedup |")
+    lines.append("| :--- | :--- | :--- | :--- |")
+    lines.append(f"| **Total Tokens** | {b_tot} | {c_tot} | `{c_delta.get('total_tokens_pct', 0.0):+.2f}%` |")
+    lines.append(f"| **Prompt Tokens** | {b_ptot} | {c_ptot} | `{c_delta.get('prompt_tokens_pct', 0.0):+.2f}%` |")
+    lines.append(f"| **Tokens / Accepted Row** | {b_per_acc} | {c_per_acc} | `{c_delta.get('tokens_per_accepted_row_pct', 0.0):+.2f}%` |")
+    lines.append(f"| **Wall-Clock Duration** | {b_dur} | {c_dur} | `{c_delta.get('wall_clock_pct', 0.0):+.2f}%` |")
+    lines.append(f"| **Cache Hit Rate** | {b_hit} | {c_hit} | `{c_delta.get('cache_hit_rate_diff_pct', 0.0):+.2f}%` |")
+    lines.append("")
+    lines.append("### Stage Latency Speedups")
+    lines.append("")
+    lines.append("| Stage | Baseline Avg (ms) | Candidate Avg (ms) | Speedup (%) |")
+    lines.append("| :--- | :--- | :--- | :--- |")
+    for s_name, s_data in c_stages.items():
+        lines.append(f"| `{s_name}` | {s_data.get('baseline_avg_ms', 0.0):.1f}ms | {s_data.get('candidate_avg_ms', 0.0):.1f}ms | `{s_data.get('speedup_pct', 0.0):+.2f}%` |")
+    lines.append("")
+    return lines
+
+
+def _format_stage_breakdown_section(stages: Dict[str, Any]) -> List[str]:
+    lines = [
+        "## Stage Breakdown",
+        "",
+        "| Stage | Calls | Prompt Tokens | Completion Tokens | Avg Duration | P95 Duration |",
+        "| :--- | :--- | :--- | :--- | :--- | :--- |",
+    ]
+    for s_name, s_data in stages.items():
+        lines.append(f"| `{s_name}` | {s_data.get('calls', 0)} | {s_data.get('prompt_tokens', 0):,} | {s_data.get('completion_tokens', 0):,} | {s_data.get('avg_duration_ms', 0.0):.1f}ms | {s_data.get('p95_duration_ms', 0.0):.1f}ms |")
+    lines.append("")
+    return lines
+
+
+def _format_quality_signals_section(b_gate: Dict[str, Any]) -> List[str]:
+    return [
+        "## Quality Gate Signals",
+        "",
+        f"- **Verifier Pass Rate:** {b_gate.get('verifier_pass_rate', 0.0) * 100:.1f}%",
+        f"- **Verifier Parse OK Rate:** {b_gate.get('verifier_parse_ok_rate', 0.0) * 100:.1f}%",
+        f"- **Anchor Match Rate:** {b_gate.get('anchor_match_rate', 0.0) * 100:.1f}%",
+        f"- **B-Gate Pass Status:** `{'PASS' if b_gate.get('pass') else 'FAIL'}`",
+        "",
+    ]
+
+
 def generate_markdown_report(
     benchmark: Dict[str, Any],
     comparison: Optional[Dict[str, Any]] = None,
@@ -353,59 +460,11 @@ def generate_markdown_report(
     stages = benchmark.get("stage_breakdown", {})
     b_gate = benchmark.get("b_gate_quality", {})
 
-    lines.append(f"# Debate Benchmark Telemetry: `{run_id}`")
-    lines.append("")
-    lines.append("## Executive Summary")
-    lines.append("")
-    lines.append("| Metric | Value |")
-    lines.append("| :--- | :--- |")
-    lines.append(f"| **Run ID** | `{run_id}` |")
-    lines.append(f"| **Total Attempts** | {summary.get('total_attempts', 0)} |")
-    lines.append(f"| **Accepted Rows** | {summary.get('accepted_rows', 0)} |")
-    lines.append(f"| **Yield Pass Rate** | {summary.get('yield_rate', 0.0) * 100:.1f}% |")
-    lines.append(f"| **Total Wall-Clock Time** | {summary.get('total_wall_clock_seconds', 0.0):.1f}s |")
-    lines.append(f"| **Total Prompt Tokens** | {tok.get('prompt_tokens_total', 0):,} |")
-    lines.append(f"| **Total Completion Tokens** | {tok.get('completion_tokens_total', 0):,} |")
-    lines.append(f"| **Tokens / Accepted Row** | {tok.get('tokens_per_accepted_row', 0.0):,} |")
-    lines.append(f"| **Cache Hit Rate** | {cache.get('cache_hit_rate_pct', 0.0):.1f}% ({cache.get('cache_hits', 0)} hits / {cache.get('cache_misses', 0)} misses) |")
-    lines.append("")
-
+    lines.extend(_format_summary_section(run_id, summary, tok, cache))
     if comparison:
-        c_delta = comparison.get("deltas", {})
-        c_stages = comparison.get("stage_deltas", {})
-        lines.append(f"## A/B Comparison: Candidate `{comparison.get('candidate_run_id', '')}` vs Baseline `{comparison.get('baseline_run_id', '')}`")
-        lines.append("")
-        lines.append("| Dimension | Baseline | Candidate | Delta / Speedup |")
-        lines.append("| :--- | :--- | :--- | :--- |")
-        lines.append(f"| **Total Tokens** | {comparison.get('baseline_run_id', '')} | {comparison.get('candidate_run_id', '')} | `{c_delta.get('total_tokens_pct', 0.0):+.2f}%` |")
-        lines.append(f"| **Prompt Tokens** | — | — | `{c_delta.get('prompt_tokens_pct', 0.0):+.2f}%` |")
-        lines.append(f"| **Tokens / Accepted Row** | — | — | `{c_delta.get('tokens_per_accepted_row_pct', 0.0):+.2f}%` |")
-        lines.append(f"| **Wall-Clock Duration** | — | — | `{c_delta.get('wall_clock_pct', 0.0):+.2f}%` |")
-        lines.append(f"| **Cache Hit Rate** | — | — | `{c_delta.get('cache_hit_rate_diff_pct', 0.0):+.2f}%` |")
-        lines.append("")
-        lines.append("### Stage Latency Speedups")
-        lines.append("")
-        lines.append("| Stage | Baseline Avg (ms) | Candidate Avg (ms) | Speedup (%) |")
-        lines.append("| :--- | :--- | :--- | :--- |")
-        for s_name, s_data in c_stages.items():
-            lines.append(f"| `{s_name}` | {s_data.get('baseline_avg_ms', 0.0):.1f}ms | {s_data.get('candidate_avg_ms', 0.0):.1f}ms | `{s_data.get('speedup_pct', 0.0):+.2f}%` |")
-        lines.append("")
-
-    lines.append("## Stage Breakdown")
-    lines.append("")
-    lines.append("| Stage | Calls | Prompt Tokens | Completion Tokens | Avg Duration | P95 Duration |")
-    lines.append("| :--- | :--- | :--- | :--- | :--- | :--- |")
-    for s_name, s_data in stages.items():
-        lines.append(f"| `{s_name}` | {s_data.get('calls', 0)} | {s_data.get('prompt_tokens', 0):,} | {s_data.get('completion_tokens', 0):,} | {s_data.get('avg_duration_ms', 0.0):.1f}ms | {s_data.get('p95_duration_ms', 0.0):.1f}ms |")
-    lines.append("")
-
-    lines.append("## Quality Gate Signals")
-    lines.append("")
-    lines.append(f"- **Verifier Pass Rate:** {b_gate.get('verifier_pass_rate', 0.0) * 100:.1f}%")
-    lines.append(f"- **Verifier Parse OK Rate:** {b_gate.get('verifier_parse_ok_rate', 0.0) * 100:.1f}%")
-    lines.append(f"- **Anchor Match Rate:** {b_gate.get('anchor_match_rate', 0.0) * 100:.1f}%")
-    lines.append(f"- **B-Gate Pass Status:** `{'PASS' if b_gate.get('pass') else 'FAIL'}`")
-    lines.append("")
+        lines.extend(_format_ab_comparison_section(comparison))
+    lines.extend(_format_stage_breakdown_section(stages))
+    lines.extend(_format_quality_signals_section(b_gate))
 
     return "\n".join(lines)
 
