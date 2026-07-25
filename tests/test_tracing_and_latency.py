@@ -10,6 +10,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 from agentbeats.tracing import trace_span, set_current_trace_id, reset_current_trace_id
+from agentbeats import tracing as tracing_mod
 from agentbeats.replay import ReplayManager, RunRecord, LLMCassette
 from scripts.unified_compare import _get_latency_slo_metric
 
@@ -92,6 +93,53 @@ def test_replay_manager_latency_aggregation(tmp_path):
     by_stage = summary["by_stage"]
     assert by_stage["test_stage_1"]["total_duration_ms"] == pytest.approx(150.0)
     assert by_stage["test_stage_2"]["total_duration_ms"] == pytest.approx(350.0)
+
+
+@pytest.mark.asyncio
+async def test_replay_manager_completion_exports_llm_span(tmp_path, monkeypatch):
+    cassette_file = tmp_path / "test_cassette.json"
+    record = RunRecord(
+        run_id="debate-baseline-test",
+        rng_seed=42,
+        models={"judge": "test-model"},
+        created_at="2026-06-01T00:00:00Z",
+    )
+    cassette = LLMCassette(str(cassette_file), mode="record")
+    rm = ReplayManager(record, cassette)
+    messages = [{"role": "user", "content": "hello"}]
+    cached_response = {
+        "choices": [{"message": {"content": "ok"}}],
+        "usage": {
+            "prompt_tokens": 3,
+            "completion_tokens": 4,
+            "total_tokens": 7,
+        },
+    }
+    cassette.save_response("test-model", messages, {}, cached_response)
+
+    def _tmp_trace_span(name, stage="unknown", attributes=None, spans_dir=None):
+        return tracing_mod.trace_span(
+            name,
+            stage=stage,
+            attributes=attributes,
+            spans_dir=tmp_path,
+        )
+
+    monkeypatch.setattr("agentbeats.replay.trace_span", _tmp_trace_span)
+
+    await rm.acompletion("test-model", messages, stage="judge_adjudication")
+
+    spans_file = tmp_path / "spans.jsonl"
+    assert spans_file.exists()
+    data = json.loads(spans_file.read_text(encoding="utf-8").strip())
+    assert data["name"] == "llm_completion"
+    assert data["stage"] == "judge_adjudication"
+    assert data["status"] == "OK"
+    assert data["attributes"]["run_id"] == "debate-baseline-test"
+    assert data["attributes"]["model"] == "test-model"
+    assert data["attributes"]["source"] in {"cache", "cache_fallback"}
+    assert data["attributes"]["cache_hit"] is True
+    assert data["attributes"]["total_tokens"] == 7
 
 
 def test_unified_compare_latency_slo_metric(monkeypatch):

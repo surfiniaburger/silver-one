@@ -278,21 +278,34 @@ Use this exact flow when you want attempts-level soft checks captured and scored
 # Re-run a record run to generate attempts with soft_checks
 
 uv run python scenarios/debate/run_batch.py \
-  --run-id pilot-v1-calibrated-f \
+  --run-id pilot-v1-calibrated-i \
   --seed 42 \
   --mode record \
-  --clock-now 2026-06-07T12:09:00Z \
+  --clock-now 2026-07-24T11:22:53Z \
   --seeds scenarios/debate/cve_seeds_test.jsonl \
-  --output training_corpus_calibrated_f.jsonl \
-  --attempts-out artifacts/attempts/pilot-v1-calibrated-f.jsonl
+  --output training_corpus_calibrated_i.jsonl \
+  --attempts-out artifacts/attempts/pilot-v1-calibrated-i.jsonl
 
 
 # Compute B metrics + soft-check rates
 
 ./scripts/run_b_gate.sh \
-  training_corpus_calibrated_f.jsonl \
-  artifacts/attempts/pilot-v1-calibrated-f.jsonl \
-  artifacts/metrics/b_gate-pilot-v1-calibrated-f.json
+  training_corpus_calibrated_i.jsonl \
+  artifacts/attempts/pilot-v1-calibrated-i.jsonl \
+  artifacts/metrics/b_gate-pilot-v1-calibrated-i.json
+
+
+#To compute benchmark metrics for a single run:
+
+uv run python3 scripts/debate_telemetry.py --run-id pilot-v1-calibrated-i
+
+# To run an A/B comparison between baseline and candidate runs with a Markdown report:
+
+uv run python3 scripts/debate_telemetry.py \
+  --run-id pilot-v1-calibrated-j \
+  --baseline-json artifacts/metrics/debate_benchmark-pilot-v1-calibrated-i.json \
+  --output-markdown reports/debate_benchmark_comparison_i_vs_j.md
+
 ```
 
 ## Determinism and Replay

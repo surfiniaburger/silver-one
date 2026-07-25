@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 from typing import Dict, Any, Optional, List, Tuple
 from pydantic import BaseModel
 from agentbeats.clock import RunClock
+from agentbeats.tracing import trace_span
 
 class RunRecord(BaseModel):
     run_id: str
@@ -384,18 +385,56 @@ class ReplayManager:
         response_obj: Any,
         source: str,
         duration_ms: float = 0.0,
-    ) -> None:
+    ) -> Dict[str, Any]:
         usage = self._extract_usage(model=model, messages=messages, response_obj=response_obj)
         cost_usd = self._estimate_cost_usd(model, response_obj, usage)
-        self.usage_events.append(
+        event = {
+            "stage": stage,
+            "model": model,
+            "source": source,
+            "duration_ms": round(duration_ms, 3),
+            "generation_params": self.effective_generation_config(model),
+            **usage,
+            "cost_usd": cost_usd,
+        }
+        self.usage_events.append(event)
+        return event
+
+    def _completion_span_attributes(
+        self,
+        *,
+        stage: str,
+        model: str,
+        messages: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        return {
+            "run_id": self.run_record.run_id,
+            "seed": self.run_record.rng_seed,
+            "stage": stage,
+            "model": model,
+            "cassette_mode": self.cassette.mode,
+            "cassette_path": self.cassette.path,
+            "message_count": len(messages) if isinstance(messages, list) else 0,
+            "generation_params": self.effective_generation_config(model),
+        }
+
+    @staticmethod
+    def _annotate_completion_span(
+        span: Any,
+        *,
+        event: Dict[str, Any],
+        cache_hit: bool,
+    ) -> None:
+        span.attributes.update(
             {
-                "stage": stage,
-                "model": model,
-                "source": source,
-                "duration_ms": round(duration_ms, 3),
-                "generation_params": self.effective_generation_config(model),
-                **usage,
-                "cost_usd": cost_usd,
+                "source": event.get("source"),
+                "cache_hit": cache_hit,
+                "prompt_tokens": event.get("prompt_tokens"),
+                "completion_tokens": event.get("completion_tokens"),
+                "total_tokens": event.get("total_tokens"),
+                "cost_usd": event.get("cost_usd"),
+                "has_usage": event.get("has_usage"),
+                "usage_source": event.get("usage_source"),
             }
         )
 
@@ -505,43 +544,54 @@ class ReplayManager:
         # Use the module-level `litellm` binding (may be None in test environments)
         stage = str(kwargs.pop("stage", "unknown"))
         self._apply_generation_config(model, kwargs)
-        
-        # In replay mode, fail loudly if not in cassette
-        cached = self.cassette.get_response(model, messages, kwargs)
-        if cached:
+
+        span_attrs = self._completion_span_attributes(
+            stage=stage,
+            model=model,
+            messages=messages,
+        )
+        with trace_span("llm_completion", stage=stage, attributes=span_attrs) as span:
+            # In replay mode, fail loudly if not in cassette
+            cached = self.cassette.get_response(model, messages, kwargs)
+            if cached:
+                duration_ms = (time.perf_counter() - start_perf) * 1000.0
+                # Try to use litellm.ModelResponse when available for compatibility,
+                # otherwise return the cached dict/object directly.
+                model_response_cls = None
+                if litellm is not None:
+                    try:
+                        from litellm.utils import ModelResponse as _ModelResponse
+                        model_response_cls = _ModelResponse
+                    except Exception:
+                        model_response_cls = None
+
+                if model_response_cls is not None and isinstance(cached, dict) and "choices" in cached:
+                    response = model_response_cls(**cached)
+                    event = self._record_usage_event(stage=stage, model=model, messages=messages, response_obj=response, source="cache", duration_ms=duration_ms)
+                    self._annotate_completion_span(span, event=event, cache_hit=True)
+                    return response
+
+                # Fallback: return the cached object/dict and record usage using it.
+                # _record_usage_event accepts either dict-like provider responses or model objects.
+                event = self._record_usage_event(stage=stage, model=model, messages=messages, response_obj=cached, source="cache_fallback", duration_ms=duration_ms)
+                self._annotate_completion_span(span, event=event, cache_hit=True)
+                return cached
+
+            if self.cassette.mode == "replay":
+                span.attributes.update({"source": "replay_miss", "cache_hit": False})
+                raise RuntimeError(f"Offline Replay Error: No cached response for {model} with hash {self.cassette._hash(model, messages, kwargs)}")
+
+            # Make real call with increased timeout
+            kwargs.setdefault("timeout", 1200)
+            if litellm is None:
+                span.attributes.update({"source": "provider", "cache_hit": False})
+                raise RuntimeError("litellm is not available in this environment; cannot perform live completion")
+            response = await litellm.acompletion(model=model, messages=messages, **kwargs)
             duration_ms = (time.perf_counter() - start_perf) * 1000.0
-            # Try to use litellm.ModelResponse when available for compatibility,
-            # otherwise return the cached dict/object directly.
-            model_response_cls = None
-            if litellm is not None:
-                try:
-                    from litellm.utils import ModelResponse as _ModelResponse
-                    model_response_cls = _ModelResponse
-                except Exception:
-                    model_response_cls = None
 
-            if model_response_cls is not None and isinstance(cached, dict) and "choices" in cached:
-                response = model_response_cls(**cached)
-                self._record_usage_event(stage=stage, model=model, messages=messages, response_obj=response, source="cache", duration_ms=duration_ms)
-                return response
-
-            # Fallback: return the cached object/dict and record usage using it.
-            # _record_usage_event accepts either dict-like provider responses or model objects.
-            self._record_usage_event(stage=stage, model=model, messages=messages, response_obj=cached, source="cache_fallback", duration_ms=duration_ms)
-            return cached
-
-        if self.cassette.mode == "replay":
-            raise RuntimeError(f"Offline Replay Error: No cached response for {model} with hash {self.cassette._hash(model, messages, kwargs)}")
-
-        # Make real call with increased timeout
-        kwargs.setdefault("timeout", 1200)
-        if litellm is None:
-            raise RuntimeError("litellm is not available in this environment; cannot perform live completion")
-        response = await litellm.acompletion(model=model, messages=messages, **kwargs)
-        duration_ms = (time.perf_counter() - start_perf) * 1000.0
-        
-        # Save full response
-        res_dict = response.model_dump() if hasattr(response, "model_dump") else response
-        self.cassette.save_response(model, messages, kwargs, res_dict)
-        self._record_usage_event(stage=stage, model=model, messages=messages, response_obj=response, source="provider", duration_ms=duration_ms)
-        return response
+            # Save full response
+            res_dict = response.model_dump() if hasattr(response, "model_dump") else response
+            self.cassette.save_response(model, messages, kwargs, res_dict)
+            event = self._record_usage_event(stage=stage, model=model, messages=messages, response_obj=response, source="provider", duration_ms=duration_ms)
+            self._annotate_completion_span(span, event=event, cache_hit=False)
+            return response
