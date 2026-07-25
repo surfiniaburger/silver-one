@@ -1114,6 +1114,49 @@ Debate Transcript:
             )
             return None, reason
 
+    def _append_rejected_attempt(
+        self,
+        ctx: _EvalContext,
+        i: int,
+        reject_reason: str,
+        current_sample_block: str,
+        debate_eval: DebateEval | None = None,
+        normalized_anchors: list[str] | None = None,
+        soft_checks: dict | None = None,
+        anchor_stats: dict | None = None,
+        extra_fields: dict | None = None,
+    ) -> None:
+        attempt = {
+            "run_id": ctx.run_id,
+            "seed": ctx.seed,
+            "mode": ctx.mode,
+            "refinement_round": i,
+            "predicate": ctx.predicate,
+            "target_verdict": ctx.target_verdict,
+            "target_dimension": ctx.target_dimension,
+            "decision": "rejected",
+            "reject_reason": reject_reason,
+            "sample_sha256": _sha256_text(current_sample_block),
+        }
+        if anchor_stats is not None:
+            attempt["anchor_stats"] = anchor_stats
+        if normalized_anchors is not None:
+            attempt["anchors_normalized"] = normalized_anchors
+        if debate_eval is not None:
+            attempt["judge_eval"] = {
+                "predicate": debate_eval.predicate,
+                "anchors": normalized_anchors if normalized_anchors is not None else debate_eval.anchors,
+                "support_level": debate_eval.support_level,
+                "verifier_report": debate_eval.verifier_report,
+                "winner": debate_eval.winner,
+            }
+            attempt["support_level"] = debate_eval.support_level
+        if soft_checks is not None:
+            attempt["soft_checks"] = soft_checks
+        if extra_fields:
+            attempt.update(extra_fields)
+        ctx.append_attempt(attempt)
+
     def _run_gate_checks(
         self,
         ctx: _EvalContext,
@@ -1150,30 +1193,10 @@ Debate Transcript:
         if not predicate_quality["pass"]:
             reason = "Rejected: predicate quality gate failed."
             logger.info("%s %s", reason, predicate_quality)
-            ctx.append_attempt(
-                {
-                    "run_id": ctx.run_id,
-                    "seed": ctx.seed,
-                    "mode": ctx.mode,
-                    "refinement_round": i,
-                    "predicate": ctx.predicate,
-                    "target_verdict": ctx.target_verdict,
-                    "target_dimension": ctx.target_dimension,
-                    "decision": "rejected",
-                    "reject_reason": "predicate_quality_failed",
-                    "sample_sha256": _sha256_text(current_sample_block),
-                    "anchor_stats": anchor_stats,
-                    "anchors_normalized": normalized_anchors,
-                    "judge_eval": {
-                        "predicate": debate_eval.predicate,
-                        "anchors": normalized_anchors,
-                        "support_level": debate_eval.support_level,
-                        "verifier_report": debate_eval.verifier_report,
-                        "winner": debate_eval.winner,
-                    },
-                    "soft_checks": soft_checks,
-                    "support_level": debate_eval.support_level,
-                },
+            self._append_rejected_attempt(
+                ctx, i, "predicate_quality_failed", current_sample_block,
+                debate_eval=debate_eval, normalized_anchors=normalized_anchors,
+                soft_checks=soft_checks, anchor_stats=anchor_stats,
             )
             return False, reason, soft_checks, anchor_stats
 
@@ -1183,30 +1206,10 @@ Debate Transcript:
                 f"(only {len(normalized_anchors)} grounded anchors after normalization)."
             )
             logger.info(reason)
-            ctx.append_attempt(
-                {
-                    "run_id": ctx.run_id,
-                    "seed": ctx.seed,
-                    "mode": ctx.mode,
-                    "refinement_round": i,
-                    "predicate": ctx.predicate,
-                    "target_verdict": ctx.target_verdict,
-                    "target_dimension": ctx.target_dimension,
-                    "decision": "rejected",
-                    "reject_reason": "anchors_too_few_after_normalization",
-                    "sample_sha256": _sha256_text(current_sample_block),
-                    "anchor_stats": anchor_stats,
-                    "anchors_normalized": normalized_anchors,
-                    "judge_eval": {
-                        "predicate": debate_eval.predicate,
-                        "anchors": normalized_anchors,
-                        "support_level": debate_eval.support_level,
-                        "verifier_report": debate_eval.verifier_report,
-                        "winner": debate_eval.winner,
-                    },
-                    "soft_checks": soft_checks,
-                    "support_level": debate_eval.support_level,
-                },
+            self._append_rejected_attempt(
+                ctx, i, "anchors_too_few_after_normalization", current_sample_block,
+                debate_eval=debate_eval, normalized_anchors=normalized_anchors,
+                soft_checks=soft_checks, anchor_stats=anchor_stats,
             )
             return False, reason, soft_checks, anchor_stats
 
@@ -1216,75 +1219,30 @@ Debate Transcript:
         if not mechanism_gate_pass:
             reason = "Rejected: mechanism evidence gate failed."
             logger.info(reason)
-            ctx.append_attempt(
-                {
-                    "run_id": ctx.run_id,
-                    "seed": ctx.seed,
-                    "mode": ctx.mode,
-                    "refinement_round": i,
-                    "predicate": ctx.predicate,
-                    "target_verdict": ctx.target_verdict,
-                    "target_dimension": ctx.target_dimension,
-                    "decision": "rejected",
-                    "reject_reason": "mechanism_evidence_failed",
-                    "sample_sha256": _sha256_text(current_sample_block),
-                    "mechanism_gate_pass": mechanism_gate_pass,
-                    "mechanism_evidence": mech_evidence,
-                    "anchor_stats": anchor_stats,
-                    "judge_eval": {
-                        "predicate": debate_eval.predicate,
-                        "anchors": debate_eval.anchors,
-                        "support_level": debate_eval.support_level,
-                        "verifier_report": debate_eval.verifier_report,
-                        "winner": debate_eval.winner,
-                    },
-                    "soft_checks": soft_checks,
-                    "support_level": debate_eval.support_level,
-                },
+            self._append_rejected_attempt(
+                ctx, i, "mechanism_evidence_failed", current_sample_block,
+                debate_eval=debate_eval, soft_checks=soft_checks, anchor_stats=anchor_stats,
+                extra_fields={"mechanism_gate_pass": mechanism_gate_pass, "mechanism_evidence": mech_evidence},
             )
             return False, reason, soft_checks, anchor_stats
 
         if not mechanism_template["pass"]:
             reason = "Rejected: mechanism template gate failed."
             logger.info(reason)
-            ctx.append_attempt(
-                {
-                    "run_id": ctx.run_id,
-                    "seed": ctx.seed,
-                    "mode": ctx.mode,
-                    "refinement_round": i,
-                    "predicate": ctx.predicate,
-                    "target_verdict": ctx.target_verdict,
-                    "target_dimension": ctx.target_dimension,
-                    "decision": "rejected",
-                    "reject_reason": "mechanism_template_failed",
-                    "sample_sha256": _sha256_text(current_sample_block),
-                    "mechanism_template": mechanism_template,
-                    "soft_checks": soft_checks,
-                    "support_level": debate_eval.support_level,
-                },
+            self._append_rejected_attempt(
+                ctx, i, "mechanism_template_failed", current_sample_block,
+                debate_eval=debate_eval, soft_checks=soft_checks,
+                extra_fields={"mechanism_template": mechanism_template},
             )
             return False, reason, soft_checks, anchor_stats
 
         if not con_win_gate["pass"]:
             reason = "Rejected: con win lacks concrete counter-evidence anchors/guard."
             logger.info(reason)
-            ctx.append_attempt(
-                {
-                    "run_id": ctx.run_id,
-                    "seed": ctx.seed,
-                    "mode": ctx.mode,
-                    "refinement_round": i,
-                    "predicate": ctx.predicate,
-                    "target_verdict": ctx.target_verdict,
-                    "target_dimension": ctx.target_dimension,
-                    "decision": "rejected",
-                    "reject_reason": "con_win_without_counter_evidence",
-                    "sample_sha256": _sha256_text(current_sample_block),
-                    "con_win_counter_evidence": con_win_gate,
-                    "soft_checks": soft_checks,
-                    "support_level": debate_eval.support_level,
-                },
+            self._append_rejected_attempt(
+                ctx, i, "con_win_without_counter_evidence", current_sample_block,
+                debate_eval=debate_eval, soft_checks=soft_checks,
+                extra_fields={"con_win_counter_evidence": con_win_gate},
             )
             return False, reason, soft_checks, anchor_stats
 
@@ -1358,29 +1316,10 @@ Debate Transcript:
                 else "VERIFIER AUDIT FAILED: audit did not pass"
             )
             logger.warning(last_judge_reason)
-            ctx.append_attempt(
-                {
-                    "run_id": ctx.run_id,
-                    "seed": ctx.seed,
-                    "mode": ctx.mode,
-                    "refinement_round": i,
-                    "predicate": ctx.predicate,
-                    "target_verdict": ctx.target_verdict,
-                    "target_dimension": ctx.target_dimension,
-                    "decision": "rejected",
-                    "reject_reason": reject_reason,
-                    "logic_error": verifier_audit.logic_error,
-                    "sample_sha256": _sha256_text(current_sample_block),
-                    "judge_eval": {
-                        "predicate": debate_eval.predicate,
-                        "anchors": normalized_anchors,
-                        "support_level": debate_eval.support_level,
-                        "winner": debate_eval.winner,
-                    },
-                    "soft_checks": soft_checks,
-                    "verifier": verifier_meta,
-                    "support_level": debate_eval.support_level,
-                },
+            self._append_rejected_attempt(
+                ctx, i, reject_reason, current_sample_block,
+                debate_eval=debate_eval, normalized_anchors=normalized_anchors,
+                soft_checks=soft_checks, extra_fields={"logic_error": verifier_audit.logic_error, "verifier": verifier_meta},
             )
             return False, last_judge_reason
 
@@ -1415,29 +1354,10 @@ Debate Transcript:
         }
 
         if debate_eval.winner != "pro_debater":
-            ctx.append_attempt(
-                {
-                    "run_id": ctx.run_id,
-                    "seed": ctx.seed,
-                    "mode": ctx.mode,
-                    "refinement_round": i,
-                    "predicate": ctx.predicate,
-                    "target_verdict": ctx.target_verdict,
-                    "target_dimension": ctx.target_dimension,
-                    "decision": "rejected",
-                    "reject_reason": "con_win_not_applicable",
-                    "sample_sha256": _sha256_text(current_sample_block),
-                    "judge_eval": {
-                        "predicate": debate_eval.predicate,
-                        "anchors": normalized_anchors,
-                        "support_level": debate_eval.support_level,
-                        "verifier_report": debate_eval.verifier_report,
-                        "winner": debate_eval.winner,
-                    },
-                    "soft_checks": soft_checks,
-                    "verifier": verifier_meta,
-                    "support_level": debate_eval.support_level,
-                },
+            self._append_rejected_attempt(
+                ctx, i, "con_win_not_applicable", current_sample_block,
+                debate_eval=debate_eval, normalized_anchors=normalized_anchors,
+                soft_checks=soft_checks, extra_fields={"verifier": verifier_meta},
             )
             return False, None, verifier_meta, debate_eval.reason
 
