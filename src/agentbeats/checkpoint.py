@@ -14,8 +14,26 @@ def utc_timestamp() -> str:
     return RunClock.from_env().now_iso()
 
 
-def save_checkpoint(path: str, payload: Dict[str, Any], *, clock_now: Optional[str] = None) -> None:
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+def _validate_path(path: str, base_dir: Optional[str] = None) -> str:
+    """Validate and canonicalize file path to prevent path traversal vulnerability (CWE-22)."""
+    if not path or not isinstance(path, str):
+        raise CheckpointError("Invalid file path: path must be a non-empty string.")
+    
+    resolved_path = os.path.realpath(os.path.abspath(path))
+    
+    if base_dir:
+        resolved_base = os.path.realpath(os.path.abspath(base_dir))
+        if not resolved_path.startswith(resolved_base + os.sep) and resolved_path != resolved_base:
+            raise CheckpointError(f"Path traversal detected: path '{path}' escapes base directory '{base_dir}'.")
+            
+    return resolved_path
+
+
+def save_checkpoint(path: str, payload: Dict[str, Any], *, clock_now: Optional[str] = None, base_dir: Optional[str] = None) -> None:
+    path = _validate_path(path, base_dir=base_dir)
+    target_dir = os.path.dirname(path)
+    if target_dir:
+        os.makedirs(target_dir, exist_ok=True)
     data = dict(payload)
     data.setdefault("schema_version", 1)
     data["updated_at"] = RunClock.from_value(clock_now).now_iso()
@@ -25,7 +43,7 @@ def save_checkpoint(path: str, payload: Dict[str, Any], *, clock_now: Optional[s
         with tempfile.NamedTemporaryFile(
             mode="w",
             encoding="utf-8",
-            dir=os.path.dirname(path) or ".",
+            dir=target_dir or ".",
             delete=False,
             suffix=".tmp",
         ) as tf:
@@ -42,7 +60,8 @@ def save_checkpoint(path: str, payload: Dict[str, Any], *, clock_now: Optional[s
                 pass
 
 
-def load_checkpoint(path: str) -> Optional[Dict[str, Any]]:
+def load_checkpoint(path: str, base_dir: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    path = _validate_path(path, base_dir=base_dir)
     if not os.path.exists(path):
         return None
     try:
