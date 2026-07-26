@@ -62,11 +62,11 @@ def save_checkpoint(path: str, payload: Dict[str, Any], *, clock_now: Optional[s
 
 def load_checkpoint(path: str, base_dir: Optional[str] = None) -> Optional[Dict[str, Any]]:
     path = _validate_path(path, base_dir=base_dir)
-    if not os.path.exists(path):
-        return None
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
+    except FileNotFoundError:
+        return None
     except Exception as e:
         raise CheckpointError(f"Failed to load checkpoint {path}: {e}") from e
     if not isinstance(data, dict):
