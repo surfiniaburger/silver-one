@@ -7,6 +7,8 @@ from agentbeats.structured_output import call_structured
 
 logger = logging.getLogger("barred_generator")
 
+REPLAY_MANAGER_REQUIRED_MSG = "ReplayManager is required for structured output calls."
+
 class Dimensions(BaseModel):
     thinking_process: str
     dimensions: list[str]
@@ -33,7 +35,8 @@ class BarredDataGenerator:
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
-            ]
+            ],
+            "options": {"keep_alive": "24h"},
         }
         if response_format:
             kwargs["response_format"] = response_format
@@ -86,7 +89,7 @@ Return your response ONLY as a valid JSON object conforming to the schema.
         
         try:
             if not self.replay_manager:
-                raise RuntimeError("ReplayManager is required for structured output calls.")
+                raise RuntimeError(REPLAY_MANAGER_REQUIRED_MSG)
             data = await call_structured(
                 replay_manager=self.replay_manager,
                 model=self.model,
@@ -99,10 +102,11 @@ Return your response ONLY as a valid JSON object conforming to the schema.
                 strict=True,
                 repair_on_fail=True,
                 stage="generator_dimensions",
+                options={"keep_alive": "24h"},
             )
             return data.dimensions
-        except Exception as e:
-            logger.error(f"Failed to parse dimensions: {e}.")
+        except Exception:
+            logger.exception("Failed to parse dimensions.")
             return []
 
     async def generate_boundary_sample(self, input_block: str, predicate: str, target_dimension: str, target_verdict: str) -> dict:
@@ -162,7 +166,7 @@ Return your response ONLY as a valid JSON object with the following fields: "thi
         
         try:
             if not self.replay_manager:
-                raise RuntimeError("ReplayManager is required for structured output calls.")
+                raise RuntimeError(REPLAY_MANAGER_REQUIRED_MSG)
             data = await call_structured(
                 replay_manager=self.replay_manager,
                 model=self.model,
@@ -175,10 +179,11 @@ Return your response ONLY as a valid JSON object with the following fields: "thi
                 strict=True,
                 repair_on_fail=True,
                 stage="generator_boundary",
+                options={"keep_alive": "24h"},
             )
             return data.model_dump()
-        except Exception as e:
-            logger.error(f"Failed to parse boundary sample: {e}.")
+        except Exception:
+            logger.exception("Failed to parse boundary sample.")
             return {}
 
     async def refine_sample(self, input_block: str, predicate: str, target_dimension: str, target_verdict: str, previous_block: str, dissenting_reasoning: str) -> dict:
@@ -235,7 +240,7 @@ Return your response ONLY as a valid JSON object conforming to the schema.
         
         try:
             if not self.replay_manager:
-                raise RuntimeError("ReplayManager is required for structured output calls.")
+                raise RuntimeError(REPLAY_MANAGER_REQUIRED_MSG)
             data = await call_structured(
                 replay_manager=self.replay_manager,
                 model=self.model,
@@ -248,8 +253,9 @@ Return your response ONLY as a valid JSON object conforming to the schema.
                 strict=True,
                 repair_on_fail=True,
                 stage="generator_refine",
+                options={"keep_alive": "24h"},
             )
             return data.model_dump()
-        except Exception as e:
-            logger.error(f"Failed to parse refined sample: {e}.")
+        except Exception:
+            logger.exception("Failed to parse refined sample.")
             return {}

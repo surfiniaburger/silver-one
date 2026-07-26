@@ -8,7 +8,7 @@ sys.path.append(os.path.join(os.getcwd(), "src"))
 
 from agentbeats.client import send_message
 
-async def test():
+async def main():
     judge_url = "http://127.0.0.1:9009"
     payload = {
         "participants": {
@@ -31,4 +31,4 @@ async def test():
     print(f"Result: {result}")
 
 if __name__ == "__main__":
-    asyncio.run(test())
+    asyncio.run(main())
