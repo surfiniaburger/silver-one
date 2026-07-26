@@ -10,10 +10,6 @@ class CheckpointError(RuntimeError):
     pass
 
 
-def utc_timestamp() -> str:
-    return RunClock.from_env().now_iso()
-
-
 def _validate_path(path: str, base_dir: Optional[str] = None) -> str:
     """Validate and canonicalize file path to prevent path traversal vulnerability (CWE-22)."""
     if not path or not isinstance(path, str):
