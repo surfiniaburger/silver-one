@@ -1,7 +1,8 @@
 import json
 import os
 import tempfile
-from typing import Any, Dict, Optional
+from pathlib import Path
+from typing import Any, Dict, Optional, Union
 
 from agentbeats.clock import RunClock
 
@@ -10,25 +11,28 @@ class CheckpointError(RuntimeError):
     pass
 
 
-def _validate_path(path: str, base_dir: Optional[str] = None) -> str:
+def _validate_path(path: Union[str, Path], base_dir: Optional[Union[str, Path]] = None) -> Path:
     """Validate and canonicalize file path to prevent path traversal vulnerability (CWE-22)."""
-    if not path or not isinstance(path, str):
-        raise CheckpointError("Invalid file path: path must be a non-empty string.")
+    if not path:
+        raise CheckpointError("Invalid file path: path must be a non-empty string or Path.")
     
-    resolved_path = os.path.realpath(os.path.abspath(path))
+    resolved_path = Path(path).resolve()
     
     if base_dir:
-        resolved_base = os.path.realpath(os.path.abspath(base_dir))
-        if not resolved_path.startswith(resolved_base + os.sep) and resolved_path != resolved_base:
+        resolved_base = Path(base_dir).resolve()
+        try:
+            resolved_path.relative_to(resolved_base)
+        except ValueError:
             raise CheckpointError(f"Path traversal detected: path '{path}' escapes base directory '{base_dir}'.")
             
     return resolved_path
 
 
-def save_checkpoint(path: str, payload: Dict[str, Any], *, clock_now: Optional[str] = None, base_dir: Optional[str] = None) -> None:
-    path = _validate_path(path, base_dir=base_dir)
-    target_dir = _validate_path(os.path.dirname(path) or ".", base_dir=base_dir)
-    os.makedirs(target_dir, exist_ok=True)
+def save_checkpoint(path: Union[str, Path], payload: Dict[str, Any], *, clock_now: Optional[str] = None, base_dir: Optional[Union[str, Path]] = None) -> None:
+    valid_path = _validate_path(path, base_dir=base_dir)
+    target_dir = valid_path.parent
+    target_dir.mkdir(parents=True, exist_ok=True)
+
     data = dict(payload)
     data.setdefault("schema_version", 1)
     data["updated_at"] = RunClock.from_value(clock_now).now_iso()
@@ -38,14 +42,14 @@ def save_checkpoint(path: str, payload: Dict[str, Any], *, clock_now: Optional[s
         with tempfile.NamedTemporaryFile(
             mode="w",
             encoding="utf-8",
-            dir=target_dir or ".",
+            dir=target_dir,
             delete=False,
             suffix=".tmp",
         ) as tf:
             json.dump(data, tf, indent=2, sort_keys=True)
             tf.write("\n")
             tempname = tf.name
-        os.replace(tempname, path)
+        os.replace(tempname, str(valid_path))
         tempname = None
     finally:
         if tempname and os.path.exists(tempname):
@@ -55,10 +59,10 @@ def save_checkpoint(path: str, payload: Dict[str, Any], *, clock_now: Optional[s
                 pass
 
 
-def load_checkpoint(path: str, base_dir: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    path = _validate_path(path, base_dir=base_dir)
+def load_checkpoint(path: Union[str, Path], base_dir: Optional[Union[str, Path]] = None) -> Optional[Dict[str, Any]]:
+    valid_path = _validate_path(path, base_dir=base_dir)
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(valid_path, "r", encoding="utf-8") as f:
             data = json.load(f)
     except FileNotFoundError:
         return None
