@@ -31,9 +31,8 @@ def _validate_path(path: str, base_dir: Optional[str] = None) -> str:
 
 def save_checkpoint(path: str, payload: Dict[str, Any], *, clock_now: Optional[str] = None, base_dir: Optional[str] = None) -> None:
     path = _validate_path(path, base_dir=base_dir)
-    target_dir = os.path.dirname(path)
-    if target_dir:
-        os.makedirs(target_dir, exist_ok=True)
+    target_dir = _validate_path(os.path.dirname(path) or ".", base_dir=base_dir)
+    os.makedirs(target_dir, exist_ok=True)
     data = dict(payload)
     data.setdefault("schema_version", 1)
     data["updated_at"] = RunClock.from_value(clock_now).now_iso()
