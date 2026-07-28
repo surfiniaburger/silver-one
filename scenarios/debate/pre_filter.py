@@ -1,3 +1,22 @@
+"""Layered High-Precision Pre-Filter Module.
+
+This module implements a 3-Stage Layered Acceptance Pre-Filter (`BarredPreFilter`)
+to intercept unviable candidate seeds and doomed refinement loops before making
+expensive LLM API calls.
+
+Public Schema:
+    PreFilterDecision:
+        accept (bool): Whether the candidate seed is accepted (True) or rejected (False).
+        probability (float): Predictor confidence/probability score (0.0 <= p <= 1.0).
+        stage (str): Decision stage vocabulary ("heuristic" | "xgboost" | "setfit" | "default_pass").
+        elapsed_ms (float): Measured execution latency in milliseconds.
+
+Fallback Contract:
+    When model binaries (XGBoost / SetFit) are missing or fail to load, the filter
+    logs an explicit warning and defaults gracefully to `default_pass` (accept=True,
+    probability=1.0) so existing batch workflows are never interrupted.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -25,6 +44,14 @@ except ImportError:
 
 @dataclass(frozen=True)
 class PreFilterDecision:
+    """Public decision object returned by BarredPreFilter.predict().
+
+    Attributes:
+        accept: Whether the candidate seed is accepted (True) or rejected (False).
+        probability: Probability score in [0.0, 1.0].
+        stage: One of 'heuristic', 'xgboost', 'setfit', or 'default_pass'.
+        elapsed_ms: Execution duration in milliseconds.
+    """
     accept: bool
     probability: float
     stage: str
@@ -44,11 +71,17 @@ POSITIVE_RULES = (
     ),
 )
 
+# Multi-language code token regex (SonarQube S5843 complexity <= 20)
+CODE_TOKEN_REGEX = re.compile(
+    r"\b(def|class|function|if|return|void|int|char|struct|for|while|import|include|fn|const|curl)\b",
+    re.I,
+)
+
 
 class BarredPreFilter:
     """3-Stage Layered Acceptance Pre-Filter.
 
-    Stage A (Heuristics): Sub-millisecond regex/syntax rules.
+    Stage A (Heuristics): Sub-millisecond regex/syntax rules (<0.1ms).
     Stage B (XGBoost + TF-IDF): Fast sparse feature classifier (~1ms).
     Stage C (SetFit Transformer): Dense semantic model (~10ms) for ambiguous inputs.
     """
@@ -93,7 +126,7 @@ class BarredPreFilter:
             try:
                 return joblib.load(path)
             except Exception as e:
-                logger.warning("Failed to load joblib artifact from '%s': %e", path, e)
+                logger.warning("Failed to load joblib artifact from '%s': %s", path, e)
         return None
 
     def _load_setfit(self, path: str) -> Any:
@@ -101,10 +134,10 @@ class BarredPreFilter:
             try:
                 return SetFitModel.from_pretrained(path)
             except Exception as e:
-                logger.warning("Failed to load SetFit model from '%s': %e", path, e)
+                logger.warning("Failed to load SetFit model from '%s': %s", path, e)
         return None
 
-    def heuristic_score(self, predicate: str, input_block: str) -> Optional[float]:
+    def heuristic_score(self, predicate: str, input_block: Optional[str] = None) -> Optional[float]:
         """Stage A: Deterministic rules (<0.1ms).
 
         Returns 0.01 for clear negatives, 0.99 for clear positives, or None if ambiguous.
@@ -114,7 +147,8 @@ class BarredPreFilter:
             return 0.01
 
         # Check for minimum valid code tokens in input block if present
-        if input_block and not re.search(r"\b(def|class|if|return|void|int|char|struct|for|while|import|include)\b", input_block, re.I):
+        input_code = input_block.strip() if input_block else ""
+        if input_code and not CODE_TOKEN_REGEX.search(input_code):
             return 0.01
 
         if any(rule.search(pred_text) for rule in POSITIVE_RULES):
@@ -122,16 +156,17 @@ class BarredPreFilter:
 
         return None
 
-    def predict(self, predicate: str, input_block: str = "") -> PreFilterDecision:
+    def predict(self, predicate: str, input_block: Optional[str] = None) -> PreFilterDecision:
         """Run 3-Stage Cascade evaluation on candidate seed."""
+        input_code = input_block if input_block is not None else ""
         attributes = {
             "predicate_len": len(predicate) if predicate else 0,
-            "input_block_len": len(input_block) if input_block else 0,
+            "input_block_len": len(input_code),
         }
 
         with trace_span("pre_filter_evaluation", stage="pre_filter", attributes=attributes) as span:
             start_time = perf_counter()
-            decision = self._run_cascade(predicate, input_block, start_time)
+            decision = self._run_cascade(predicate, input_code, start_time)
 
             span.attributes["pre_filter.accept"] = decision.accept
             span.attributes["pre_filter.probability"] = decision.probability
@@ -139,6 +174,31 @@ class BarredPreFilter:
             span.attributes["pre_filter.elapsed_ms"] = decision.elapsed_ms
 
             return decision
+
+    def _get_combined_text(self, predicate: str, input_block: str) -> str:
+        snippet = input_block[:1000] if input_block else ""
+        return f"Predicate: {predicate} | Code: {snippet}"
+
+    def _eval_stage_b(self, combined_text: str) -> Optional[float]:
+        if self.vectorizer is None or self.xgb is None:
+            return None
+        try:
+            features = self.vectorizer.transform([combined_text])
+            probs = self.xgb.predict_proba(features)
+            return float(probs[0][1])
+        except Exception as e:
+            logger.warning("Stage B prediction failed: %s", e)
+            return None
+
+    def _eval_stage_c(self, combined_text: str) -> Optional[float]:
+        if self.setfit is None:
+            return None
+        try:
+            setfit_probs = self.setfit.predict_proba([combined_text])
+            return float(setfit_probs[0][1])
+        except Exception as e:
+            logger.warning("Stage C prediction failed: %s", e)
+            return None
 
     def _run_cascade(self, predicate: str, input_block: str, start_time: float) -> PreFilterDecision:
         # Stage A: Heuristics (<0.1ms)
@@ -152,48 +212,38 @@ class BarredPreFilter:
                 elapsed_ms=elapsed,
             )
 
-        combined_text = f"Predicate: {predicate} | Code: {input_block[:300]}"
+        combined_text = self._get_combined_text(predicate, input_block)
 
         # Stage B: TF-IDF + XGBoost (~1ms)
-        if self.vectorizer is not None and self.xgb is not None:
-            try:
-                features = self.vectorizer.transform([combined_text])
-                probs = self.xgb.predict_proba(features)
-                xgb_prob = float(probs[0][1])
-
-                if xgb_prob >= self.xgb_high_threshold:
-                    elapsed = round((perf_counter() - start_time) * 1000.0, 3)
-                    return PreFilterDecision(
-                        accept=True,
-                        probability=xgb_prob,
-                        stage="xgboost",
-                        elapsed_ms=elapsed,
-                    )
-                if xgb_prob <= self.xgb_low_threshold:
-                    elapsed = round((perf_counter() - start_time) * 1000.0, 3)
-                    return PreFilterDecision(
-                        accept=False,
-                        probability=xgb_prob,
-                        stage="xgboost",
-                        elapsed_ms=elapsed,
-                    )
-            except Exception as e:
-                logger.warning("Stage B prediction failed: %s", e)
-
-        # Stage C: SetFit Transformer (~10ms)
-        if self.setfit is not None:
-            try:
-                setfit_probs = self.setfit.predict_proba([combined_text])
-                setfit_prob = float(setfit_probs[0][1])
+        xgb_prob = self._eval_stage_b(combined_text)
+        if xgb_prob is not None:
+            if xgb_prob >= self.xgb_high_threshold:
                 elapsed = round((perf_counter() - start_time) * 1000.0, 3)
                 return PreFilterDecision(
-                    accept=setfit_prob >= self.setfit_threshold,
-                    probability=setfit_prob,
-                    stage="setfit",
+                    accept=True,
+                    probability=xgb_prob,
+                    stage="xgboost",
                     elapsed_ms=elapsed,
                 )
-            except Exception as e:
-                logger.warning("Stage C prediction failed: %s", e)
+            if xgb_prob <= self.xgb_low_threshold:
+                elapsed = round((perf_counter() - start_time) * 1000.0, 3)
+                return PreFilterDecision(
+                    accept=False,
+                    probability=xgb_prob,
+                    stage="xgboost",
+                    elapsed_ms=elapsed,
+                )
+
+        # Stage C: SetFit Transformer (~10ms)
+        setfit_prob = self._eval_stage_c(combined_text)
+        if setfit_prob is not None:
+            elapsed = round((perf_counter() - start_time) * 1000.0, 3)
+            return PreFilterDecision(
+                accept=setfit_prob >= self.setfit_threshold,
+                probability=setfit_prob,
+                stage="setfit",
+                elapsed_ms=elapsed,
+            )
 
         # Fallback: Default pass with explicit warning logging
         logger.warning("Pre-filter models unavailable or passed through. Executing default pass fallback.")

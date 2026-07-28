@@ -1,11 +1,25 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
+from time import perf_counter
 import logging
-import pytest
+
 from scenarios.debate.pre_filter import BarredPreFilter, PreFilterDecision
 
 
+def test_pre_filter_decision_schema():
+    decision = PreFilterDecision(accept=True, probability=0.95, stage="xgboost", elapsed_ms=1.2)
+    assert hasattr(decision, "accept")
+    assert hasattr(decision, "probability")
+    assert hasattr(decision, "stage")
+    assert hasattr(decision, "elapsed_ms")
+    assert decision.stage in {"heuristic", "xgboost", "setfit", "default_pass"}
+
+
 def test_stage_a_heuristics_negative_empty():
-    pre_filter = BarredPreFilter()
+    pre_filter = BarredPreFilter(
+        vectorizer_path="artifacts/models/non_existent.joblib",
+        xgb_path="artifacts/models/non_existent.joblib",
+        setfit_dir="artifacts/models/non_existent",
+    )
     decision = pre_filter.predict("")
     assert decision.stage == "heuristic"
     assert decision.accept is False
@@ -13,7 +27,11 @@ def test_stage_a_heuristics_negative_empty():
 
 
 def test_stage_a_heuristics_negative_short():
-    pre_filter = BarredPreFilter()
+    pre_filter = BarredPreFilter(
+        vectorizer_path="artifacts/models/non_existent.joblib",
+        xgb_path="artifacts/models/non_existent.joblib",
+        setfit_dir="artifacts/models/non_existent",
+    )
     decision = pre_filter.predict("Too short")
     assert decision.stage == "heuristic"
     assert decision.accept is False
@@ -21,14 +39,22 @@ def test_stage_a_heuristics_negative_short():
 
 
 def test_stage_a_heuristics_ungrounded_code():
-    pre_filter = BarredPreFilter()
+    pre_filter = BarredPreFilter(
+        vectorizer_path="artifacts/models/non_existent.joblib",
+        xgb_path="artifacts/models/non_existent.joblib",
+        setfit_dir="artifacts/models/non_existent",
+    )
     decision = pre_filter.predict("Analyzes vulnerability", input_block="just text without code keywords")
     assert decision.stage == "heuristic"
     assert decision.accept is False
 
 
 def test_stage_a_heuristics_positive():
-    pre_filter = BarredPreFilter()
+    pre_filter = BarredPreFilter(
+        vectorizer_path="artifacts/models/non_existent.joblib",
+        xgb_path="artifacts/models/non_existent.joblib",
+        setfit_dir="artifacts/models/non_existent",
+    )
     decision = pre_filter.predict("The code is vulnerable to a buffer overflow in parse_string", input_block="void parse_string(char *s) { }")
     assert decision.stage == "heuristic"
     assert decision.accept is True
@@ -51,7 +77,11 @@ def test_default_pass_fallback_when_models_missing(caplog):
 
 
 def test_stage_b_xgboost_accept_and_reject_thresholds():
-    pre_filter = BarredPreFilter()
+    pre_filter = BarredPreFilter(
+        vectorizer_path="artifacts/models/non_existent.joblib",
+        xgb_path="artifacts/models/non_existent.joblib",
+        setfit_dir="artifacts/models/non_existent",
+    )
     pre_filter.vectorizer = MagicMock()
     pre_filter.vectorizer.transform.return_value = "mock_features"
 
@@ -77,7 +107,11 @@ def test_stage_b_xgboost_accept_and_reject_thresholds():
 
 
 def test_stage_c_setfit_fallback_on_ambiguous_xgboost():
-    pre_filter = BarredPreFilter()
+    pre_filter = BarredPreFilter(
+        vectorizer_path="artifacts/models/non_existent.joblib",
+        xgb_path="artifacts/models/non_existent.joblib",
+        setfit_dir="artifacts/models/non_existent",
+    )
     pre_filter.vectorizer = MagicMock()
     pre_filter.vectorizer.transform.return_value = "mock_features"
 
@@ -98,13 +132,19 @@ def test_stage_c_setfit_fallback_on_ambiguous_xgboost():
 
 
 def test_performance_latency_budget():
-    pre_filter = BarredPreFilter()
+    pre_filter = BarredPreFilter(
+        vectorizer_path="artifacts/models/non_existent.joblib",
+        xgb_path="artifacts/models/non_existent.joblib",
+        setfit_dir="artifacts/models/non_existent",
+    )
     sample_predicate = "An ambiguous test predicate for performance benchmarking"
     sample_code = "def benchmark_fn(x, y):\n    return x + y"
 
+    start_wall = perf_counter()
     decisions = [pre_filter.predict(sample_predicate, sample_code) for _ in range(100)]
-    avg_latency = sum(d.elapsed_ms for d in decisions) / len(decisions)
+    total_elapsed_ms = (perf_counter() - start_wall) * 1000.0
+    avg_external_latency_ms = total_elapsed_ms / len(decisions)
 
     assert len(decisions) == 100
-    # Average latency on CPU per prediction must be well below 10ms
-    assert avg_latency < 10.0
+    # Average wall-clock latency per prediction including trace_span entry/exit must be <10ms
+    assert avg_external_latency_ms < 10.0

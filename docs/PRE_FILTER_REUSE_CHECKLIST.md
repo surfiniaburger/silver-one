@@ -9,11 +9,11 @@ This document tracks all existing utilities to be reused, new modules to build, 
 ### From `src/agentbeats/`
 - [x] **[`src/agentbeats/tracing.py`](../src/agentbeats/tracing.py)**:
   - Reuse `trace_span()` context manager to track pre-filter latency, decision stage (`heuristic` | `xgboost` | `setfit`), and automatically export telemetry spans to `artifacts/metrics/spans.jsonl`.
-- [x] **[`src/agentbeats/clock.py`](../src/agentbeats/clock.py)**:
-  - Reuse `RunClock.from_env().now_iso()` to guarantee deterministic ISO timestamps in pre-filter span records and attempt logs across record/replay modes.
-- [x] **[`src/agentbeats/checkpoint.py`](../src/agentbeats/checkpoint.py)**:
+- [ ] **[`src/agentbeats/clock.py`](../src/agentbeats/clock.py)** (Planned for PR 3):
+  - Reuse `RunClock.from_env().now_iso()` in `run_batch.py` integration to guarantee deterministic ISO timestamps across batch execution and pre-filter logs during record/replay modes.
+- [ ] **[`src/agentbeats/checkpoint.py`](../src/agentbeats/checkpoint.py)** (Planned for PR 3):
   - Reuse `save_checkpoint()` and `load_checkpoint()` in `run_batch.py` to persist batch manifests updated with `"skipped_pre_filter"` statuses.
-- [x] **[`src/agentbeats/replay.py`](../src/agentbeats/replay.py)**:
+- [ ] **[`src/agentbeats/replay.py`](../src/agentbeats/replay.py)** (Planned for PR 3):
   - Reuse `ReplayManager` to enforce deterministic pre-filter execution during offline replay tests (`mode=replay`).
 
 ### From `scripts/`
@@ -22,7 +22,7 @@ This document tracks all existing utilities to be reused, new modules to build, 
 - [x] **[`scripts/run_b_gate.sh`](../scripts/run_b_gate.sh)**:
   - Reuse to evaluate quality gates (`b2_anchor_match_rate`, `verifier_pass_rate`, `efficiency_tokens_per_accepted_row`) on pre-filtered batch output files.
 - [x] **[`scripts/telemetry_utils.py`](../scripts/telemetry_utils.py)**:
-  - Reuse `prune_code_text()` and `_sha256_text()` string hashing utilities to normalize code tokens before passing inputs to Stage B/C vectorizers.
+  - Reuse string hashing utilities to normalize code tokens before passing inputs to Stage B/C vectorizers.
 - [x] **[`scripts/path_utils.py`](../scripts/path_utils.py)**:
   - Reuse for cross-platform model artifact path resolution (`artifacts/models/`).
 
@@ -30,12 +30,12 @@ This document tracks all existing utilities to be reused, new modules to build, 
 
 ## 2. New Modules to Build
 
-- [ ] **[`scenarios/debate/pre_filter.py`](../scenarios/debate/pre_filter.py)** (PR 1):
-  - Implement `BarredPreFilter` and `PreFilterDecision` frozen dataclass.
+- [x] **[`scenarios/debate/pre_filter.py`](../scenarios/debate/pre_filter.py)** (PR 1):
+  - Implement `BarredPreFilter` and `PreFilterDecision` frozen dataclass with documented schema.
   - Implement Stage A (Heuristics), Stage B (XGBoost + TF-IDF), and Stage C (SetFit).
   - Implement `default_pass` fallback with explicit warning logging when model binaries are missing.
-- [ ] **[`scenarios/debate/test_pre_filter.py`](../scenarios/debate/test_pre_filter.py)** (PR 1):
-  - Unit test heuristic rules, model loader fallbacks, and $<10\text{ms}$ CPU latency budgets.
+- [x] **[`scenarios/debate/test_pre_filter.py`](../scenarios/debate/test_pre_filter.py)** (PR 1):
+  - Unit test heuristic rules, model loader fallbacks, and $<10\text{ms}$ CPU wall-clock latency budgets.
 - [ ] **[`scripts/train_pre_filter.py`](../scripts/train_pre_filter.py)** (PR 2):
   - Dataset extractor and offline model trainer script.
   - Parses `artifacts/attempts/*.jsonl` logs, fits Stage B (`XGBClassifier`) and Stage C (`SetFitModel`), and saves weights to `artifacts/models/`.
