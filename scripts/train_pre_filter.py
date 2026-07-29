@@ -29,21 +29,6 @@ except ImportError:
     joblib = None
 
 try:
-    from sklearn.feature_extraction.text import TfidfVectorizer as SklearnTfidfVectorizer
-except ImportError:
-    SklearnTfidfVectorizer = None
-
-try:
-    from xgboost import XGBClassifier
-except ImportError:
-    XGBClassifier = None
-
-try:
-    from sklearn.ensemble import RandomForestClassifier
-except ImportError:
-    RandomForestClassifier = None
-
-try:
     from datasets import Dataset
     from setfit import SetFitModel, Trainer, TrainingArguments
 except ImportError:
@@ -246,15 +231,16 @@ def _save_artifact(obj: Any, target_path: Path) -> None:
 
 def _train_stage_b_vectorizer(texts: List[str], output_dir: Path) -> Tuple[Any, np.ndarray]:
     """Train and persist Stage B TF-IDF vectorizer."""
-    if SklearnTfidfVectorizer is not None:
+    try:
+        from sklearn.feature_extraction.text import TfidfVectorizer
         logger.info("Fitting scikit-learn TF-IDF Vectorizer (char_wb 3-5 n-grams)...")
-        vectorizer = SklearnTfidfVectorizer(
+        vectorizer: Any = TfidfVectorizer(
             analyzer="char_wb",
             ngram_range=(3, 5),
             min_df=1,
             sublinear_tf=True,
         )
-    else:
+    except ImportError:
         logger.info("Fitting FallbackCharTfidfVectorizer...")
         vectorizer = FallbackCharTfidfVectorizer(ngram_range=(3, 5), max_features=1000)
 
@@ -266,8 +252,9 @@ def _train_stage_b_vectorizer(texts: List[str], output_dir: Path) -> Tuple[Any, 
 
 
 def _train_stage_b_classifier(X: np.ndarray, y: np.ndarray, output_dir: Path) -> Any:
-    """Train and persist Stage B classifier (XGBoost / RandomForest / Fallback)."""
-    if XGBClassifier is not None:
+    """Train and persist Stage B classifier (XGBoost / Fallback)."""
+    try:
+        from xgboost import XGBClassifier
         logger.info("Fitting XGBoost Classifier...")
         classifier: Any = XGBClassifier(
             n_estimators=40,
@@ -280,7 +267,7 @@ def _train_stage_b_classifier(X: np.ndarray, y: np.ndarray, output_dir: Path) ->
             tree_method="hist",
             n_jobs=1,
         )
-    else:
+    except ImportError:
         logger.info("Fitting FallbackClassifier...")
         classifier = FallbackClassifier()
 
