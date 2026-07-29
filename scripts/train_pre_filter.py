@@ -255,7 +255,7 @@ def _train_stage_b_vectorizer(texts: List[str], output_dir: Path) -> Tuple[Any, 
             sublinear_tf=True,
         )
     else:
-        logger.info("scikit-learn missing. Fitting FallbackCharTfidfVectorizer...")
+        logger.info("Fitting FallbackCharTfidfVectorizer...")
         vectorizer = FallbackCharTfidfVectorizer(ngram_range=(3, 5), max_features=1000)
 
     X = vectorizer.fit_transform(texts)
@@ -269,7 +269,7 @@ def _train_stage_b_classifier(X: np.ndarray, y: np.ndarray, output_dir: Path) ->
     """Train and persist Stage B classifier (XGBoost / RandomForest / Fallback)."""
     if XGBClassifier is not None:
         logger.info("Fitting XGBoost Classifier...")
-        classifier = XGBClassifier(
+        classifier: Any = XGBClassifier(
             n_estimators=40,
             max_depth=3,
             learning_rate=0.08,
@@ -280,9 +280,6 @@ def _train_stage_b_classifier(X: np.ndarray, y: np.ndarray, output_dir: Path) ->
             tree_method="hist",
             n_jobs=1,
         )
-    elif RandomForestClassifier is not None:
-        logger.info("XGBoost missing. Falling back to RandomForestClassifier...")
-        classifier = RandomForestClassifier(n_estimators=40, max_depth=3, random_state=42)
     else:
         logger.info("Fitting FallbackClassifier...")
         classifier = FallbackClassifier()
@@ -332,6 +329,10 @@ def train_pre_filter(
     """Train pre-filter models (Stage B XGBoost & Stage C SetFit) and persist artifacts."""
     output_dir.mkdir(parents=True, exist_ok=True)
     texts, labels = extract_dataset_from_attempts(attempts_dir)
+    if not texts:
+        logger.error("No valid attempt data available for training.")
+        return False
+
     y = np.array(labels)
 
     # Stage B
@@ -355,8 +356,7 @@ def main() -> None:
     attempts_path = Path(args.attempts_dir)
     output_path = Path(args.output_dir)
 
-    success = train_pre_filter(attempts_path, output_path, train_setfit=args.train_setfit)
-    if success:
+    if train_pre_filter(attempts_path, output_path, train_setfit=args.train_setfit):
         logger.info("Pre-filter training pipeline completed successfully!")
     else:
         logger.error("Pre-filter training failed.")
