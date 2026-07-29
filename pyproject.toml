@@ -21,6 +21,8 @@ dependencies = [
     "pytest>=9.0.3",
     "pytest-asyncio>=1.4.0",
     "requests>=2.33.0",
+    "scikit-learn>=1.4.0",
+    "xgboost>=2.0.0",
 ]
 
 [project.scripts]
