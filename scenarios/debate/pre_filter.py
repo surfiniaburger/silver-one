@@ -123,17 +123,27 @@ class BarredPreFilter:
 
     def _load_joblib(self, path: str) -> Any:
         if os.path.exists(path):
+            e_joblib: Optional[Exception] = None
             if joblib is not None:
                 try:
                     return joblib.load(path)
-                except Exception:
-                    pass
+                except Exception as e:
+                    e_joblib = e
+
             try:
                 import pickle
                 with open(path, "rb") as f:
                     return pickle.load(f)
-            except Exception as e:
-                logger.warning("Failed to load artifact from '%s': %s", path, e)
+            except Exception as e_pickle:
+                if e_joblib is not None:
+                    logger.warning(
+                        "Failed to load artifact from '%s' via joblib (%s) and pickle (%s)",
+                        path,
+                        e_joblib,
+                        e_pickle,
+                    )
+                else:
+                    logger.warning("Failed to load artifact from '%s': %s", path, e_pickle)
         return None
 
     def _load_setfit(self, path: str) -> Any:

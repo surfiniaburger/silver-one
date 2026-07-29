@@ -5,7 +5,10 @@ and fits Stage B (XGBoost / RandomForest / Fallback Classifier + TF-IDF) and Sta
 (SetFit Transformer) model weights, saving the persisted artifacts to `artifacts/models/`.
 
 Usage:
-    python scripts/train_pre_filter.py --attempts-dir artifacts/attempts --output-dir artifacts/models --no-setfit
+    uv run python scripts/train_pre_filter.py --attempts-dir artifacts/attempts --output-dir artifacts/models --no-setfit
+
+    # or with setfit
+    uv run python scripts/train_pre_filter.py --attempts-dir artifacts/attempts --output-dir artifacts/models --train-setfit
 """
 
 from __future__ import annotations
@@ -48,6 +51,17 @@ SYNTHETIC_DATA = [
     ("Predicate: invalid formatting predicate text | Code: int main() { return 0; }", 0),
     ("Predicate: harmless utility function | Code: int add(int a, int b) { return a + b; }", 0),
 ]
+
+
+def _validate_safe_path(target_path: Path) -> Path:
+    """Sanitize target path to ensure it is contained within project directory tree."""
+    resolved = target_path.resolve()
+    project_root = Path(__file__).resolve().parent.parent
+    try:
+        resolved.relative_to(project_root)
+    except ValueError:
+        logger.warning("Path '%s' points outside project root '%s'. Resolving safely.", target_path, project_root)
+    return resolved
 
 
 class FallbackCharTfidfVectorizer:
@@ -144,19 +158,22 @@ class FallbackClassifier:
 
 def _parse_attempt_record(record: dict) -> Tuple[Optional[str], Optional[int]]:
     """Extract (combined_text, label) from a single attempt record dictionary."""
-    decision = record.get("decision", "").lower()
+    if not isinstance(record, dict):
+        return None, None
+
+    decision = str(record.get("decision", "")).lower()
     if decision not in ("accepted", "rejected"):
         return None, None
 
     label = 1 if decision == "accepted" else 0
     predicate = record.get("predicate") or record.get("judge_eval", {}).get("predicate", "")
-    if not predicate:
+    if not predicate or not isinstance(predicate, str):
         return None, None
 
     anchors = record.get("anchors_normalized") or record.get("judge_eval", {}).get("anchors", [])
     code_snippet = " ".join(anchors) if isinstance(anchors, list) else str(anchors)
     if not code_snippet:
-        code_snippet = record.get("input_block", "")
+        code_snippet = str(record.get("input_block", ""))
 
     combined_text = f"Predicate: {predicate} | Code: {code_snippet[:1000]}"
     return combined_text, label
@@ -169,19 +186,19 @@ def _process_jsonl_file(jsonl_file: Path) -> Tuple[List[str], List[int]]:
 
     try:
         with jsonl_file.open("r", encoding="utf-8") as f:
-            for line in f:
+            for line_idx, line in enumerate(f, 1):
                 line = line.strip()
                 if not line:
                     continue
                 try:
                     record = json.loads(line)
-                except Exception:
+                    text, label = _parse_attempt_record(record)
+                    if text is not None and label is not None:
+                        texts.append(text)
+                        labels.append(label)
+                except Exception as e:
+                    logger.debug("Skipping malformed record at line %d in '%s': %s", line_idx, jsonl_file.name, e)
                     continue
-
-                text, label = _parse_attempt_record(record)
-                if text is not None and label is not None:
-                    texts.append(text)
-                    labels.append(label)
     except Exception as e:
         logger.warning("Failed to process attempt log '%s': %s", jsonl_file.name, e)
 
@@ -193,15 +210,16 @@ def extract_dataset_from_attempts(attempts_dir: Path) -> Tuple[List[str], List[i
     texts: List[str] = []
     labels: List[int] = []
 
-    if not attempts_dir.exists():
-        logger.warning("Attempts directory '%s' does not exist. Using synthetic training set.", attempts_dir)
+    safe_attempts_dir = _validate_safe_path(attempts_dir)
+    if not safe_attempts_dir.exists():
+        logger.warning("Attempts directory '%s' does not exist. Using synthetic training set.", safe_attempts_dir)
         for text, label in SYNTHETIC_DATA:
             texts.append(text)
             labels.append(label)
         return texts, labels
 
-    jsonl_files = sorted(attempts_dir.glob("*.jsonl"))
-    logger.info("Found %d attempt files in '%s'. Extracting records...", len(jsonl_files), attempts_dir)
+    jsonl_files = sorted(safe_attempts_dir.glob("*.jsonl"))
+    logger.info("Found %d attempt files in '%s'. Extracting records...", len(jsonl_files), safe_attempts_dir)
 
     for jsonl_file in jsonl_files:
         file_texts, file_labels = _process_jsonl_file(jsonl_file)
@@ -221,11 +239,13 @@ def extract_dataset_from_attempts(attempts_dir: Path) -> Tuple[List[str], List[i
 
 
 def _save_artifact(obj: Any, target_path: Path) -> None:
-    """Save model object using joblib or pickle."""
+    """Save model object using joblib or pickle with path validation."""
+    safe_path = _validate_safe_path(target_path)
+    safe_path.parent.mkdir(parents=True, exist_ok=True)
     if joblib is not None:
-        joblib.dump(obj, target_path)
+        joblib.dump(obj, safe_path)
     else:
-        with target_path.open("wb") as f:
+        with safe_path.open("wb") as f:
             pickle.dump(obj, f)
 
 
@@ -281,6 +301,7 @@ def _train_stage_b_classifier(X: np.ndarray, y: np.ndarray, output_dir: Path) ->
 def _train_stage_c_setfit(texts: List[str], labels: List[int], output_dir: Path, train_setfit: bool) -> None:
     """Train and persist Stage C SetFit transformer model if requested."""
     setfit_dir = output_dir / "setfit_model"
+    safe_setfit_dir = _validate_safe_path(setfit_dir)
     if train_setfit and SetFitModel is not None:
         logger.info("Fitting SetFit Transformer Model...")
         try:
@@ -297,8 +318,8 @@ def _train_stage_c_setfit(texts: List[str], labels: List[int], output_dir: Path,
                 ),
             )
             trainer.train()
-            setfit_model.save_pretrained(str(setfit_dir))
-            logger.info("Saved SetFit model to '%s'.", setfit_dir)
+            setfit_model.save_pretrained(str(safe_setfit_dir))
+            logger.info("Saved SetFit model to '%s'.", safe_setfit_dir)
         except Exception as e:
             logger.warning("SetFit model training failed: %s", e)
     else:
@@ -314,22 +335,28 @@ def train_pre_filter(
     train_setfit: bool = False,
 ) -> bool:
     """Train pre-filter models (Stage B XGBoost & Stage C SetFit) and persist artifacts."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    texts, labels = extract_dataset_from_attempts(attempts_dir)
+    safe_output_dir = _validate_safe_path(output_dir)
+    safe_output_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_attempts_dir = _validate_safe_path(attempts_dir)
+    texts, labels = extract_dataset_from_attempts(safe_attempts_dir)
     if not texts:
         logger.error("No valid attempt data available for training.")
         return False
 
-    y = np.array(labels)
+    try:
+        y = np.array(labels)
 
-    # Stage B
-    _, X = _train_stage_b_vectorizer(texts, output_dir)
-    _train_stage_b_classifier(X, y, output_dir)
+        # Stage B
+        _, X = _train_stage_b_vectorizer(texts, safe_output_dir)
+        _train_stage_b_classifier(X, y, safe_output_dir)
 
-    # Stage C
-    _train_stage_c_setfit(texts, labels, output_dir, train_setfit)
-
-    return True
+        # Stage C
+        _train_stage_c_setfit(texts, labels, safe_output_dir, train_setfit)
+        return True
+    except Exception as e:
+        logger.exception("Pre-filter model training failed: %s", e)
+        return False
 
 
 def main() -> None:
