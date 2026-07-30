@@ -26,6 +26,14 @@ import re
 import logging
 from typing import Optional, Any
 
+# Prevent OpenMP thread pool conflict / SIGSEGV (139) between PyTorch/SetFit and XGBoost on macOS ARM64
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 from agentbeats.tracing import trace_span
 
 logger = logging.getLogger("pre_filter")
@@ -94,7 +102,15 @@ class BarredPreFilter:
         xgb_high_threshold: float = 0.995,
         xgb_low_threshold: float = 0.05,
         setfit_threshold: float = 0.65,
+        model_dir: Optional[str] = None,
     ):
+        if model_dir:
+            from pathlib import Path
+            base_dir = Path(model_dir)
+            vectorizer_path = str(base_dir / "vectorizer.joblib")
+            xgb_path = str(base_dir / "xgb.joblib")
+            setfit_dir = str(base_dir / "setfit_model")
+
         self.vectorizer_path = vectorizer_path
         self.xgb_path = xgb_path
         self.setfit_dir = setfit_dir

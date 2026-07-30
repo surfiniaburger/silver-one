@@ -11,13 +11,12 @@ Usage:
     uv run python scripts/train_pre_filter.py --attempts-dir artifacts/attempts --output-dir artifacts/models --train-setfit
 """
 
-from __future__ import annotations
-
 import argparse
 import hashlib
 import json
 import logging
 import math
+import os
 import pickle
 import re
 from collections import Counter, defaultdict
@@ -25,6 +24,14 @@ from pathlib import Path
 from typing import List, Tuple, Any, Dict, Optional
 
 import numpy as np
+
+# Prevent OpenMP thread pool conflict / SIGSEGV (139) between PyTorch/SetFit and XGBoost on macOS ARM64
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
 # Optional imports for model training and persistence
 try:
@@ -34,9 +41,13 @@ except ImportError:
 
 try:
     from datasets import Dataset
-    from setfit import SetFitModel, Trainer, TrainingArguments
+    from setfit import SetFitModel, Trainer
 except ImportError:
-    SetFitModel = None
+    try:
+        from datasets import Dataset
+        from setfit import SetFitModel, SetFitTrainer as Trainer
+    except ImportError:
+        SetFitModel = None
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("train_pre_filter")
@@ -151,7 +162,7 @@ class FallbackClassifier:
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         if X.shape[0] == 0:
-            return np.array([], dtype=np.float32)
+            return np.zeros((0, 2), dtype=np.float32)
         probs = []
         for row in X:
             pos_dist = float(np.linalg.norm(row - self.pos_mean)) if self.pos_mean is not None else 1.0
@@ -160,7 +171,8 @@ class FallbackClassifier:
             tot = pos_dist + neg_dist + 1e-6
             # Closer to pos_mean means higher pos_prob (neg_dist / tot)
             pos_prob = neg_dist / tot
-            probs.append([pos_prob, 1.0 - pos_prob])
+            # Standard sklearn probability ordering: [P(class=0), P(class=1)]
+            probs.append([1.0 - pos_prob, pos_prob])
 
         return np.array(probs, dtype=np.float32)
 
@@ -168,7 +180,7 @@ class FallbackClassifier:
         if X.shape[0] == 0:
             return np.array([], dtype=np.int32)
         probs = self.predict_proba(X)
-        return (probs[:, 0] >= 0.5).astype(int)
+        return (probs[:, 1] >= 0.5).astype(int)
 
 
 def _extract_cve_id(record: dict, predicate: str) -> str:
@@ -183,7 +195,7 @@ def _extract_cve_id(record: dict, predicate: str) -> str:
     if cve_match:
         return cve_match.group(0).upper()
 
-    return f"HASH-{hashlib.md5(predicate.encode('utf-8')).hexdigest()[:10]}"
+    return f"HASH-{hashlib.sha256(predicate.encode('utf-8')).hexdigest()[:10]}"
 
 
 def _extract_code_snippet(record: dict, judge_dict: dict) -> str:
@@ -297,6 +309,12 @@ def partition_dataset_by_cve(
         grouped[cve].append((text, label))
 
     unique_cves = sorted(grouped.keys())
+    # Deterministic shuffle (fixed seed=1337) so lexicographic order does not bias split labels
+    rng = np.random.default_rng(seed=1337)
+    cve_arr = np.array(unique_cves)
+    rng.shuffle(cve_arr)
+    unique_cves = list(cve_arr)
+
     n_cves = len(unique_cves)
 
     if n_cves < 3:
@@ -441,48 +459,121 @@ def _run_null_model_sanity_check(x_train: np.ndarray, y_train: np.ndarray, x_tes
     return balanced_acc
 
 
+def _evaluate_stage_b(classifier: Any, x_eval: np.ndarray, y_eval: np.ndarray) -> Dict[str, float]:
+    """Compute Stage B (XGBoost) accuracy metrics."""
+    if hasattr(classifier, "predict"):
+        y_pred_b = classifier.predict(x_eval)
+    elif hasattr(classifier, "predict_proba"):
+        probs_b = classifier.predict_proba(x_eval)[:, 1]
+        y_pred_b = (probs_b >= 0.5).astype(int)
+    else:
+        y_pred_b = np.ones(len(y_eval), dtype=int)
+
+    acc = float(np.mean(y_pred_b == y_eval))
+    bal_acc = _compute_balanced_accuracy(y_eval, y_pred_b)
+    return {"accuracy": round(acc, 4), "balanced_accuracy": round(bal_acc, 4)}
+
+
+def _evaluate_stage_c(model_dir: Path, eval_texts: Optional[List[str]], y_eval: np.ndarray, setfit_model: Any = None) -> Optional[Dict[str, float]]:
+    """Compute Stage C (SetFit) accuracy metrics."""
+    if not eval_texts or SetFitModel is None:
+        return None
+
+    if setfit_model is None and (model_dir / "setfit_model").exists():
+        try:
+            setfit_model = SetFitModel.from_pretrained(str(model_dir / "setfit_model"))
+        except Exception:
+            return None
+
+    if setfit_model is None:
+        return None
+
+    try:
+        preds_c = setfit_model.predict(eval_texts)
+        y_pred_c = np.array([int(p) for p in preds_c])
+        acc_c = float(np.mean(y_pred_c == y_eval))
+        bal_acc_c = _compute_balanced_accuracy(y_eval, y_pred_c)
+        return {"accuracy": round(acc_c, 4), "balanced_accuracy": round(bal_acc_c, 4)}
+    except Exception as e:
+        logger.warning("SetFit holdout evaluation failed: %s", e)
+        return None
+
+
+def _evaluate_cascade(model_dir: Path, eval_texts: Optional[List[str]], y_eval: np.ndarray) -> Optional[Dict[str, Any]]:
+    """Compute full 3-stage cascade accuracy metrics."""
+    if not eval_texts:
+        return None
+
+    try:
+        import sys
+        sys.path.append(str(Path(__file__).resolve().parent.parent / "scenarios" / "debate"))
+        from pre_filter import BarredPreFilter
+        cascade = BarredPreFilter(model_dir=str(model_dir))
+        cascade_preds = [1 if cascade.predict(predicate=t, input_block=t).accept else 0 for t in eval_texts]
+        y_pred = np.array(cascade_preds)
+        acc = float(np.mean(y_pred == y_eval))
+        bal_acc = _compute_balanced_accuracy(y_eval, y_pred)
+        return {
+            "accuracy": round(acc, 4),
+            "balanced_accuracy": round(bal_acc, 4),
+            "intercepted_count": int(np.sum(y_pred == 0)),
+        }
+    except Exception as e:
+        logger.warning("Cascade evaluation failed: %s", e)
+        return None
+
+
 def _evaluate_holdout_performance(
     classifier: Any,
-    x_test: np.ndarray,
-    y_test: np.ndarray,
+    x_eval: np.ndarray,
+    y_eval: np.ndarray,
     output_dir: Path,
+    eval_texts: Optional[List[str]] = None,
+    setfit_model: Any = None,
 ) -> Dict[str, Any]:
-    """Compute and persist independent holdout metrics."""
-    if x_test.shape[0] == 0:
+    """Compute and persist independent holdout metrics for Stage B, Stage C, and Cascade."""
+    if x_eval.shape[0] == 0:
         logger.warning("Holdout test set is empty. Skipping detailed metric export.")
         return {}
 
-    y_pred = classifier.predict(x_test) if hasattr(classifier, "predict") else (classifier.predict_proba(x_test)[:, 0] >= 0.5).astype(int)
-    acc = float(np.mean(y_pred == y_test))
-    bal_acc = _compute_balanced_accuracy(y_test, y_pred)
+    y_arr = np.array(y_eval)
+    stage_b_metrics = _evaluate_stage_b(classifier, x_eval, y_arr)
 
-    metrics = {
-        "test_samples": int(len(y_test)),
-        "accuracy": round(acc, 4),
-        "balanced_accuracy": round(bal_acc, 4),
-        "accepted_samples": int(np.sum(y_test == 1)),
-        "rejected_samples": int(np.sum(y_test == 0)),
+    metrics: Dict[str, Any] = {
+        "test_samples": int(len(y_arr)),
+        "accepted_samples": int(np.sum(y_arr == 1)),
+        "rejected_samples": int(np.sum(y_arr == 0)),
+        "stage_b_xgboost": stage_b_metrics,
+        "accuracy": stage_b_metrics["accuracy"],
+        "balanced_accuracy": stage_b_metrics["balanced_accuracy"],
     }
+
+    stage_c_metrics = _evaluate_stage_c(output_dir, eval_texts, y_arr, setfit_model=setfit_model)
+    if stage_c_metrics is not None:
+        metrics["stage_c_setfit"] = stage_c_metrics
+
+    cascade_metrics = _evaluate_cascade(output_dir, eval_texts, y_arr)
+    if cascade_metrics is not None:
+        metrics["cascade_overall"] = cascade_metrics
 
     metrics_path = output_dir / "holdout_metrics.json"
     safe_metrics_path = _validate_safe_path(metrics_path)
     with safe_metrics_path.open("w", encoding="utf-8") as f:
         json.dump(metrics, f, indent=2)
 
-    logger.info("Holdout Evaluation Metrics saved to '%s': Accuracy=%.4f, BalancedAccuracy=%.4f",
-                safe_metrics_path, acc, bal_acc)
+    logger.info("Holdout Evaluation Metrics saved to '%s':\n%s", safe_metrics_path, json.dumps(metrics, indent=2))
     return metrics
 
 
-def _train_stage_c_setfit(texts: List[str], labels: List[int], output_dir: Path, train_setfit: bool) -> None:
+def _train_stage_c_setfit(texts: List[str], labels: List[int], output_dir: Path, train_setfit: bool) -> Any:
     """Train and persist Stage C SetFit transformer model if requested."""
     if not train_setfit:
         logger.info("Stage C (SetFit) training disabled via --no-setfit flag.")
-        return
+        return None
 
     if SetFitModel is None:
         logger.warning("SetFit package is not installed. Skipping Stage C training.")
-        return
+        return None
 
     setfit_dir = output_dir / "setfit_model"
     safe_setfit_dir = _validate_safe_path(setfit_dir)
@@ -493,18 +584,14 @@ def _train_stage_c_setfit(texts: List[str], labels: List[int], output_dir: Path,
         trainer = Trainer(
             model=setfit_model,
             train_dataset=setfit_data,
-            args=TrainingArguments(
-                batch_size=8,
-                num_epochs=1,
-                num_iterations=5,
-                learning_rate=2e-5,
-            ),
         )
         trainer.train()
         setfit_model.save_pretrained(str(safe_setfit_dir))
         logger.info("Saved SetFit model to '%s'.", safe_setfit_dir)
+        return setfit_model
     except Exception as e:
         logger.warning("SetFit model training failed: %s", e)
+        return None
 
 
 def train_pre_filter(
@@ -545,12 +632,15 @@ def train_pre_filter(
         # Stage B Classifier Training
         classifier = _train_stage_b_classifier(x_train, y_train, safe_output_dir)
 
-        # Null Model Control Check & Holdout Benchmarking
+        # Null Model Control Check
         _run_null_model_sanity_check(x_train, y_train, x_eval, y_eval)
-        _evaluate_holdout_performance(classifier, x_eval, y_eval, safe_output_dir)
 
-        # Stage C
-        _train_stage_c_setfit(train_texts, train_labels, safe_output_dir, train_setfit)
+        # Stage C SetFit Training
+        setfit_model = _train_stage_c_setfit(train_texts, train_labels, safe_output_dir, train_setfit)
+
+        # Multi-Stage Holdout Benchmarking
+        _evaluate_holdout_performance(classifier, x_eval, y_eval, safe_output_dir, eval_texts=eval_texts, setfit_model=setfit_model)
+
         return True
     except Exception as e:
         logger.exception("Pre-filter model training failed: %s", e)

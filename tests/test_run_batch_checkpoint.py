@@ -55,20 +55,27 @@ async def test_thread_offloaded_manifest_checkpointing():
         manifest_lock = asyncio.Lock()
         processed_predicates = {"Analyze this input for the condition: Predicate 0"}
 
+        from scenarios.debate.run_batch import BatchContext
+
+        ctx = BatchContext(
+            args=args,
+            batch_started_at="2026-07-26T00:00:00Z",
+            processed_predicates=processed_predicates,
+            manifest=manifest,
+            manifest_path=manifest_path,
+            manifest_lock=manifest_lock,
+            total_seeds=5,
+            judge_url="http://127.0.0.1:99999",
+            pre_filter=None,
+        )
+
         # Process all 5 seeds concurrently (seed 0 will skip, others will hit error)
         tasks = [
             _process_seed(
                 sem=sem,
-                manifest_lock=manifest_lock,
                 i=i,
                 seed=seeds[i],
-                args=args,
-                batch_started_at="2026-07-26T00:00:00Z",
-                processed_predicates=processed_predicates,
-                manifest=manifest,
-                manifest_path=manifest_path,
-                total_seeds=5,
-                judge_url="http://127.0.0.1:99999",
+                ctx=ctx,
             )
             for i in range(5)
         ]
