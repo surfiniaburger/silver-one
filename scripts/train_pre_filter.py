@@ -25,13 +25,7 @@ from typing import List, Tuple, Any, Dict, Optional
 
 import numpy as np
 
-# Prevent OpenMP thread pool conflict / SIGSEGV (139) between PyTorch/SetFit and XGBoost on macOS ARM64
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
+import scenarios.debate._thread_limits  # noqa: F401 (Enforce OpenMP thread limits on import)
 
 # Optional imports for model training and persistence
 try:
@@ -505,10 +499,8 @@ def _evaluate_cascade(model_dir: Path, eval_texts: Optional[List[str]], y_eval: 
         return None
 
     try:
-        import sys
-        sys.path.append(str(Path(__file__).resolve().parent.parent / "scenarios" / "debate"))
-        from pre_filter import BarredPreFilter
-        cascade = BarredPreFilter(model_dir=str(model_dir))
+        from scenarios.debate.pre_filter import BarredPreFilter
+        cascade = BarredPreFilter(model_dir=model_dir)
         cascade_preds = [1 if cascade.predict(predicate=t, input_block="").accept else 0 for t in eval_texts]
         y_pred = np.array(cascade_preds)
         acc = float(np.mean(y_pred == y_eval))

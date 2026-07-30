@@ -24,15 +24,9 @@ from time import perf_counter
 import os
 import re
 import logging
-from typing import Optional, Any
+from typing import Optional, Union, Any
 
-# Prevent OpenMP thread pool conflict / SIGSEGV (139) between PyTorch/SetFit and XGBoost on macOS ARM64
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
+import scenarios.debate._thread_limits  # noqa: F401 (Enforce OpenMP thread limits on import)
 
 from agentbeats.tracing import trace_span
 
@@ -102,7 +96,7 @@ class BarredPreFilter:
         xgb_high_threshold: float = 0.995,
         xgb_low_threshold: float = 0.05,
         setfit_threshold: float = 0.65,
-        model_dir: Optional[str] = None,
+        model_dir: str | os.PathLike[str] | None = None,
     ):
         if model_dir:
             from pathlib import Path

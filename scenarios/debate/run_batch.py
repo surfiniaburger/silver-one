@@ -4,10 +4,11 @@ import sys
 import os
 import argparse
 
+import scenarios.debate._thread_limits  # noqa: F401 (Enforce OpenMP thread limits on import)
+
 # Add src and scenarios/debate to PYTHONPATH
 sys.path.append(os.getcwd())
 sys.path.append(os.path.join(os.getcwd(), "src"))
-sys.path.append(os.path.join(os.getcwd(), "scenarios", "debate"))
 
 from pathlib import Path
 from typing import Any
@@ -15,11 +16,7 @@ from typing import Any
 from agentbeats.client import send_message
 from agentbeats.checkpoint import save_checkpoint
 from agentbeats.clock import RunClock
-
-try:
-    from scenarios.debate.pre_filter import BarredPreFilter
-except ModuleNotFoundError:
-    from pre_filter import BarredPreFilter
+from scenarios.debate.pre_filter import BarredPreFilter
 
 
 def _load_processed_predicates(output_path: str) -> set:
@@ -140,12 +137,15 @@ async def _handle_pre_filter_rejection(
 ) -> None:
     print(f"  Skipping seed {i+1} (rejected by BARRED pre-filter at {decision.stage}, prob={decision.probability:.4f}).")
     attempts_path = ctx.args.attempts_out or f"artifacts/attempts/{ctx.args.run_id}.jsonl"
+    input_code = seed.get("input_block") or seed.get("topic") or ""
     attempt_record = {
         "decision": "rejected",
         "pre_filter_stage": decision.stage,
         "pre_filter_probability": decision.probability,
         "skipped_pre_filter": True,
         "predicate": seed.get("predicate", ""),
+        "topic": seed.get("topic", ""),
+        "input_block": input_code,
         "cve_id": seed.get("cve_id"),
         "run_id": ctx.args.run_id,
         "seed": item_seed,
@@ -183,7 +183,7 @@ async def _process_seed(
             return
 
         if ctx.pre_filter is not None:
-            input_block = seed.get("topic") or seed.get("input_block") or ""
+            input_block = seed.get("input_block") or seed.get("topic") or ""
             decision = ctx.pre_filter.predict(seed.get("predicate", ""), input_block)
             if not decision.accept:
                 await _handle_pre_filter_rejection(i, seed, item_seed, decision, ctx, write_manifest)
