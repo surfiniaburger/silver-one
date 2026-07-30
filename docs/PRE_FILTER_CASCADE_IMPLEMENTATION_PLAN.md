@@ -69,6 +69,21 @@ This document outlines the design, architecture, and step-by-step PR breakdown f
 
 ---
 
+### PR 2.5: Leak-Proof Data Partitioning, Null-Model Control & Holdout Benchmarking
+- **Objective**: Eliminate preprocessing data leakage, implement null-model control sanity checks, and report independent holdout validation metrics.
+- **Target Files**:
+  - `[MODIFY]` [`scripts/train_pre_filter.py`](../scripts/train_pre_filter.py)
+  - `[NEW]` [`tests/test_pre_filter_leakage.py`](../tests/test_pre_filter_leakage.py)
+  - `[MODIFY]` [`tests/test_train_pre_filter.py`](../tests/test_train_pre_filter.py)
+- **Key Features**:
+  - **Isolated Partitioning**: 80/10/10 Train/Validation/Test split grouped strictly by `cve_id` (with predicate stem hash fallback) to prevent cross-seed vulnerability prompt bleeding.
+  - **Vectorizer Isolation**: `TfidfVectorizer` fit strictly on `X_train` before `.transform()` on holdout evaluation sets.
+  - **Null Model Control**: Automated training on randomly shuffled labels ($y_{\text{shuffled}}$); asserts holdout **balanced accuracy** $\le 0.55$ ($\le 55\%$) regardless of class imbalance.
+  - **Feature Importance Audit**: Verification that zero ground-truth metadata tokens (`decision`, `verifier_status`, `soft_checks`) bleed into feature strings.
+  - **Holdout Benchmarking**: Export independent evaluation metrics (`artifacts/models/holdout_metrics.json`) reporting Accuracy, Balanced Accuracy, Precision, Recall, F1, ROC-AUC, and Confusion Matrix.
+
+---
+
 ### PR 3: Integration into Batch Runner & Judge Engine
 - **Objective**: Intercept bad seeds at Step 0 in `run_batch.py` and block runaway refinement loops in `adk_debate_judge.py`.
 - **Target Files**:
