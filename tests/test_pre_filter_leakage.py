@@ -17,12 +17,10 @@ import numpy as np
 
 from scripts.train_pre_filter import (
     _parse_attempt_record,
-    extract_dataset_from_attempts,
     partition_dataset_by_cve,
     _train_stage_b_vectorizer,
     _run_null_model_sanity_check,
     _evaluate_holdout_performance,
-    FallbackCharTfidfVectorizer,
     FallbackClassifier,
 )
 
@@ -40,9 +38,9 @@ def test_cve_grouping_isolation():
     cve_ids = ["CVE-2024-0001", "CVE-2024-0001", "CVE-2024-0002", "CVE-2024-0003", "CVE-2024-0004"]
 
     splits = partition_dataset_by_cve(texts, labels, cve_ids, train_ratio=0.6, val_ratio=0.2)
-    train_texts, train_labels = splits["train"]
-    val_texts, val_labels = splits["val"]
-    test_texts, test_labels = splits["test"]
+    train_texts, _ = splits["train"]
+    val_texts, _ = splits["val"]
+    test_texts, _ = splits["test"]
 
     # CVE-2024-0001 must not appear in both train and test/val
     train_cve_1 = any("vuln A" in t for t in train_texts)
@@ -59,7 +57,7 @@ def test_vectorizer_vocabulary_isolation(tmp_path: Path):
     val_texts = ["integer overflow in malloc"]
     test_texts = ["use after free in close"]
 
-    vectorizer, x_train, x_val, x_test = _train_stage_b_vectorizer(train_texts, val_texts, test_texts, tmp_path)
+    vectorizer, _, _, _ = _train_stage_b_vectorizer(train_texts, val_texts, test_texts, tmp_path)
 
     # Vocabulary keys should come strictly from train_texts
     train_ngrams = set()
@@ -82,7 +80,7 @@ def test_null_model_sanity_check():
     y_test = np.array([1] * 10 + [0] * 10)
 
     balanced_acc = _run_null_model_sanity_check(x_train, y_train, x_test, y_test)
-    assert balanced_acc <= 0.65, f"Null model balanced accuracy {balanced_acc} was unexpectedly high!"
+    assert balanced_acc <= 0.55, f"Null model balanced accuracy {balanced_acc} was unexpectedly high!"
 
 
 def test_no_target_derived_feature_leakage():

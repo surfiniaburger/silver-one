@@ -4,12 +4,19 @@ import sys
 import os
 import argparse
 
-# Add src to PYTHONPATH to import agentbeats
+import scenarios.debate._thread_limits  # noqa: F401 (Enforce OpenMP thread limits on import)
+
+# Add src and scenarios/debate to PYTHONPATH
+sys.path.append(os.getcwd())
 sys.path.append(os.path.join(os.getcwd(), "src"))
+
+from pathlib import Path
+from typing import Any
 
 from agentbeats.client import send_message
 from agentbeats.checkpoint import save_checkpoint
 from agentbeats.clock import RunClock
+from scenarios.debate.pre_filter import BarredPreFilter
 
 
 def _load_processed_predicates(output_path: str) -> set:
@@ -38,7 +45,7 @@ def _load_seeds(seeds_path: str) -> list:
     return seeds
 
 
-def _parse_args() -> argparse.Namespace:
+def _parse_args(cmd_args: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="BARRED Batch Runner (Deterministic)")
     parser.add_argument("--seeds", default="scenarios/debate/cve_seeds_50.jsonl")
     parser.add_argument("--output", default="test_corpus_50.jsonl")
@@ -54,7 +61,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--manifest-out", default="", help="Optional batch manifest path")
     parser.add_argument("--clock-now", default="", help="Inject a fixed ISO timestamp for run records/checkpoints/manifests")
     parser.add_argument("--max-concurrency", type=int, default=1, help="Max concurrent seed executions (default: 1)")
-    return parser.parse_args()
+    parser.add_argument("--pre-filter", action="store_true", default=True, help="Enable BARRED 3-Stage Pre-Filter Cascade.")
+    parser.add_argument("--no-pre-filter", dest="pre_filter", action="store_false", help="Disable BARRED 3-Stage Pre-Filter Cascade.")
+    parser.add_argument("--model-dir", default="artifacts/models", help="Directory containing pre-filter model weights.")
+    return parser.parse_args(cmd_args)
 
 
 def _build_payload(
@@ -91,47 +101,101 @@ def _build_payload(
     }
 
 
-async def _process_seed(
-    sem: asyncio.Semaphore,
-    manifest_lock: asyncio.Lock,
+
+from dataclasses import dataclass, field
+
+
+@dataclass
+class BatchContext:
+    args: argparse.Namespace
+    batch_started_at: str
+    processed_predicates: set
+    manifest: dict
+    manifest_path: str
+    manifest_lock: asyncio.Lock
+    total_seeds: int
+    attempts_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    judge_url: str = "http://127.0.0.1:9009"
+    pre_filter: BarredPreFilter | None = None
+
+
+def _append_attempt_record(attempts_path: str, record: dict) -> None:
+    dirname = os.path.dirname(attempts_path)
+    if dirname:
+        os.makedirs(dirname, exist_ok=True)
+    with open(attempts_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record) + "\n")
+
+
+async def _handle_pre_filter_rejection(
     i: int,
     seed: dict,
-    args: argparse.Namespace,
-    batch_started_at: str,
-    processed_predicates: set,
-    manifest: dict,
-    manifest_path: str,
-    total_seeds: int,
-    judge_url: str = "http://127.0.0.1:9009",
+    item_seed: int,
+    decision: Any,
+    ctx: BatchContext,
+    write_manifest_fn: Any,
+) -> None:
+    print(f"  Skipping seed {i+1} (rejected by BARRED pre-filter at {decision.stage}, prob={decision.probability:.4f}).")
+    attempts_path = ctx.args.attempts_out or f"artifacts/attempts/{ctx.args.run_id}.jsonl"
+    input_code = seed.get("input_block") or seed.get("topic") or ""
+    attempt_record = {
+        "decision": "rejected",
+        "pre_filter_stage": decision.stage,
+        "pre_filter_probability": decision.probability,
+        "skipped_pre_filter": True,
+        "predicate": seed.get("predicate", ""),
+        "topic": seed.get("topic", ""),
+        "input_block": input_code,
+        "cve_id": seed.get("cve_id"),
+        "run_id": ctx.args.run_id,
+        "seed": item_seed,
+    }
+    async with ctx.attempts_lock:
+        await asyncio.to_thread(_append_attempt_record, attempts_path, attempt_record)
+    await write_manifest_fn("skipped_pre_filter", response_excerpt=f"Rejected at {decision.stage} (p={decision.probability:.4f})")
+
+
+async def _process_seed(
+    sem: asyncio.Semaphore,
+    i: int,
+    seed: dict,
+    ctx: BatchContext,
 ) -> None:
     async def write_manifest(status: str, response_excerpt: str | None = None, error: str | None = None) -> None:
-        async with manifest_lock:
-            manifest_item = manifest["items"][i]
+        async with ctx.manifest_lock:
+            manifest_item = ctx.manifest["items"][i]
             manifest_item["status"] = status
             if response_excerpt is not None:
                 manifest_item["response_excerpt"] = response_excerpt
             if error is not None:
                 manifest_item["error"] = error
-            await asyncio.to_thread(save_checkpoint, manifest_path, manifest, clock_now=batch_started_at)
+            await asyncio.to_thread(save_checkpoint, ctx.manifest_path, ctx.manifest, clock_now=ctx.batch_started_at)
 
     async with sem:
-        item_seed = args.seed + i
+        item_seed = ctx.args.seed + i
         instruction = f"Analyze this input for the condition: {seed['predicate']}"
-        checkpoint_path = os.path.join(args.checkpoint_dir, args.run_id, f"{item_seed}.json")
-        record_path = args.record_path or os.path.join(args.record_dir, args.run_id, f"{item_seed}.json")
+        checkpoint_path = os.path.join(ctx.args.checkpoint_dir, ctx.args.run_id, f"{item_seed}.json")
+        record_path = ctx.args.record_path or os.path.join(ctx.args.record_dir, ctx.args.run_id, f"{item_seed}.json")
 
-        if instruction in processed_predicates:
+        if instruction in ctx.processed_predicates:
             print(f"Skipping seed {i+1} (already processed).")
             await write_manifest("skipped_existing_output")
             return
 
-        print(f"\n>>> [{i+1}/{total_seeds}] Seed Predicate: {seed.get('predicate')[:80]}...")
+        if ctx.pre_filter is not None:
+            input_block = seed.get("input_block") or seed.get("topic") or ""
+            decision = ctx.pre_filter.predict(seed.get("predicate", ""), input_block)
+            if not decision.accept:
+                await _handle_pre_filter_rejection(i, seed, item_seed, decision, ctx, write_manifest)
+                return
+
+        print(f"\n>>> [{i+1}/{ctx.total_seeds}] Seed Predicate: {seed.get('predicate')[:80]}...")
         await write_manifest("running")
 
-        payload = _build_payload(args, item_seed, checkpoint_path, record_path, batch_started_at, seed)
+        payload = _build_payload(ctx.args, item_seed, checkpoint_path, record_path, ctx.batch_started_at, seed)
 
         try:
-            result = await send_message(json.dumps(payload), judge_url)
+            result = await send_message(json.dumps(payload), ctx.judge_url)
             print(f"  Result received for seed {i+1}. Status: {result.get('status')}")
             status = result.get("status") or "completed"
             excerpt = str(result.get("response", ""))[:500]
@@ -159,6 +223,10 @@ async def run_batch():
     # Load existing results to support resume
     processed_predicates = await asyncio.to_thread(_load_processed_predicates, args.output)
     seeds = await asyncio.to_thread(_load_seeds, args.seeds)
+
+    pre_filter = BarredPreFilter(model_dir=Path(args.model_dir)) if args.pre_filter else None
+    if pre_filter:
+        print(f"BARRED 3-Stage Pre-Filter enabled (models loaded from '{args.model_dir}').")
 
     manifest_items = [
         {
@@ -198,20 +266,25 @@ async def run_batch():
     sem = asyncio.Semaphore(args.max_concurrency)
     manifest_lock = asyncio.Lock()
 
+    ctx = BatchContext(
+        args=args,
+        batch_started_at=batch_started_at,
+        processed_predicates=processed_predicates,
+        manifest=manifest,
+        manifest_path=manifest_path,
+        manifest_lock=manifest_lock,
+        total_seeds=len(seeds),
+        judge_url=judge_url,
+        pre_filter=pre_filter,
+    )
+
     await asyncio.gather(
         *(
             _process_seed(
                 sem,
-                manifest_lock,
                 i,
                 s,
-                args,
-                batch_started_at,
-                processed_predicates,
-                manifest,
-                manifest_path,
-                len(seeds),
-                judge_url,
+                ctx,
             )
             for i, s in enumerate(seeds)
         )

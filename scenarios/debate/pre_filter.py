@@ -24,7 +24,9 @@ from time import perf_counter
 import os
 import re
 import logging
-from typing import Optional, Any
+from typing import Optional, Union, Any
+
+import scenarios.debate._thread_limits  # noqa: F401 (Enforce OpenMP thread limits on import)
 
 from agentbeats.tracing import trace_span
 
@@ -94,7 +96,15 @@ class BarredPreFilter:
         xgb_high_threshold: float = 0.995,
         xgb_low_threshold: float = 0.05,
         setfit_threshold: float = 0.65,
+        model_dir: str | os.PathLike[str] | None = None,
     ):
+        if model_dir:
+            from pathlib import Path
+            base_dir = Path(model_dir)
+            vectorizer_path = str(base_dir / "vectorizer.joblib")
+            xgb_path = str(base_dir / "xgb.joblib")
+            setfit_dir = str(base_dir / "setfit_model")
+
         self.vectorizer_path = vectorizer_path
         self.xgb_path = xgb_path
         self.setfit_dir = setfit_dir
@@ -193,6 +203,11 @@ class BarredPreFilter:
             return decision
 
     def _get_combined_text(self, predicate: str, input_block: str) -> str:
+        if predicate.startswith("Predicate: ") and " | Code: " in predicate:
+            parts = predicate.split(" | Code: ", 1)
+            pred_part = parts[0]
+            code_part = parts[1][:1000] if len(parts) > 1 else ""
+            return f"{pred_part} | Code: {code_part}"
         snippet = input_block[:1000] if input_block else ""
         return f"Predicate: {predicate} | Code: {snippet}"
 
