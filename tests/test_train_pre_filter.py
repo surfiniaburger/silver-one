@@ -51,10 +51,11 @@ def test_extract_dataset_from_attempts(tmp_path):
             else:
                 f.write(json.dumps(rec) + "\n")
 
-    texts, labels = extract_dataset_from_attempts(attempts_dir)
+    texts, labels, cve_ids = extract_dataset_from_attempts(attempts_dir)
 
     assert len(texts) == 4
     assert len(labels) == 4
+    assert len(cve_ids) == 4
     assert labels == [1, 0, 1, 0]
     assert "buffer overflow" in texts[0]
     assert "miracle offer" in texts[1]
@@ -63,10 +64,11 @@ def test_extract_dataset_from_attempts(tmp_path):
 
 def test_extract_dataset_synthetic_fallback(tmp_path):
     empty_dir = tmp_path / "empty_attempts"
-    texts, labels = extract_dataset_from_attempts(empty_dir)
+    texts, labels, cve_ids = extract_dataset_from_attempts(empty_dir)
 
     assert len(texts) >= 4
     assert len(labels) >= 4
+    assert len(cve_ids) >= 4
     assert set(labels) == {0, 1}
 
 
