@@ -24,6 +24,10 @@ from pathlib import Path
 from typing import List, Tuple, Any, Dict, Optional
 
 import numpy as np
+import sys
+
+# Ensure project root is in sys.path for scenarios import
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import scenarios.debate._thread_limits  # noqa: F401 (Enforce OpenMP thread limits on import)
 
@@ -395,12 +399,17 @@ def _train_stage_b_classifier(x_train: np.ndarray, y_train: np.ndarray, output_d
     try:
         from xgboost import XGBClassifier
         logger.info("Fitting XGBoost Classifier on X_train...")
+        pos_cnt = int(np.sum(y_train == 1)) or 1
+        neg_cnt = int(np.sum(y_train == 0)) or 1
+        scale_pos_weight = float(neg_cnt / pos_cnt)
+
         classifier: Any = XGBClassifier(
-            n_estimators=40,
-            max_depth=3,
-            learning_rate=0.08,
-            subsample=0.9,
-            colsample_bytree=0.9,
+            n_estimators=100,
+            max_depth=4,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            scale_pos_weight=scale_pos_weight,
             objective="binary:logistic",
             eval_metric="logloss",
             tree_method="hist",

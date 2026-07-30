@@ -120,3 +120,15 @@ def test_combined_text_no_double_wrapping():
     already_formatted = "Predicate: buffer overflow | Code: void foo() {}"
     res = pf._get_combined_text(already_formatted, "")
     assert res == already_formatted
+
+
+def test_combined_text_truncates_oversized_preformatted_code():
+    """Verify BarredPreFilter._get_combined_text truncates code part of preformatted text to 1000 chars."""
+    pf = BarredPreFilter()
+    huge_code = "x" * 2000
+    preformatted = f"Predicate: memory corruption check | Code: {huge_code}"
+    res = pf._get_combined_text(preformatted, "")
+
+    assert res.startswith("Predicate: memory corruption check | Code: ")
+    code_part = res.split(" | Code: ", 1)[1]
+    assert len(code_part) == 1000
