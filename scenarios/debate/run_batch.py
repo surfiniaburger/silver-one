@@ -48,7 +48,7 @@ def _load_seeds(seeds_path: str) -> list:
     return seeds
 
 
-def _parse_args() -> argparse.Namespace:
+def _parse_args(cmd_args: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="BARRED Batch Runner (Deterministic)")
     parser.add_argument("--seeds", default="scenarios/debate/cve_seeds_50.jsonl")
     parser.add_argument("--output", default="test_corpus_50.jsonl")
@@ -67,7 +67,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--pre-filter", action="store_true", default=True, help="Enable BARRED 3-Stage Pre-Filter Cascade.")
     parser.add_argument("--no-pre-filter", dest="pre_filter", action="store_false", help="Disable BARRED 3-Stage Pre-Filter Cascade.")
     parser.add_argument("--model-dir", default="artifacts/models", help="Directory containing pre-filter model weights.")
-    return parser.parse_args()
+    return parser.parse_args(cmd_args)
 
 
 def _build_payload(
@@ -105,7 +105,7 @@ def _build_payload(
 
 
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -117,12 +117,15 @@ class BatchContext:
     manifest_path: str
     manifest_lock: asyncio.Lock
     total_seeds: int
+    attempts_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     judge_url: str = "http://127.0.0.1:9009"
     pre_filter: BarredPreFilter | None = None
 
 
 def _append_attempt_record(attempts_path: str, record: dict) -> None:
-    os.makedirs(os.path.dirname(attempts_path), exist_ok=True)
+    dirname = os.path.dirname(attempts_path)
+    if dirname:
+        os.makedirs(dirname, exist_ok=True)
     with open(attempts_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(record) + "\n")
 
@@ -147,7 +150,8 @@ async def _handle_pre_filter_rejection(
         "run_id": ctx.args.run_id,
         "seed": item_seed,
     }
-    await asyncio.to_thread(_append_attempt_record, attempts_path, attempt_record)
+    async with ctx.attempts_lock:
+        await asyncio.to_thread(_append_attempt_record, attempts_path, attempt_record)
     await write_manifest_fn("skipped_pre_filter", response_excerpt=f"Rejected at {decision.stage} (p={decision.probability:.4f})")
 
 
@@ -179,7 +183,8 @@ async def _process_seed(
             return
 
         if ctx.pre_filter is not None:
-            decision = ctx.pre_filter.predict(seed.get("predicate", ""), seed.get("topic", ""))
+            input_block = seed.get("topic") or seed.get("input_block") or ""
+            decision = ctx.pre_filter.predict(seed.get("predicate", ""), input_block)
             if not decision.accept:
                 await _handle_pre_filter_rejection(i, seed, item_seed, decision, ctx, write_manifest)
                 return

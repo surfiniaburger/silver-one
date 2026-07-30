@@ -509,7 +509,7 @@ def _evaluate_cascade(model_dir: Path, eval_texts: Optional[List[str]], y_eval: 
         sys.path.append(str(Path(__file__).resolve().parent.parent / "scenarios" / "debate"))
         from pre_filter import BarredPreFilter
         cascade = BarredPreFilter(model_dir=str(model_dir))
-        cascade_preds = [1 if cascade.predict(predicate=t, input_block=t).accept else 0 for t in eval_texts]
+        cascade_preds = [1 if cascade.predict(predicate=t, input_block="").accept else 0 for t in eval_texts]
         y_pred = np.array(cascade_preds)
         acc = float(np.mean(y_pred == y_eval))
         bal_acc = _compute_balanced_accuracy(y_eval, y_pred)
