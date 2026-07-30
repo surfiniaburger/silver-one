@@ -1225,6 +1225,243 @@
       }
     },
     {
+      "id": "tests/test_pre_filter_leakage.py::test_cve_grouping_isolation",
+      "file_path": "tests/test_pre_filter_leakage.py",
+      "test_name": "test_cve_grouping_isolation",
+      "class_name": null,
+      "farley_index": 7.875,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The intent is clear: verify that all attempts for a specific CVE ID are contained within exactly one partition (train/val/test). The domain language ('vuln A', 'code') matches the data structure. No low-level implementation clutter obscures the business rule.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "The test is decoupled from system internals; it only cares about partitioning logic and data content. It will not break if `partition_dataset_by_cve` changes its internal implementation as long as the input/output contract remains identical.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic and self-contained. However, it relies on `partition_dataset_by_cve` which may introduce external state (e.g., network calls to a mock DB or random seeds). If the partitioning logic uses non-deterministic sources of randomness without seeding, this property fails.",
+          "suggestions": [
+            "Ensure all inputs (`texts`, `labels`) are explicitly seeded if any randomness is involved in generation. \n      \"\"\"\ndef test_cve_grouping_isolation(seed=42): ...\"\"\"",
+            "Avoid relying on external shared state like a database or network during the partition step."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The assertion `sum(...) == 1` is atomic. If it fails (e.g., sum > 1), the cause is instantly obvious: multiple partitions contain 'vuln A'. It does not require complex stack traces to debug.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test verifies a specific constraint (no overlap between train/val/test for one CVE). However, it likely duplicates coverage of other tests that already verify 'vuln A' is in exactly one partition. It does not add new design properties or edge cases.",
+          "suggestions": [
+            "Review existing tests to ensure no duplicate verification logic exists.\n      \"\"\"\ndef test_cve_grouping_isolation(): ... # Remove if redundant\n# Add a more general 'no overlap' test instead of specific CVE ID",
+            "Ensure this is the *only* place where we explicitly check for non-overlapping partitions per CVE."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The assertion targets a precise behavior: 'vuln A' must not appear in multiple splits. It isolates the specific rule of partitioning integrity for that ID.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes rapidly assuming `partition_dataset_by_cve` is efficient and does not perform heavy I/O or artificial sleeps. It avoids unnecessary setup beyond defining the input list.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 7,
+          "rationale": "The test follows Arrange-Act-Pattern (Arrange inputs -> Act on partitioning logic -> Assert result). However, it lacks a clear 'specification' of the expected behavior in an `assert` statement that could be read by new developers without context. It is functional but not explicitly declarative about *why* this specific check exists.",
+          "suggestions": [
+            "Refactor to include a comment block or docstring explaining the business rule being tested.\n      \"\"\"\ndef test_cve_grouping_isolation():\n    # Arrange: Define input data\n    texts = [...]  \n    labels = [...]\n    cve_ids = ...\n    splits = partition_dataset_by_cve(...)\n    train_texts, ... = splits[...]\n    assert sum([train_cve_1, val_cve_1, test_cve_1]) == 1\n      # Act: Verify isolation logic works correctly.\n      \"\"\"\n      This is a functional TDD. To be truly 'first_tdd', consider adding an `assert` that explicitly states the expected outcome in plain English before running code."
+          ]
+        },
+        "summary": "The test passes all criteria except for potential non-determinism via external state and redundancy with other tests. It is a solid unit of verification but lacks explicit documentation of its business rule to aid future maintainability."
+      }
+    },
+    {
+      "id": "tests/test_pre_filter_leakage.py::test_null_model_sanity_check",
+      "file_path": "tests/test_pre_filter_leakage.py",
+      "test_name": "test_null_model_sanity_check",
+      "class_name": null,
+      "farley_index": 8.5,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The intent is clear: verify a null model's performance against random noise using specific data splits. However, the business rule ('near-random') and domain language are slightly obscured by implementation details like `np.random.default_rng`.",
+          "suggestions": [
+            "Explicitly state 'randomness' or 'uniform distribution' in comments to clarify intent."
+          ]
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "The test is self-contained; it does not rely on external shared state (DB, network) and uses only standard NumPy operations. It will remain valid even if the underlying `_run_null_model_sanity_check` function changes.",
+          "suggestions": [
+            "Ensure `np.random.default_rng(42)` remains deterministic across runs to maintain reproducibility."
+          ]
+        },
+        "repeatable": {
+          "score": 9,
+          "rationale": "The test is fully self-contained. It generates its own data and performs calculations without relying on external shared state or timing-dependent behavior.",
+          "suggestions": [
+            "Remove any hardcoded seeds if the goal was stochasticity; for determinism, keep `42`."
+          ]
+        },
+        "atomic": {
+          "score": 10,
+          "rationale": "The test verifies exactly one rule: that a null model's balanced accuracy does not exceed 65%. If it fails, the cause is immediately obvious (the value exceeds 0.65).",
+          "suggestions": [
+            "No changes needed."
+          ]
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "This test covers one specific edge case: a null model's performance on random data. It does not duplicate coverage of other tests but is necessary for this specific sanity check.",
+          "suggestions": [
+            "Ensure no similar 'null model' or 'random noise' checks exist in the broader suite that would be redundant."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The test isolates a single metric (balanced accuracy) and one threshold. However, it could benefit from more specific assertions about what constitutes 'near-random' performance.",
+          "suggestions": [
+            "Consider adding an assertion like `assert balanced_acc < 0.65` instead of just `<=`."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes rapidly with no artificial sleeps or heavy I/O operations; it relies solely on NumPy vectorization.",
+          "suggestions": [
+            "No changes needed."
+          ]
+        },
+        "first_tdd": {
+          "score": 8,
+          "rationale": "It follows the Arrange-Act-Assert pattern: setup data (`Arrange`), run a function call (`Act`), and assert the result (`Assert`). However, it lacks explicit documentation of expected behavior before running.",
+          "suggestions": [
+            "Add an `assert ... == X` or similar check immediately after calling `_run_null_model_sanity_check`."
+          ]
+        },
+        "summary": "The test is highly maintainable, atomic, fast, and follows TDD principles. It effectively isolates a specific sanity check but could be slightly more explicit about the expected outcome to fully satisfy 'first_tdd'."
+      }
+    },
+    {
+      "id": "tests/test_pre_filter_leakage.py::test_no_target_derived_feature_leakage",
+      "file_path": "tests/test_pre_filter_leakage.py",
+      "test_name": "test_no_target_derived_feature_leakage",
+      "class_name": null,
+      "farley_index": 8.375,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 9,
+          "rationale": "The test clearly defines the business rule (exclusion of adjudication/outcome fields) and uses domain-specific terminology ('adjudication', 'outcome') without unnecessary implementation clutter.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 8,
+          "rationale": "The test is decoupled from system internals; it relies on a helper function `_parse_attempt_record` rather than hardcoding logic that would break if the parser implementation changes.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic and self-contained. However, it relies on a helper function `_parse_attempt_record` which may introduce hidden dependencies or side effects if not fully isolated.",
+          "suggestions": [
+            "Ensure `_parse_attempt_record` has no external state (no file I/O, network calls) that could cause non-determinism across runs."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: the exclusion of specific fields. If it fails, the failure is immediately obvious and directly attributable to this single assertion.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "This test has a unique purpose (verifying field exclusions). It does not duplicate coverage of other tests unless there are existing tests for 'adjudication' or 'outcome' fields.",
+          "suggestions": [
+            "Review the codebase to ensure no other tests cover these specific exclusion rules; if they exist, this test is redundant and should be removed."
+          ]
+        },
+        "granular": {
+          "score": 9,
+          "rationale": "The assertion targets a very precise behavior: ensuring that 'SUCCESS_VERIFIED', 'check_1_pass', etc., do not appear in the resulting `text` feature string.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "The test executes rapidly. It avoids artificial sleeps or heavy I/O operations; it only performs dictionary lookups and a single function call.",
+          "suggestions": [
+            "Remove any `time.sleep()` calls if the current implementation includes them."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The test follows TDD principles: it specifies behavior (what fields must be excluded) before implementing logic (`_parse_attempt_record`), and uses a clean Arrange-Act-Assert structure.",
+          "suggestions": []
+        },
+        "summary": "Overall Score: 8.5/10"
+      }
+    },
+    {
+      "id": "tests/test_pre_filter_leakage.py::test_holdout_metrics_export",
+      "file_path": "tests/test_pre_filter_leakage.py",
+      "test_name": "test_holdout_metrics_export",
+      "class_name": null,
+      "farley_index": 8.125,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 9,
+          "rationale": "The test clearly defines the business rule: `_evaluate_holdout_performance` must produce a `holdout_metrics.json` file containing specific keys (`accuracy`, `balanced_accuracy`) with expected values of 1.0 for this dataset.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 8,
+          "rationale": "The test is decoupled from implementation details; it does not rely on the internal logic or specific parameters of `_evaluate_holdout_performance`, making it robust against future changes to that function.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic and self-contained. However, the use of `tmp_path` implies a file system dependency which introduces non-determinism if multiple runs occur in parallel or on different filesystems without synchronization.",
+          "suggestions": [
+            "Remove reliance on external shared state (filesystem) by using an isolated temporary directory within the test scope instead of relying on global paths like `tmp_path` unless explicitly managed per-test isolation.",
+            "Ensure `_evaluate_holdout_performance` is deterministic; if it relies on random seeds or non-deterministic ordering, add explicit seeding in this test."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: the export of `holdout_metrics.json` with specific content. If it fails (e.g., missing keys or wrong values), the cause is instantly obvious and isolated to this single assertion.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "While useful for regression, this test duplicates coverage of other tests that likely verify `_evaluate_holdout_performance`'s return value directly (e.g., `assert metrics == {...}`). It adds little new insight.",
+          "suggestions": [
+            "Remove or consolidate the assertions about `metrics["
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The test isolates precisely one behavior: writing a specific JSON file with exact key-value pairs. It does not mix unrelated logic.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "There are no artificial sleeps, heavy setups (beyond `tmp_path`), or unneeded slow I/O operations; the test runs in milliseconds.",
+          "suggestions": [
+            "Remove any unnecessary imports that could add overhead if unused."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The test follows TDD principles: it specifies the expected behavior (what) and clean separation of Arrange-Act-Assert. The `tmp_path` is a valid 'Arrange' step for isolation.",
+          "suggestions": []
+        },
+        "summary": ""
+      }
+    },
+    {
       "id": "tests/test_call_structured_json_wrapper.py::test_call_structured_handles_markdown_wrapped_json",
       "file_path": "tests/test_call_structured_json_wrapper.py",
       "test_name": "test_call_structured_handles_markdown_wrapped_json",
@@ -4344,65 +4581,66 @@
       "file_path": "tests/test_train_pre_filter.py",
       "test_name": "test_extract_dataset_from_attempts",
       "class_name": null,
-      "farley_index": 5.625,
+      "farley_index": 3.5,
       "farley_breakdown": {
         "understandable": {
           "score": 6,
-          "rationale": "The test name and logic are understandable but slightly cluttered with low-level implementation details like `tmp_path` usage which obscures the core business rule.",
+          "rationale": "The test logic is understandable but suffers from poor documentation. The function `extract_dataset_from_attempts` does not exist or its signature/behavior are undefined in the provided snippet, making it impossible to verify if this specific assertion actually passes without running the code.",
           "suggestions": [
-            "Remove explicit use of `tmp_path`. Instead, rely on standard library fixtures or a dedicated test helper that handles temporary directory creation internally to keep the business logic visible."
+            "Define a clear docstring for `test_extract_dataset_from_attempts`. Explicitly state what data is expected and how labels should be derived from that data. If possible, include an inline comment explaining why 4 records were selected (e.g., 'Selecting exactly one record per decision type')."
           ]
         },
         "maintainable": {
-          "score": 4,
-          "rationale": "The test is brittle because it relies on `tmp_path` which creates a new directory for every run. If the system architecture changes to use persistent directories or different temp strategies without updating this specific fixture logic, the test will fail unexpectedly.",
+          "score": 5,
+          "rationale": "The test is brittle and tightly coupled to the specific content of `test_attempts.jsonl`. If that file changes or if a new 'skipped_pre_filter' record needs to be added without modifying this single assertion, the test will fail. It also lacks isolation from other tests sharing common fixtures.",
           "suggestions": [
-            "Decouple from temporary file systems entirely by using standard library fixtures (e.g., `pytest.fixture` with `tmp_path`) that are part of the project's shared infrastructure."
+            "Refactor into separate unit tests for each decision type (accepted/rejected/skipped) rather than one monolithic integration-style check on a file path that might change between runs or versions."
           ]
         },
         "repeatable": {
-          "score": 5,
-          "rationale": "The test relies on external state (`attempts_dir`), which violates determinism if multiple runs occur simultaneously or if `tmp_path` behaves inconsistently across environments. It also lacks a clear self-contained scope; the logic is embedded in the fixture rather than isolated.",
+          "score": 4,
+          "rationale": "The test relies heavily on the specific content of `test_attempts.jsonl`. If this JSONL changes slightly (e.g., adding a new record type), the assertion logic must be updated. It also lacks deterministic behavior regarding which records are selected if multiple matching criteria exist.",
           "suggestions": [
-            "Isolate this test into its own dedicated module with no dependencies on external state (no file system, network, etc.). Ensure all data generation and assertions are contained within `test_extract_dataset_from_attempts` to guarantee repeatability."
+            "Ensure all test data is generated via code or fixtures, not hardcoded in file paths that might vary by environment."
           ]
         },
         "atomic": {
-          "score": 7,
-          "rationale": "The test verifies exactly one behavior: extracting a specific number of records from the attempts directory. The failure cause is immediately obvious if `extract_dataset_from_attempts` returns incorrect counts or labels.",
+          "score": 3,
+          "rationale": "The assertion `assert len(texts) == 4` does not verify a specific business rule; it only verifies the count. If there are exactly 5 matching records in the file but one is skipped or malformed, this test will pass even though the logic failed to filter correctly.",
           "suggestions": [
-            "Ensure no side effects occur outside this function (e.g., don't write to disk in other tests). If external state must be used, ensure it's reset before and after the test block so that a single failure is isolated precisely."
+            "Replace `assert len(texts) == 4` with a more specific assertion like: 'Verify that only accepted/rejected/skipped decisions are present and no invalid JSON lines were included in the output.'",
+            "Add assertions for each label value to ensure they match expectations (e.g., `[1, 0, 1, 0]`) rather than just counts."
           ]
         },
         "necessary": {
-          "score": 6,
-          "rationale": "The assertion `assert len(texts) == 4` duplicates coverage of other tests (e.g., checking specific strings like 'buffer overflow' or 'miracle offer'). These assertions are redundant if the test suite already validates these patterns elsewhere.",
+          "score": 2,
+          "rationale": "This test duplicates the coverage of other tests likely existing in this file or suite. It does not add new value; it simply re-verifies a subset of data that could be covered by general filtering logic.",
           "suggestions": [
-            "Remove explicit string checks for common keywords. Instead, rely on `extract_dataset_from_attempts` to return a structured list of records with their labels and predicates; let downstream tests verify semantic content rather than hardcoding expected strings."
+            "Remove assertions for specific record counts and labels if they are already verified elsewhere, focusing only on the core 'filtering' behavior."
           ]
         },
         "granular": {
-          "score": 5,
-          "rationale": "The test is somewhat granular in asserting record counts but less so in verifying the actual logic of extraction. It asserts 'what' (counts) and some 'how' (content), missing a deeper check on whether `extract_dataset_from_attempts` correctly handles edge cases or malformed data.",
+          "score": 2,
+          "rationale": "The test is extremely coarse-grained. It asserts a global count of records rather than validating specific predicates or anchor values against expected strings.",
           "suggestions": [
-            "Add assertions that verify specific records were extracted with correct labels, not just counts. For example: assert the first record has label 1 and contains 'buffer overflow'. This isolates precision in what is being tested."
+            "Assert that the first record's `predicate` matches 'buffer overflow' and its label corresponds to an accepted decision, not just checking lengths."
           ]
         },
         "fast": {
-          "score": 8,
-          "rationale": "The test executes rapidly as it avoids artificial sleeps or heavy I/O. The only minor delay comes from writing JSON lines to a file and reading them back; this overhead is negligible for unit tests.",
+          "score": 5,
+          "rationale": "The test is reasonably fast as it involves simple file I/O. However, the `json.dumps` call inside a loop for every record adds unnecessary overhead compared to writing directly or using structured data.",
           "suggestions": [
-            "Optimize the `json.dumps`/`open` operations by using context managers (`with open(...)`) which are already fast, but ensure no unnecessary loops or large datasets are generated during setup."
+            "Optimize JSON serialization by pre-creating lists of dicts and passing them once via `json.dump`, avoiding repeated string conversion in the loop."
           ]
         },
         "first_tdd": {
-          "score": 4,
-          "rationale": "The test demonstrates a 'how' approach (using `tmp_path` to create files) rather than the ideal 'specify behavior first'. The Arrange-Act-Assert separation is weak because the fixture logic mixes with data generation.",
+          "score": 1,
+          "rationale": "This is a classic 'Arrange-Act-Passive' test. The code does not define behavior (specification) before acting on it; instead, it assumes the function exists and runs without defining what `extract_dataset_from_attempts` should do.",
           "suggestions": [
-            "Adopt TDD principles: write tests that specify expected outcomes for a clean, empty state. Use `pytest.fixture` to define the initial setup (empty attempts directory) and only populate it after verifying the behavior matches expectations."
+            "Write this as an integration test *after* implementing or documenting the expected contract of `extract_dataset_from_attempts`. The 'Arrange' phase (defining input/output expectations) must precede any assertions."
           ]
         },
-        "summary": ""
+        "summary": "The provided snippet is a non-functional assertion"
       }
     },
     {
@@ -4410,65 +4648,55 @@
       "file_path": "tests/test_train_pre_filter.py",
       "test_name": "test_extract_dataset_synthetic_fallback",
       "class_name": null,
-      "farley_index": 7.75,
+      "farley_index": 8.375,
       "farley_breakdown": {
         "understandable": {
           "score": 8,
-          "rationale": "The test name and logic are clear; however, the function `extract_dataset_from_attempts` is not defined in scope. The business rule (at least 4 samples with binary labels) is implicit but understandable once context is established.",
-          "suggestions": [
-            "Define or import `extract_dataset_from_attempts`. If it's a helper from another module, ensure its signature and return values are documented."
-          ]
+          "rationale": "The test clearly defines the input (empty directory), expected outputs via helper functions, and specific assertions about length and label sets. It avoids implementation clutter.",
+          "suggestions": []
         },
         "maintainable": {
-          "score": 7,
-          "rationale": "The test relies on an external function (`extract_dataset_from_attempts`) which may be brittle if that implementation changes. It also depends heavily on `tmp_path`, making it fragile to environment-specific path resolution issues.",
-          "suggestions": [
-            "Move the logic into a dedicated utility module or inline the extraction logic directly in this file (if feasible). Ensure all imports are explicit and versioned."
-          ]
+          "score": 9,
+          "rationale": "This is a pure unit test with no dependencies on external state or system internals; it only relies on the `extract_dataset_from_attempts` function's contract.",
+          "suggestions": []
         },
         "repeatable": {
-          "score": 6,
-          "rationale": "The test is deterministic regarding its assertions. However, it relies on `tmp_path` which can vary between runs if not handled consistently across CI/CD pipelines or different environments.",
+          "score": 7,
+          "rationale": "The logic depends entirely on an existing helper function. If that helper is refactored to use a different data source (e.g., file system instead of directory), this test will fail without modification.",
           "suggestions": [
-            "Explicitly set up the temporary directory path using a constant (e.g., `TEST_TMP_DIR`) to ensure reproducibility in all test runners."
+            "Ensure `extract_dataset_from_attempts` uses only deterministic in-memory operations or explicitly mocked external dependencies."
           ]
         },
         "atomic": {
           "score": 9,
-          "rationale": "The test verifies exactly one behavior: that at least four synthetic samples exist with binary labels. The failure cause is instantly obvious if the assertion fails.",
-          "suggestions": [
-            "No changes needed; this property holds well for a unit-level sanity check."
-          ]
+          "rationale": "The assertion checks the length and set membership. If these values change unexpectedly (e.g., due to a bug), it is immediately obvious that something went wrong.",
+          "suggestions": []
         },
         "necessary": {
           "score": 8,
-          "rationale": "This test covers specific edge-case handling (fallback logic) that other tests likely do not. It adds unique coverage without duplicating general dataset loading scenarios.",
+          "rationale": "This test verifies specific invariants of `extract_dataset_from_attempts` when given an empty directory. It does not duplicate coverage for other scenarios (e.g., non-empty directories) unless those are explicitly tested elsewhere.",
           "suggestions": [
-            "Ensure no existing test explicitly checks the `empty_dir` path or handles this fallback scenario to avoid redundancy."
+            "Ensure this is the only place where 'empty' input behavior is verified to avoid redundancy."
           ]
         },
         "granular": {
-          "score": 7,
-          "rationale": "The assertion is specific enough (`len >= 4`, set equality). However, it does not verify intermediate steps like file existence before calling extraction.",
-          "suggestions": [
-            "Add assertions for `empty_dir.exists()` and the return types of `extract_dataset_from_attempts` to ensure granular isolation."
-          ]
+          "score": 9,
+          "rationale": "The test isolates exactly one aspect: that `extract_dataset_from_attempts` returns at least 4 items with a specific label distribution. It does not mix unrelated behaviors.",
+          "suggestions": []
         },
         "fast": {
           "score": 8,
-          "rationale": "The test avoids sleeps or heavy I/O. The only potential bottleneck is file system operations on a temporary directory.",
+          "rationale": "There are no artificial sleeps or heavy I/O operations; the test runs purely in memory using mocked `tmp_path`.",
           "suggestions": [
-            "Ensure `tmp_path` creation and cleanup are optimized (e.g., using context managers). Avoid unnecessary filesystem calls if possible."
+            "Ensure `extract_dataset_from_attempts` is fast enough for this specific case."
           ]
         },
         "first_tdd": {
           "score": 9,
-          "rationale": "The test follows the Arrange-Act-Assert pattern: setup (`empty_dir`) -> action (`extract_dataset_from_attempts`, assertions) -> verify. It demonstrates a clean separation of concerns.",
-          "suggestions": [
-            "No changes needed; this is exemplary TDD structure."
-          ]
+          "rationale": "The code follows a clean Arrange-Act-Assert structure: setup (`empty_dir`) -> action (call helper) -> assertions. It explicitly tests the 'what' rather than the 'how'.",
+          "suggestions": []
         },
-        "summary": "Overall Score: 8/10 (Highly Critical). The test passes the first five properties but fails on maintainability due to external dependencies and potential environment variability, which could lead to flaky tests in CI. Ensure `extract_dataset_from_attempts` is robust or moved locally for full compliance."
+        "summary": "This test is highly maintainable and fast but risks non-repeatability if `extract_dataset_from_attempts` changes its data source strategy."
       }
     },
     {
@@ -10330,44 +10558,44 @@
     "farley_usage_summary": {
       "run_id": "main-baseline",
       "model": "ollama/qwen3.5:2b",
-      "reviewed_test_cases": 158,
+      "reviewed_test_cases": 162,
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 201,
-          "prompt_tokens": 175510,
-          "completion_tokens": 163884,
-          "total_tokens": 339394,
+          "calls": 208,
+          "prompt_tokens": 183629,
+          "completion_tokens": 169778,
+          "total_tokens": 353407,
           "cost_usd": 0.0,
           "missing_usage_calls": 0,
-          "total_duration_ms": 2016.476,
-          "avg_duration_ms": 10.032,
-          "max_duration_ms": 108.74,
-          "min_duration_ms": 5.501,
-          "p95_duration_ms": 7.162
+          "total_duration_ms": 819587.36,
+          "avg_duration_ms": 3940.324,
+          "max_duration_ms": 117908.732,
+          "min_duration_ms": 5.586,
+          "p95_duration_ms": 119.057
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 201,
-            "prompt_tokens": 175510,
-            "completion_tokens": 163884,
-            "total_tokens": 339394,
+            "calls": 208,
+            "prompt_tokens": 183629,
+            "completion_tokens": 169778,
+            "total_tokens": 353407,
             "cost_usd": 0.0,
-            "total_duration_ms": 2016.476,
-            "max_duration_ms": 108.74,
-            "avg_duration_ms": 10.032
+            "total_duration_ms": 819587.36,
+            "max_duration_ms": 117908.732,
+            "avg_duration_ms": 3940.324
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 201,
-            "prompt_tokens": 175510,
-            "completion_tokens": 163884,
-            "total_tokens": 339394,
+            "calls": 208,
+            "prompt_tokens": 183629,
+            "completion_tokens": 169778,
+            "total_tokens": 353407,
             "cost_usd": 0.0,
-            "total_duration_ms": 2016.476,
-            "max_duration_ms": 108.74,
-            "avg_duration_ms": 10.032
+            "total_duration_ms": 819587.36,
+            "max_duration_ms": 117908.732,
+            "avg_duration_ms": 3940.324
           }
         },
         "events": [
@@ -10375,7 +10603,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.127,
+            "duration_ms": 6.152,
             "generation_params": {},
             "prompt_tokens": 458,
             "completion_tokens": 602,
@@ -10388,7 +10616,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.572,
+            "duration_ms": 6.282,
             "generation_params": {},
             "prompt_tokens": 530,
             "completion_tokens": 621,
@@ -10401,7 +10629,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.758,
+            "duration_ms": 6.304,
             "generation_params": {},
             "prompt_tokens": 532,
             "completion_tokens": 821,
@@ -10414,7 +10642,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.778,
+            "duration_ms": 5.739,
             "generation_params": {},
             "prompt_tokens": 1067,
             "completion_tokens": 578,
@@ -10427,7 +10655,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.85,
+            "duration_ms": 5.951,
             "generation_params": {},
             "prompt_tokens": 478,
             "completion_tokens": 801,
@@ -10440,7 +10668,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.503,
+            "duration_ms": 5.586,
             "generation_params": {},
             "prompt_tokens": 616,
             "completion_tokens": 671,
@@ -10453,7 +10681,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.098,
+            "duration_ms": 6.026,
             "generation_params": {},
             "prompt_tokens": 496,
             "completion_tokens": 651,
@@ -10466,7 +10694,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.82,
+            "duration_ms": 5.845,
             "generation_params": {},
             "prompt_tokens": 644,
             "completion_tokens": 592,
@@ -10479,7 +10707,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.162,
+            "duration_ms": 6.118,
             "generation_params": {},
             "prompt_tokens": 503,
             "completion_tokens": 835,
@@ -10492,7 +10720,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.203,
+            "duration_ms": 5.665,
             "generation_params": {},
             "prompt_tokens": 571,
             "completion_tokens": 597,
@@ -10505,7 +10733,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.439,
+            "duration_ms": 5.993,
             "generation_params": {},
             "prompt_tokens": 811,
             "completion_tokens": 624,
@@ -10517,8 +10745,99 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 93428.773,
+            "generation_params": {},
+            "prompt_tokens": 778,
+            "completion_tokens": 1017,
+            "total_tokens": 1795,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 80334.848,
+            "generation_params": {},
+            "prompt_tokens": 589,
+            "completion_tokens": 1024,
+            "total_tokens": 1613,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 113099.944,
+            "generation_params": {},
+            "prompt_tokens": 1874,
+            "completion_tokens": 1024,
+            "total_tokens": 2898,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 117908.732,
+            "generation_params": {},
+            "prompt_tokens": 3101,
+            "completion_tokens": 995,
+            "total_tokens": 4096,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 54867.688,
+            "generation_params": {},
+            "prompt_tokens": 555,
+            "completion_tokens": 665,
+            "total_tokens": 1220,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 54818.664,
+            "generation_params": {},
+            "prompt_tokens": 580,
+            "completion_tokens": 639,
+            "total_tokens": 1219,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 58512.733,
+            "generation_params": {},
+            "prompt_tokens": 663,
+            "completion_tokens": 683,
+            "total_tokens": 1346,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.067,
+            "duration_ms": 7.016,
             "generation_params": {},
             "prompt_tokens": 756,
             "completion_tokens": 1024,
@@ -10531,7 +10850,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.293,
+            "duration_ms": 6.891,
             "generation_params": {},
             "prompt_tokens": 1924,
             "completion_tokens": 979,
@@ -10544,7 +10863,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.504,
+            "duration_ms": 6.298,
             "generation_params": {},
             "prompt_tokens": 523,
             "completion_tokens": 641,
@@ -10557,7 +10876,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.923,
+            "duration_ms": 6.755,
             "generation_params": {},
             "prompt_tokens": 614,
             "completion_tokens": 571,
@@ -10570,7 +10889,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.063,
+            "duration_ms": 6.777,
             "generation_params": {},
             "prompt_tokens": 413,
             "completion_tokens": 799,
@@ -10583,7 +10902,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.91,
+            "duration_ms": 7.07,
             "generation_params": {},
             "prompt_tokens": 492,
             "completion_tokens": 705,
@@ -10596,7 +10915,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.091,
+            "duration_ms": 6.436,
             "generation_params": {},
             "prompt_tokens": 537,
             "completion_tokens": 776,
@@ -10609,7 +10928,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.988,
+            "duration_ms": 7.424,
             "generation_params": {},
             "prompt_tokens": 422,
             "completion_tokens": 867,
@@ -10622,7 +10941,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.904,
+            "duration_ms": 7.101,
             "generation_params": {},
             "prompt_tokens": 474,
             "completion_tokens": 941,
@@ -10635,7 +10954,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.294,
+            "duration_ms": 119.057,
             "generation_params": {},
             "prompt_tokens": 658,
             "completion_tokens": 820,
@@ -10648,7 +10967,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.523,
+            "duration_ms": 7.102,
             "generation_params": {},
             "prompt_tokens": 505,
             "completion_tokens": 665,
@@ -10661,7 +10980,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.258,
+            "duration_ms": 6.863,
             "generation_params": {},
             "prompt_tokens": 546,
             "completion_tokens": 951,
@@ -10674,7 +10993,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 106.813,
+            "duration_ms": 6.401,
             "generation_params": {},
             "prompt_tokens": 581,
             "completion_tokens": 650,
@@ -10687,7 +11006,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.563,
+            "duration_ms": 6.668,
             "generation_params": {},
             "prompt_tokens": 480,
             "completion_tokens": 848,
@@ -10700,7 +11019,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.515,
+            "duration_ms": 10.347,
             "generation_params": {},
             "prompt_tokens": 525,
             "completion_tokens": 1024,
@@ -10713,7 +11032,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.441,
+            "duration_ms": 7.064,
             "generation_params": {},
             "prompt_tokens": 1698,
             "completion_tokens": 1024,
@@ -10726,7 +11045,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.707,
+            "duration_ms": 6.163,
             "generation_params": {},
             "prompt_tokens": 2872,
             "completion_tokens": 1024,
@@ -10739,7 +11058,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.818,
+            "duration_ms": 6.972,
             "generation_params": {},
             "prompt_tokens": 711,
             "completion_tokens": 1024,
@@ -10752,7 +11071,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.125,
+            "duration_ms": 6.372,
             "generation_params": {},
             "prompt_tokens": 1942,
             "completion_tokens": 1024,
@@ -10765,7 +11084,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.929,
+            "duration_ms": 6.596,
             "generation_params": {},
             "prompt_tokens": 3173,
             "completion_tokens": 923,
@@ -10778,7 +11097,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.397,
+            "duration_ms": 6.206,
             "generation_params": {},
             "prompt_tokens": 549,
             "completion_tokens": 619,
@@ -10791,7 +11110,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.018,
+            "duration_ms": 6.801,
             "generation_params": {},
             "prompt_tokens": 625,
             "completion_tokens": 1024,
@@ -10804,7 +11123,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.386,
+            "duration_ms": 6.136,
             "generation_params": {},
             "prompt_tokens": 2023,
             "completion_tokens": 1024,
@@ -10817,7 +11136,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.973,
+            "duration_ms": 6.683,
             "generation_params": {},
             "prompt_tokens": 3422,
             "completion_tokens": 674,
@@ -10830,7 +11149,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.436,
+            "duration_ms": 6.511,
             "generation_params": {},
             "prompt_tokens": 449,
             "completion_tokens": 815,
@@ -10843,7 +11162,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.745,
+            "duration_ms": 10.22,
             "generation_params": {},
             "prompt_tokens": 509,
             "completion_tokens": 854,
@@ -10856,7 +11175,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.984,
+            "duration_ms": 6.202,
             "generation_params": {},
             "prompt_tokens": 540,
             "completion_tokens": 719,
@@ -10869,7 +11188,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.931,
+            "duration_ms": 8.49,
             "generation_params": {},
             "prompt_tokens": 529,
             "completion_tokens": 858,
@@ -10882,7 +11201,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.027,
+            "duration_ms": 6.788,
             "generation_params": {},
             "prompt_tokens": 672,
             "completion_tokens": 889,
@@ -10895,7 +11214,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.834,
+            "duration_ms": 7.015,
             "generation_params": {},
             "prompt_tokens": 663,
             "completion_tokens": 723,
@@ -10908,7 +11227,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.002,
+            "duration_ms": 5.981,
             "generation_params": {},
             "prompt_tokens": 470,
             "completion_tokens": 1024,
@@ -10921,7 +11240,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.845,
+            "duration_ms": 115.707,
             "generation_params": {},
             "prompt_tokens": 1749,
             "completion_tokens": 1024,
@@ -10934,7 +11253,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.235,
+            "duration_ms": 7.25,
             "generation_params": {},
             "prompt_tokens": 2982,
             "completion_tokens": 1024,
@@ -10947,7 +11266,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.078,
+            "duration_ms": 7.342,
             "generation_params": {},
             "prompt_tokens": 556,
             "completion_tokens": 786,
@@ -10960,7 +11279,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 106.032,
+            "duration_ms": 6.51,
             "generation_params": {},
             "prompt_tokens": 525,
             "completion_tokens": 912,
@@ -10973,7 +11292,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.766,
+            "duration_ms": 6.66,
             "generation_params": {},
             "prompt_tokens": 498,
             "completion_tokens": 811,
@@ -10986,7 +11305,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.493,
+            "duration_ms": 6.222,
             "generation_params": {},
             "prompt_tokens": 539,
             "completion_tokens": 737,
@@ -10999,7 +11318,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.913,
+            "duration_ms": 6.883,
             "generation_params": {},
             "prompt_tokens": 583,
             "completion_tokens": 602,
@@ -11012,7 +11331,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.135,
+            "duration_ms": 6.137,
             "generation_params": {},
             "prompt_tokens": 594,
             "completion_tokens": 1002,
@@ -11025,7 +11344,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.726,
+            "duration_ms": 6.544,
             "generation_params": {},
             "prompt_tokens": 599,
             "completion_tokens": 873,
@@ -11038,7 +11357,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.217,
+            "duration_ms": 6.254,
             "generation_params": {},
             "prompt_tokens": 593,
             "completion_tokens": 592,
@@ -11051,7 +11370,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.006,
+            "duration_ms": 7.222,
             "generation_params": {},
             "prompt_tokens": 547,
             "completion_tokens": 975,
@@ -11064,7 +11383,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.252,
+            "duration_ms": 6.131,
             "generation_params": {},
             "prompt_tokens": 524,
             "completion_tokens": 553,
@@ -11077,7 +11396,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.994,
+            "duration_ms": 6.642,
             "generation_params": {},
             "prompt_tokens": 519,
             "completion_tokens": 688,
@@ -11090,7 +11409,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.356,
+            "duration_ms": 6.24,
             "generation_params": {},
             "prompt_tokens": 416,
             "completion_tokens": 923,
@@ -11103,7 +11422,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.981,
+            "duration_ms": 7.138,
             "generation_params": {},
             "prompt_tokens": 510,
             "completion_tokens": 891,
@@ -11116,7 +11435,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.023,
+            "duration_ms": 6.617,
             "generation_params": {},
             "prompt_tokens": 465,
             "completion_tokens": 574,
@@ -11129,7 +11448,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.502,
+            "duration_ms": 6.639,
             "generation_params": {},
             "prompt_tokens": 1316,
             "completion_tokens": 786,
@@ -11142,7 +11461,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.616,
+            "duration_ms": 6.647,
             "generation_params": {},
             "prompt_tokens": 1059,
             "completion_tokens": 890,
@@ -11155,7 +11474,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.118,
+            "duration_ms": 7.239,
             "generation_params": {},
             "prompt_tokens": 1124,
             "completion_tokens": 857,
@@ -11168,7 +11487,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.703,
+            "duration_ms": 6.597,
             "generation_params": {},
             "prompt_tokens": 1050,
             "completion_tokens": 827,
@@ -11181,7 +11500,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.178,
+            "duration_ms": 6.857,
             "generation_params": {},
             "prompt_tokens": 578,
             "completion_tokens": 683,
@@ -11194,7 +11513,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.751,
+            "duration_ms": 6.655,
             "generation_params": {},
             "prompt_tokens": 1590,
             "completion_tokens": 650,
@@ -11207,7 +11526,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.0,
+            "duration_ms": 110.526,
             "generation_params": {},
             "prompt_tokens": 1270,
             "completion_tokens": 736,
@@ -11220,7 +11539,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.305,
+            "duration_ms": 6.956,
             "generation_params": {},
             "prompt_tokens": 926,
             "completion_tokens": 725,
@@ -11233,7 +11552,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.785,
+            "duration_ms": 7.302,
             "generation_params": {},
             "prompt_tokens": 849,
             "completion_tokens": 644,
@@ -11246,7 +11565,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 108.74,
+            "duration_ms": 6.17,
             "generation_params": {},
             "prompt_tokens": 702,
             "completion_tokens": 683,
@@ -11259,7 +11578,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.841,
+            "duration_ms": 6.511,
             "generation_params": {},
             "prompt_tokens": 545,
             "completion_tokens": 748,
@@ -11272,7 +11591,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.644,
+            "duration_ms": 6.137,
             "generation_params": {},
             "prompt_tokens": 766,
             "completion_tokens": 803,
@@ -11285,7 +11604,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.315,
+            "duration_ms": 7.234,
             "generation_params": {},
             "prompt_tokens": 673,
             "completion_tokens": 770,
@@ -11298,7 +11617,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.337,
+            "duration_ms": 6.027,
             "generation_params": {},
             "prompt_tokens": 636,
             "completion_tokens": 1024,
@@ -11311,7 +11630,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.638,
+            "duration_ms": 6.797,
             "generation_params": {},
             "prompt_tokens": 1921,
             "completion_tokens": 1024,
@@ -11324,7 +11643,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.147,
+            "duration_ms": 6.495,
             "generation_params": {},
             "prompt_tokens": 3206,
             "completion_tokens": 890,
@@ -11337,7 +11656,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.864,
+            "duration_ms": 7.117,
             "generation_params": {},
             "prompt_tokens": 891,
             "completion_tokens": 1024,
@@ -11350,7 +11669,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.406,
+            "duration_ms": 6.563,
             "generation_params": {},
             "prompt_tokens": 2056,
             "completion_tokens": 1004,
@@ -11363,7 +11682,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.066,
+            "duration_ms": 10.962,
             "generation_params": {},
             "prompt_tokens": 482,
             "completion_tokens": 862,
@@ -11376,7 +11695,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.755,
+            "duration_ms": 6.21,
             "generation_params": {},
             "prompt_tokens": 492,
             "completion_tokens": 943,
@@ -11388,12 +11707,12 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "cache",
-            "duration_ms": 5.978,
+            "source": "provider",
+            "duration_ms": 87074.708,
             "generation_params": {},
-            "prompt_tokens": 796,
+            "prompt_tokens": 811,
             "completion_tokens": 1024,
-            "total_tokens": 1820,
+            "total_tokens": 1835,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -11401,12 +11720,12 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "cache",
-            "duration_ms": 6.21,
+            "source": "provider",
+            "duration_ms": 114533.351,
             "generation_params": {},
-            "prompt_tokens": 2027,
-            "completion_tokens": 1004,
-            "total_tokens": 3031,
+            "prompt_tokens": 1976,
+            "completion_tokens": 1019,
+            "total_tokens": 2995,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -11414,12 +11733,12 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "cache",
-            "duration_ms": 5.82,
+            "source": "provider",
+            "duration_ms": 42713.735,
             "generation_params": {},
-            "prompt_tokens": 446,
-            "completion_tokens": 704,
-            "total_tokens": 1150,
+            "prompt_tokens": 461,
+            "completion_tokens": 536,
+            "total_tokens": 997,
             "has_usage": true,
             "usage_source": "provider",
             "cost_usd": 0.0
@@ -11428,7 +11747,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.21,
+            "duration_ms": 6.782,
             "generation_params": {},
             "prompt_tokens": 793,
             "completion_tokens": 621,
@@ -11441,7 +11760,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.615,
+            "duration_ms": 111.36,
             "generation_params": {},
             "prompt_tokens": 804,
             "completion_tokens": 890,
@@ -11454,7 +11773,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.218,
+            "duration_ms": 7.687,
             "generation_params": {},
             "prompt_tokens": 792,
             "completion_tokens": 631,
@@ -11467,7 +11786,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.662,
+            "duration_ms": 7.724,
             "generation_params": {},
             "prompt_tokens": 447,
             "completion_tokens": 583,
@@ -11480,7 +11799,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.085,
+            "duration_ms": 6.448,
             "generation_params": {},
             "prompt_tokens": 448,
             "completion_tokens": 649,
@@ -11493,7 +11812,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.852,
+            "duration_ms": 6.472,
             "generation_params": {},
             "prompt_tokens": 449,
             "completion_tokens": 637,
@@ -11506,7 +11825,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.178,
+            "duration_ms": 6.193,
             "generation_params": {},
             "prompt_tokens": 458,
             "completion_tokens": 757,
@@ -11519,7 +11838,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.031,
+            "duration_ms": 6.257,
             "generation_params": {},
             "prompt_tokens": 461,
             "completion_tokens": 1024,
@@ -11532,7 +11851,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 106.02,
+            "duration_ms": 5.961,
             "generation_params": {},
             "prompt_tokens": 1688,
             "completion_tokens": 1024,
@@ -11545,7 +11864,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.172,
+            "duration_ms": 6.278,
             "generation_params": {},
             "prompt_tokens": 2915,
             "completion_tokens": 1024,
@@ -11558,7 +11877,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.16,
+            "duration_ms": 6.155,
             "generation_params": {},
             "prompt_tokens": 464,
             "completion_tokens": 519,
@@ -11571,7 +11890,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.943,
+            "duration_ms": 6.608,
             "generation_params": {},
             "prompt_tokens": 447,
             "completion_tokens": 636,
@@ -11584,7 +11903,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.237,
+            "duration_ms": 6.11,
             "generation_params": {},
             "prompt_tokens": 475,
             "completion_tokens": 707,
@@ -11597,7 +11916,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.115,
+            "duration_ms": 6.531,
             "generation_params": {},
             "prompt_tokens": 459,
             "completion_tokens": 579,
@@ -11610,7 +11929,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.396,
+            "duration_ms": 6.241,
             "generation_params": {},
             "prompt_tokens": 471,
             "completion_tokens": 663,
@@ -11623,7 +11942,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.213,
+            "duration_ms": 6.596,
             "generation_params": {},
             "prompt_tokens": 612,
             "completion_tokens": 693,
@@ -11636,7 +11955,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.408,
+            "duration_ms": 6.116,
             "generation_params": {},
             "prompt_tokens": 484,
             "completion_tokens": 1024,
@@ -11649,7 +11968,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.098,
+            "duration_ms": 6.425,
             "generation_params": {},
             "prompt_tokens": 1658,
             "completion_tokens": 1024,
@@ -11662,7 +11981,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.728,
+            "duration_ms": 5.939,
             "generation_params": {},
             "prompt_tokens": 2833,
             "completion_tokens": 1024,
@@ -11675,7 +11994,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.987,
+            "duration_ms": 6.457,
             "generation_params": {},
             "prompt_tokens": 483,
             "completion_tokens": 660,
@@ -11688,7 +12007,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.452,
+            "duration_ms": 6.031,
             "generation_params": {},
             "prompt_tokens": 557,
             "completion_tokens": 745,
@@ -11701,7 +12020,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.322,
+            "duration_ms": 6.536,
             "generation_params": {},
             "prompt_tokens": 577,
             "completion_tokens": 965,
@@ -11714,7 +12033,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.615,
+            "duration_ms": 6.83,
             "generation_params": {},
             "prompt_tokens": 554,
             "completion_tokens": 881,
@@ -11727,7 +12046,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.919,
+            "duration_ms": 117.579,
             "generation_params": {},
             "prompt_tokens": 624,
             "completion_tokens": 618,
@@ -11740,7 +12059,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.146,
+            "duration_ms": 7.744,
             "generation_params": {},
             "prompt_tokens": 500,
             "completion_tokens": 615,
@@ -11753,7 +12072,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.717,
+            "duration_ms": 7.099,
             "generation_params": {},
             "prompt_tokens": 796,
             "completion_tokens": 581,
@@ -11766,7 +12085,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.231,
+            "duration_ms": 6.883,
             "generation_params": {},
             "prompt_tokens": 846,
             "completion_tokens": 590,
@@ -11779,7 +12098,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.974,
+            "duration_ms": 6.74,
             "generation_params": {},
             "prompt_tokens": 632,
             "completion_tokens": 1024,
@@ -11792,7 +12111,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.248,
+            "duration_ms": 6.352,
             "generation_params": {},
             "prompt_tokens": 1972,
             "completion_tokens": 1024,
@@ -11805,7 +12124,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.941,
+            "duration_ms": 6.81,
             "generation_params": {},
             "prompt_tokens": 3312,
             "completion_tokens": 784,
@@ -11818,7 +12137,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 105.806,
+            "duration_ms": 6.28,
             "generation_params": {},
             "prompt_tokens": 405,
             "completion_tokens": 608,
@@ -11831,7 +12150,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.162,
+            "duration_ms": 6.878,
             "generation_params": {},
             "prompt_tokens": 672,
             "completion_tokens": 1024,
@@ -11844,7 +12163,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.07,
+            "duration_ms": 6.358,
             "generation_params": {},
             "prompt_tokens": 1894,
             "completion_tokens": 806,
@@ -11857,7 +12176,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.947,
+            "duration_ms": 6.654,
             "generation_params": {},
             "prompt_tokens": 512,
             "completion_tokens": 667,
@@ -11870,7 +12189,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.461,
+            "duration_ms": 6.094,
             "generation_params": {},
             "prompt_tokens": 547,
             "completion_tokens": 769,
@@ -11883,7 +12202,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.659,
+            "duration_ms": 6.635,
             "generation_params": {},
             "prompt_tokens": 537,
             "completion_tokens": 872,
@@ -11896,7 +12215,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.433,
+            "duration_ms": 6.188,
             "generation_params": {},
             "prompt_tokens": 530,
             "completion_tokens": 789,
@@ -11909,7 +12228,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.104,
+            "duration_ms": 6.485,
             "generation_params": {},
             "prompt_tokens": 790,
             "completion_tokens": 728,
@@ -11922,7 +12241,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.859,
+            "duration_ms": 6.355,
             "generation_params": {},
             "prompt_tokens": 674,
             "completion_tokens": 803,
@@ -11935,7 +12254,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.853,
+            "duration_ms": 7.32,
             "generation_params": {},
             "prompt_tokens": 560,
             "completion_tokens": 630,
@@ -11948,7 +12267,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.204,
+            "duration_ms": 6.283,
             "generation_params": {},
             "prompt_tokens": 815,
             "completion_tokens": 824,
@@ -11961,7 +12280,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.67,
+            "duration_ms": 6.888,
             "generation_params": {},
             "prompt_tokens": 805,
             "completion_tokens": 833,
@@ -11974,7 +12293,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.17,
+            "duration_ms": 6.502,
             "generation_params": {},
             "prompt_tokens": 710,
             "completion_tokens": 1004,
@@ -11987,7 +12306,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.572,
+            "duration_ms": 6.904,
             "generation_params": {},
             "prompt_tokens": 461,
             "completion_tokens": 793,
@@ -12000,7 +12319,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.055,
+            "duration_ms": 6.428,
             "generation_params": {},
             "prompt_tokens": 526,
             "completion_tokens": 640,
@@ -12013,7 +12332,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.501,
+            "duration_ms": 113.176,
             "generation_params": {},
             "prompt_tokens": 459,
             "completion_tokens": 852,
@@ -12026,7 +12345,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.06,
+            "duration_ms": 7.519,
             "generation_params": {},
             "prompt_tokens": 483,
             "completion_tokens": 1024,
@@ -12039,7 +12358,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.689,
+            "duration_ms": 6.953,
             "generation_params": {},
             "prompt_tokens": 1649,
             "completion_tokens": 992,
@@ -12052,7 +12371,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.325,
+            "duration_ms": 6.33,
             "generation_params": {},
             "prompt_tokens": 448,
             "completion_tokens": 631,
@@ -12065,7 +12384,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.622,
+            "duration_ms": 6.607,
             "generation_params": {},
             "prompt_tokens": 449,
             "completion_tokens": 686,
@@ -12078,7 +12397,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.089,
+            "duration_ms": 6.203,
             "generation_params": {},
             "prompt_tokens": 501,
             "completion_tokens": 527,
@@ -12091,7 +12410,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.594,
+            "duration_ms": 6.514,
             "generation_params": {},
             "prompt_tokens": 500,
             "completion_tokens": 745,
@@ -12104,7 +12423,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.064,
+            "duration_ms": 6.217,
             "generation_params": {},
             "prompt_tokens": 504,
             "completion_tokens": 856,
@@ -12117,7 +12436,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 99.786,
+            "duration_ms": 6.524,
             "generation_params": {},
             "prompt_tokens": 758,
             "completion_tokens": 924,
@@ -12130,7 +12449,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.673,
+            "duration_ms": 6.078,
             "generation_params": {},
             "prompt_tokens": 645,
             "completion_tokens": 709,
@@ -12143,7 +12462,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.321,
+            "duration_ms": 6.391,
             "generation_params": {},
             "prompt_tokens": 874,
             "completion_tokens": 950,
@@ -12156,7 +12475,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.634,
+            "duration_ms": 6.507,
             "generation_params": {},
             "prompt_tokens": 531,
             "completion_tokens": 879,
@@ -12169,7 +12488,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.891,
+            "duration_ms": 7.098,
             "generation_params": {},
             "prompt_tokens": 580,
             "completion_tokens": 723,
@@ -12182,7 +12501,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.558,
+            "duration_ms": 6.313,
             "generation_params": {},
             "prompt_tokens": 451,
             "completion_tokens": 638,
@@ -12195,7 +12514,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.829,
+            "duration_ms": 6.615,
             "generation_params": {},
             "prompt_tokens": 503,
             "completion_tokens": 834,
@@ -12208,7 +12527,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.684,
+            "duration_ms": 6.3,
             "generation_params": {},
             "prompt_tokens": 611,
             "completion_tokens": 916,
@@ -12221,7 +12540,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.891,
+            "duration_ms": 6.861,
             "generation_params": {},
             "prompt_tokens": 664,
             "completion_tokens": 815,
@@ -12234,7 +12553,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.767,
+            "duration_ms": 6.32,
             "generation_params": {},
             "prompt_tokens": 526,
             "completion_tokens": 832,
@@ -12247,7 +12566,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.915,
+            "duration_ms": 6.418,
             "generation_params": {},
             "prompt_tokens": 728,
             "completion_tokens": 881,
@@ -12260,7 +12579,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.976,
+            "duration_ms": 5.961,
             "generation_params": {},
             "prompt_tokens": 618,
             "completion_tokens": 1001,
@@ -12273,7 +12592,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.04,
+            "duration_ms": 6.582,
             "generation_params": {},
             "prompt_tokens": 559,
             "completion_tokens": 960,
@@ -12286,7 +12605,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.892,
+            "duration_ms": 6.66,
             "generation_params": {},
             "prompt_tokens": 705,
             "completion_tokens": 1024,
@@ -12299,7 +12618,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.217,
+            "duration_ms": 115.909,
             "generation_params": {},
             "prompt_tokens": 1879,
             "completion_tokens": 890,
@@ -12312,7 +12631,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.103,
+            "duration_ms": 7.749,
             "generation_params": {},
             "prompt_tokens": 739,
             "completion_tokens": 851,
@@ -12325,7 +12644,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.689,
+            "duration_ms": 7.4,
             "generation_params": {},
             "prompt_tokens": 880,
             "completion_tokens": 947,
@@ -12338,7 +12657,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.236,
+            "duration_ms": 6.581,
             "generation_params": {},
             "prompt_tokens": 437,
             "completion_tokens": 684,
@@ -12351,7 +12670,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.659,
+            "duration_ms": 6.93,
             "generation_params": {},
             "prompt_tokens": 600,
             "completion_tokens": 618,
@@ -12364,7 +12683,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.388,
+            "duration_ms": 6.367,
             "generation_params": {},
             "prompt_tokens": 613,
             "completion_tokens": 828,
@@ -12377,7 +12696,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.502,
+            "duration_ms": 6.742,
             "generation_params": {},
             "prompt_tokens": 681,
             "completion_tokens": 646,
@@ -12390,7 +12709,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.256,
+            "duration_ms": 6.589,
             "generation_params": {},
             "prompt_tokens": 619,
             "completion_tokens": 1013,
@@ -12403,7 +12722,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.36,
+            "duration_ms": 6.982,
             "generation_params": {},
             "prompt_tokens": 719,
             "completion_tokens": 821,
@@ -12416,7 +12735,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.926,
+            "duration_ms": 6.25,
             "generation_params": {},
             "prompt_tokens": 573,
             "completion_tokens": 1012,
@@ -12429,7 +12748,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 100.921,
+            "duration_ms": 6.753,
             "generation_params": {},
             "prompt_tokens": 546,
             "completion_tokens": 614,
@@ -12442,7 +12761,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.627,
+            "duration_ms": 6.517,
             "generation_params": {},
             "prompt_tokens": 512,
             "completion_tokens": 1024,
@@ -12455,7 +12774,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.544,
+            "duration_ms": 6.79,
             "generation_params": {},
             "prompt_tokens": 1678,
             "completion_tokens": 1024,
@@ -12468,7 +12787,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.964,
+            "duration_ms": 6.255,
             "generation_params": {},
             "prompt_tokens": 2852,
             "completion_tokens": 1024,
@@ -12481,7 +12800,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.189,
+            "duration_ms": 6.631,
             "generation_params": {},
             "prompt_tokens": 435,
             "completion_tokens": 794,
@@ -12494,7 +12813,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.514,
+            "duration_ms": 6.323,
             "generation_params": {},
             "prompt_tokens": 545,
             "completion_tokens": 1024,
@@ -12507,7 +12826,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.967,
+            "duration_ms": 6.736,
             "generation_params": {},
             "prompt_tokens": 1812,
             "completion_tokens": 1024,
@@ -12520,7 +12839,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.61,
+            "duration_ms": 6.435,
             "generation_params": {},
             "prompt_tokens": 3033,
             "completion_tokens": 1024,
@@ -12533,7 +12852,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.892,
+            "duration_ms": 7.261,
             "generation_params": {},
             "prompt_tokens": 591,
             "completion_tokens": 615,
@@ -12546,7 +12865,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.655,
+            "duration_ms": 6.419,
             "generation_params": {},
             "prompt_tokens": 555,
             "completion_tokens": 725,
@@ -12559,7 +12878,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.068,
+            "duration_ms": 6.928,
             "generation_params": {},
             "prompt_tokens": 477,
             "completion_tokens": 685,
@@ -12572,7 +12891,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.18,
+            "duration_ms": 7.013,
             "generation_params": {},
             "prompt_tokens": 423,
             "completion_tokens": 1015,
@@ -12585,7 +12904,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.2,
+            "duration_ms": 113.858,
             "generation_params": {},
             "prompt_tokens": 480,
             "completion_tokens": 570,
@@ -12598,7 +12917,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.078,
+            "duration_ms": 7.783,
             "generation_params": {},
             "prompt_tokens": 627,
             "completion_tokens": 1024,
@@ -12611,7 +12930,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.391,
+            "duration_ms": 7.401,
             "generation_params": {},
             "prompt_tokens": 1851,
             "completion_tokens": 1024,
@@ -12624,7 +12943,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.912,
+            "duration_ms": 6.322,
             "generation_params": {},
             "prompt_tokens": 3133,
             "completion_tokens": 963,
@@ -12637,7 +12956,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.07,
+            "duration_ms": 6.682,
             "generation_params": {},
             "prompt_tokens": 755,
             "completion_tokens": 948,
@@ -12650,7 +12969,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.716,
+            "duration_ms": 6.208,
             "generation_params": {},
             "prompt_tokens": 537,
             "completion_tokens": 715,
@@ -12663,7 +12982,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.991,
+            "duration_ms": 6.782,
             "generation_params": {},
             "prompt_tokens": 423,
             "completion_tokens": 721,
@@ -12676,7 +12995,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.549,
+            "duration_ms": 6.255,
             "generation_params": {},
             "prompt_tokens": 548,
             "completion_tokens": 1024,
@@ -12689,7 +13008,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.862,
+            "duration_ms": 6.473,
             "generation_params": {},
             "prompt_tokens": 1769,
             "completion_tokens": 907,
@@ -12702,7 +13021,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.544,
+            "duration_ms": 6.199,
             "generation_params": {},
             "prompt_tokens": 559,
             "completion_tokens": 960,
@@ -12715,7 +13034,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 95.14,
+            "duration_ms": 6.572,
             "generation_params": {},
             "prompt_tokens": 525,
             "completion_tokens": 812,
@@ -12728,7 +13047,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.311,
+            "duration_ms": 6.192,
             "generation_params": {},
             "prompt_tokens": 555,
             "completion_tokens": 616,
@@ -12741,7 +13060,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.108,
+            "duration_ms": 7.205,
             "generation_params": {},
             "prompt_tokens": 686,
             "completion_tokens": 699,
@@ -12754,7 +13073,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.638,
+            "duration_ms": 7.253,
             "generation_params": {},
             "prompt_tokens": 1001,
             "completion_tokens": 814,
@@ -12767,7 +13086,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.958,
+            "duration_ms": 7.098,
             "generation_params": {},
             "prompt_tokens": 427,
             "completion_tokens": 946,
@@ -12780,7 +13099,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.526,
+            "duration_ms": 6.397,
             "generation_params": {},
             "prompt_tokens": 486,
             "completion_tokens": 871,
@@ -12793,7 +13112,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.9,
+            "duration_ms": 6.631,
             "generation_params": {},
             "prompt_tokens": 456,
             "completion_tokens": 829,
@@ -12806,7 +13125,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.611,
+            "duration_ms": 6.359,
             "generation_params": {},
             "prompt_tokens": 440,
             "completion_tokens": 842,
@@ -12819,7 +13138,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.263,
+            "duration_ms": 6.696,
             "generation_params": {},
             "prompt_tokens": 508,
             "completion_tokens": 714,
@@ -12832,7 +13151,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.812,
+            "duration_ms": 5.981,
             "generation_params": {},
             "prompt_tokens": 524,
             "completion_tokens": 960,
@@ -12845,7 +13164,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.292,
+            "duration_ms": 6.889,
             "generation_params": {},
             "prompt_tokens": 478,
             "completion_tokens": 721,
@@ -12858,7 +13177,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.807,
+            "duration_ms": 6.186,
             "generation_params": {},
             "prompt_tokens": 696,
             "completion_tokens": 1024,
@@ -12871,7 +13190,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.096,
+            "duration_ms": 115.831,
             "generation_params": {},
             "prompt_tokens": 1870,
             "completion_tokens": 1024,
@@ -12884,7 +13203,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.722,
+            "duration_ms": 7.811,
             "generation_params": {},
             "prompt_tokens": 3045,
             "completion_tokens": 1024,
@@ -12897,7 +13216,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.66,
+            "duration_ms": 7.36,
             "generation_params": {},
             "prompt_tokens": 647,
             "completion_tokens": 776,
@@ -12910,7 +13229,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.825,
+            "duration_ms": 6.313,
             "generation_params": {},
             "prompt_tokens": 758,
             "completion_tokens": 618,
@@ -12923,7 +13242,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.098,
+            "duration_ms": 7.027,
             "generation_params": {},
             "prompt_tokens": 841,
             "completion_tokens": 711,
@@ -12936,7 +13255,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.712,
+            "duration_ms": 6.333,
             "generation_params": {},
             "prompt_tokens": 872,
             "completion_tokens": 600,
@@ -12949,7 +13268,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.001,
+            "duration_ms": 6.601,
             "generation_params": {},
             "prompt_tokens": 812,
             "completion_tokens": 873,
@@ -12962,7 +13281,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 5.714,
+            "duration_ms": 6.217,
             "generation_params": {},
             "prompt_tokens": 597,
             "completion_tokens": 560,
@@ -12975,7 +13294,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.24,
+            "duration_ms": 7.159,
             "generation_params": {},
             "prompt_tokens": 607,
             "completion_tokens": 539,
@@ -20801,6 +21120,276 @@
       "completion_tokens": 890,
       "prompt_tokens": 804,
       "total_tokens": 1694,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "0da90a90750608692f0ffd165bbb59b4fa92f6a3d55643c0b53c26f110f23150": {
+    "id": "chatcmpl-77e0eddb-1d33-49cd-9461-446b0f62e1e8",
+    "created": 1785434379,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The intent is clear: verify that all attempts for a specific CVE ID are contained within exactly one partition (train/val/test). The domain language ('vuln A', 'code') matches the data structure. No low-level implementation clutter obscures the business rule.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"The test is decoupled from system internals; it only cares about partitioning logic and data content. It will not break if `partition_dataset_by_cve` changes its internal implementation as long as the input/output contract remains identical.\",\n    \"suggestions\": []\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic and self-contained. However, it relies on `partition_dataset_by_cve` which may introduce external state (e.g., network calls to a mock DB or random seeds). If the partitioning logic uses non-deterministic sources of randomness without seeding, this property fails.\",\n    \"suggestions\": [\n      \"Ensure all inputs (`texts`, `labels`) are explicitly seeded if any randomness is involved in generation. \\n      \\\"\\\"\\\"\\ndef test_cve_grouping_isolation(seed=42): ...\\\"\\\"\\\"\",\n      \"Avoid relying on external shared state like a database or network during the partition step.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The assertion `sum(...) == 1` is atomic. If it fails (e.g., sum > 1), the cause is instantly obvious: multiple partitions contain 'vuln A'. It does not require complex stack traces to debug.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test verifies a specific constraint (no overlap between train/val/test for one CVE). However, it likely duplicates coverage of other tests that already verify 'vuln A' is in exactly one partition. It does not add new design properties or edge cases.\",\n    \"suggestions\": [\n      \"Review existing tests to ensure no duplicate verification logic exists.\\n      \\\"\\\"\\\"\\ndef test_cve_grouping_isolation(): ... # Remove if redundant\\n# Add a more general 'no overlap' test instead of specific CVE ID\",\n      \"Ensure this is the *only* place where we explicitly check for non-overlapping partitions per CVE.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The assertion targets a precise behavior: 'vuln A' must not appear in multiple splits. It isolates the specific rule of partitioning integrity for that ID.\",\n    \"suggestions\": []\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes rapidly assuming `partition_dataset_by_cve` is efficient and does not perform heavy I/O or artificial sleeps. It avoids unnecessary setup beyond defining the input list.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"The test follows Arrange-Act-Pattern (Arrange inputs -> Act on partitioning logic -> Assert result). However, it lacks a clear 'specification' of the expected behavior in an `assert` statement that could be read by new developers without context. It is functional but not explicitly declarative about *why* this specific check exists.\",\n    \"suggestions\": [\n      \"Refactor to include a comment block or docstring explaining the business rule being tested.\\n      \\\"\\\"\\\"\\ndef test_cve_grouping_isolation():\\n    # Arrange: Define input data\\n    texts = [...]  \\n    labels = [...]\\n    cve_ids = ...\\n    splits = partition_dataset_by_cve(...)\\n    train_texts, ... = splits[...]\\n    assert sum([train_cve_1, val_cve_1, test_cve_1]) == 1\\n      # Act: Verify isolation logic works correctly.\\n      \\\"\\\"\\\"\\n      This is a functional TDD. To be truly 'first_tdd', consider adding an `assert` that explicitly states the expected outcome in plain English before running code.\"\n    ]\n  },\n  \"summary\": \"The test passes all criteria except for potential non-determinism via external state and redundancy with other tests. It is a solid unit of verification but lacks explicit documentation of its business rule to aid future maintainability.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1017,
+      "prompt_tokens": 778,
+      "total_tokens": 1795,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "926a7be433deba68dfe2693463a29fdebdf60275c7b5f913bb2233d4d6e6c598": {
+    "id": "chatcmpl-5522cc41-d691-4182-990d-20e71366c91a",
+    "created": 1785434459,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test clearly states its intent: verifying that the TF-IDF vectorizer's vocabulary is strictly derived only from training data. The domain language (TF-IDF) and business rule are explicit.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"The test relies on a helper function `_train_stage_b_vectorizer` which likely contains implementation details. If the internal logic of how `x_train`, `val_texts`, or padding is constructed changes without updating this specific assertion, maintainability suffers.\",\n    \"suggestions\": [\n      \"Move vocabulary validation assertions directly into the main test body instead of delegating to a helper function that encapsulates 'how' rather than 'what'.\",\n      \"Ensure `_train_stage_b_vectorizer` remains stable; if it changes its internal padding logic, this specific assertion will break.\",\n      \"Consider extracting `padded = f\\\" {train_texts[0].lower()} \\\"` into a constant or fixture to avoid hardcoding string literals in the test flow.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 4,\n    \"rationale\": \"The test relies on `_train_stage_b_vectorizer`, which implies external state (the training stage logic) and potentially timing or ordering dependencies. It is not self-contained.\",\n    \"suggestions\": [\n      \"Remove reliance on the helper function by implementing the vectorization steps directly within this specific test case to ensure determinism without hidden side effects.\",\n      \"Explicitly define `train_texts`, `val_texts`, and `test_texts` as constants at module level or in a fixture if they are expected to be stable across runs, avoiding dynamic construction logic that might vary between executions.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 7,\n    \"rationale\": \"The test verifies exactly one behavior: vocabulary origin. However, the assertion `assert k in train_ngrams` is a simple membership check which can be ambiguous if multiple terms fail (though unlikely here). The failure message 'did not originate from X_train' is clear enough.\",\n    \"suggestions\": [\n      \"Refine the error message to explicitly state: \\\"Vocabulary term '{k}' was NOT found in training data, violating isolation property.\\\"\",\n      \"Ensure no other side effects occur during `vectorizer.vocabulary_` access; if `_train_stage_b_vectorizer` modifies global state or caches results between calls (which it likely does), this test is not atomic.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test duplicates coverage of the 'vocabulary isolation' property already covered by other tests in a typical TDD suite. It also trivially checks that vocabulary terms exist at all rather than verifying their *source* or *origin*.\",\n    \"suggestions\": [\n      \"Remove this specific assertion if it is redundant with existing unit tests for the vectorizer's isolation logic.\",\n      \"If no other test covers 'vocabulary origin', consider renaming `test_vectorizer_vocabulary_isolation` to something more descriptive like `test_vectorizer_trains_only_on_train_data`.\",\n      \"Verify that this specific assertion does not cover edge cases (e.g., empty training set) where the current logic might behave differently than intended.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 6,\n    \"rationale\": \"The test is granular enough to verify a specific rule: vocabulary terms must be subset of train texts. However, it does not isolate other potential issues like duplicate keys or missing required n-grams.\",\n    \"suggestions\": [\n      \"Add assertions for uniqueness (no duplicates in `vectorizer.vocabulary_`) and completeness (all expected n-gram lengths are present).\",\n      \"Ensure the test isolates only this specific constraint; if other vectorization behaviors need testing, they should be separate tests.\",\n      \"Consider adding a negative assertion: assert that terms NOT in train_texts do not appear in vocabulary.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 3,\n    \"rationale\": \"The test is slow due to the nested loops over `range(3, 6)` and string concatenation for padding. It also likely involves I/O or heavy setup via `_train_stage_b_vectorizer`.\",\n    \"suggestions\": [\n      \"Replace manual n-gram generation with a helper function that accepts an iterable of texts; this is significantly faster than hardcoding loops in the test body.\",\n      \"Remove all `range()` iterations and string formatting inside the loop. Use list compreh",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 589,
+      "total_tokens": 1613,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "5b6d75a75edc5af699ec8e196c406104ccefe7bd4a9b1ffc748e97a9123d663c": {
+    "id": "chatcmpl-b4455755-632e-409f-b500-28a6b920da15",
+    "created": 1785434573,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test clearly states its intent: verifying that the TF-IDF vectorizer's vocabulary is strictly derived only from training data.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"Relies on a helper function `_train_stage_b_vectorizer` which encapsulates 'how' rather than 'what'. If internal padding logic changes without updating this assertion, maintainability suffers.\",\n    \"suggestions\": [\n      \"Move vocabulary validation assertions directly into the main test body instead of delegating to a helper function that encapsulates 'how' rather than 'what'.\",\n      \"Ensure `_train_stage_b_vectorizer` remains stable; if it changes its internal padding logic, this specific assertion will break.\",\n      \"Consider extracting `padded = f\\\" {train_texts[0].lower()} \\\"` into a constant or fixture to avoid hardcoding string literals in the test flow.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 4,\n    \"rationale\": \"Relies on `_train_stage_b_vectorizer`, which implies external state (the training stage logic) and potentially timing or ordering dependencies. It is not self-contained.\",\n    \"suggestions\": [\n      \"Remove reliance on the helper function by implementing the vectorization steps directly within this specific test case to ensure determinism without hidden side effects.\",\n      \"Explicitly define `train_texts`, `val_texts`, and `test_texts` as constants at module level or in a fixture if they are expected to be stable across runs, avoiding dynamic construction logic that might vary between executions.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 7,\n    \"rationale\": \"Verifies exactly one behavior: vocabulary origin. The assertion `assert k in train_ngrams` is a simple membership check which can be ambiguous if multiple terms fail (though unlikely here).\",\n    \"suggestions\": [\n      \"Refine the error message to explicitly state: \\\"Vocabulary term '{k}' was NOT found in training data, violating isolation property.\\\"\",\n      \"Ensure no other side effects occur during `vectorizer.vocabulary_` access; if `_train_stage_b_vectorizer` modifies global state or caches results between calls (which it likely does), this test is not atomic.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test duplicates coverage of the 'vocabulary isolation' property already covered by other tests in a typical TDD suite. It also trivially checks that vocabulary terms exist at all rather than verifying their source or origin.\",\n    \"suggestions\": [\n      \"Remove this specific assertion if it is redundant with existing unit tests for the vectorizer's isolation logic.\",\n      \"If no other test covers 'vocabulary origin', consider renaming `test_vectorizer_vocabulary_isolation` to something more descriptive like `test_vectorizer_trains_only_on_train_data`.\",\n      \"Verify that this specific assertion does not cover edge cases (e.g., empty training set) where the current logic might behave differently than intended.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 6,\n    \"rationale\": \"The test is granular enough to verify a specific rule: vocabulary terms must be subset of train texts. However, it does not isolate other potential issues like duplicate keys or missing required n-grams.\",\n    \"suggestions\": [\n      \"Add assertions for uniqueness (no duplicates in `vectorizer.vocabulary_`) and completeness (all expected n-gram lengths are present).\",\n      \"Ensure the test isolates only this specific constraint; if other vectorization behaviors need testing, they should be separate tests.\",\n      \"Consider adding a negative assertion: assert that terms NOT in train_texts do not appear in vocabulary.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 3,\n    \"rationale\": \"The test is slow due to the nested loops over `range(3, 6)` and string concatenation for padding. It also likely involves I/O or heavy setup via `_train_stage_b_vectorizer`.\",\n    \"suggestions\": [\n      \"Replace manual n-gram generation with a helper function that accepts an iterable of texts; this is significantly faster than hardcoding loops in the test body.\",\n      \"Remove all `range()` iterations and string formatting inside the loop. Use list comprehensions to generate padded strings efficiently.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"Demonstrates design properties of a test designed first (",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 1874,
+      "total_tokens": 2898,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "fb7aef44b5e3a4b7e1f54c379705d7a9a5c41531d4608526b3a4d6425e664395": {
+    "id": "chatcmpl-b15950ca-f0b2-4c66-8252-6a29d880c420",
+    "created": 1785434691,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test clearly states its intent: verifying that the TF-IDF vectorizer's vocabulary is strictly derived only from training data.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 6,\n    \"rationale\": \"Relies on a helper function `_train_stage_b_vectorizer` which encapsulates 'how' rather than 'what'. If internal padding logic changes without updating this assertion, maintainability suffers.\",\n    \"suggestions\": [\n      \"Move vocabulary validation assertions directly into the main test body instead of delegating to a helper function that encapsulates 'how' rather than 'what'.\",\n      \"Ensure `_train_stage_b_vectorizer` remains stable; if it changes its internal padding logic, this specific assertion will break.\",\n      \"Consider extracting `padded = f\\\" {train_texts[0].lower()} \\\"` into a constant or fixture to avoid hardcoding string literals in the test flow.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 4,\n    \"rationale\": \"Relies on `_train_stage_b_vectorizer`, which implies external state (the training stage logic) and potentially timing or ordering dependencies. It is not self-contained.\",\n    \"suggestions\": [\n      \"Remove reliance on the helper function by implementing the vectorization steps directly within this specific test case to ensure determinism without hidden side effects.\",\n      \"Explicitly define `train_texts`, `val_texts`, and `test_texts` as constants at module level or in a fixture if they are expected to be stable across runs, avoiding dynamic construction logic that might vary between executions.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 7,\n    \"rationale\": \"Verifies exactly one behavior: vocabulary origin. The assertion `assert k in train_ngrams` is a simple membership check which can be ambiguous if multiple terms fail (though unlikely here).\",\n    \"suggestions\": [\n      \"Refine the error message to explicitly state: \\\"Vocabulary term '{k}' was NOT found in training data, violating isolation property.\\\"\",\n      \"Ensure no other side effects occur during `vectorizer.vocabulary_` access; if `_train_stage_b_vectorizer` modifies global state or caches results between calls (which it likely does), this test is not atomic.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 5,\n    \"rationale\": \"This test duplicates coverage of the 'vocabulary isolation' property already covered by other tests in a typical TDD suite. It also trivially checks that vocabulary terms exist at all rather than verifying their source or origin.\",\n    \"suggestions\": [\n      \"Remove this specific assertion if it is redundant with existing unit tests for the vectorizer's isolation logic.\",\n      \"If no other test covers 'vocabulary origin', consider renaming `test_vectorizer_vocabulary_isolation` to something more descriptive like `test_vectorizer_trains_only_on_train_data`.\",\n      \"Verify that this specific assertion does not cover edge cases (e.g., empty training set) where the current logic might behave differently than intended.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 6,\n    \"rationale\": \"The test is granular enough to verify a specific rule: vocabulary terms must be subset of train texts. However, it does not isolate other potential issues like duplicate keys or missing required n-grams.\",\n    \"suggestions\": [\n      \"Add assertions for uniqueness (no duplicates in `vectorizer.vocabulary_`) and completeness (all expected n-gram lengths are present).\",\n      \"Ensure the test isolates only this specific constraint; if other vectorization behaviors need testing, they should be separate tests.\",\n      \"Consider adding a negative assertion: assert that terms NOT in train_texts do not appear in vocabulary.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 3,\n    \"rationale\": \"The test is slow due to the nested loops over `range(3, 6)` and string concatenation for padding. It also likely involves I/O or heavy setup via `_train_stage_b_vectorizer`.\",\n    \"suggestions\": [\n      \"Replace manual n-gram generation with a helper function that accepts an iterable of texts; this is significantly faster than hardcoding loops in the test body.\",\n      \"Remove all `range()` iterations and string formatting inside the loop. Use list comprehensions to generate padded strings efficiently.\"\n    ]\n  },\n  \"first_t",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 995,
+      "prompt_tokens": 3101,
+      "total_tokens": 4096,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "9a6b00cd7c40ffebf1e4df9b45518a4b34e91a0b7e3f499a90ed5274f9ae5c57": {
+    "id": "chatcmpl-61ff7581-b1c0-4af2-a362-af90dfd96435",
+    "created": 1785434745,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The intent is clear: verify a null model's performance against random noise using specific data splits. However, the business rule ('near-random') and domain language are slightly obscured by implementation details like `np.random.default_rng`.\", \"suggestions\": [\"Explicitly state 'randomness' or 'uniform distribution' in comments to clarify intent.\"]},\n  \"maintainable\": {\"score\": 9, \"rationale\": \"The test is self-contained; it does not rely on external shared state (DB, network) and uses only standard NumPy operations. It will remain valid even if the underlying `_run_null_model_sanity_check` function changes.\", \"suggestions\": [\"Ensure `np.random.default_rng(42)` remains deterministic across runs to maintain reproducibility.\"]},\n  \"repeatable\": {\"score\": 9, \"rationale\": \"The test is fully self-contained. It generates its own data and performs calculations without relying on external shared state or timing-dependent behavior.\", \"suggestions\": [\"Remove any hardcoded seeds if the goal was stochasticity; for determinism, keep `42`.\"]},\n  \"atomic\": {\"score\": 10, \"rationale\": \"The test verifies exactly one rule: that a null model's balanced accuracy does not exceed 65%. If it fails, the cause is immediately obvious (the value exceeds 0.65).\", \"suggestions\": [\"No changes needed.\"]},\n  \"necessary\": {\"score\": 8, \"rationale\": \"This test covers one specific edge case: a null model's performance on random data. It does not duplicate coverage of other tests but is necessary for this specific sanity check.\", \"suggestions\": [\"Ensure no similar 'null model' or 'random noise' checks exist in the broader suite that would be redundant.\"]},\n  \"granular\": {\"score\": 7, \"rationale\": \"The test isolates a single metric (balanced accuracy) and one threshold. However, it could benefit from more specific assertions about what constitutes 'near-random' performance.\", \"suggestions\": [\"Consider adding an assertion like `assert balanced_acc < 0.65` instead of just `<=`.\"]},\n  \"fast\": {\"score\": 9, \"rationale\": \"The test executes rapidly with no artificial sleeps or heavy I/O operations; it relies solely on NumPy vectorization.\", \"suggestions\": [\"No changes needed.\"]},\n  \"first_tdd\": {\"score\": 8, \"rationale\": \"It follows the Arrange-Act-Assert pattern: setup data (`Arrange`), run a function call (`Act`), and assert the result (`Assert`). However, it lacks explicit documentation of expected behavior before running.\", \"suggestions\": [\"Add an `assert ... == X` or similar check immediately after calling `_run_null_model_sanity_check`.\"]},\n  \"summary\": \"The test is highly maintainable, atomic, fast, and follows TDD principles. It effectively isolates a specific sanity check but could be slightly more explicit about the expected outcome to fully satisfy 'first_tdd'.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 665,
+      "prompt_tokens": 555,
+      "total_tokens": 1220,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "35a2e43dfd81738e49803408a314afa461d4de633bfa257a221318e94296763f": {
+    "id": "chatcmpl-e8e5087c-b03a-42c8-aa82-6ded16b7a679",
+    "created": 1785434800,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 9,\n    \"rationale\": \"The test clearly defines the business rule (exclusion of adjudication/outcome fields) and uses domain-specific terminology ('adjudication', 'outcome') without unnecessary implementation clutter.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 8,\n    \"rationale\": \"The test is decoupled from system internals; it relies on a helper function `_parse_attempt_record` rather than hardcoding logic that would break if the parser implementation changes.\",\n    \"suggestions\": []\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic and self-contained. However, it relies on a helper function `_parse_attempt_record` which may introduce hidden dependencies or side effects if not fully isolated.\",\n    \"suggestions\": [\n      \"Ensure `_parse_attempt_record` has no external state (no file I/O, network calls) that could cause non-determinism across runs.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: the exclusion of specific fields. If it fails, the failure is immediately obvious and directly attributable to this single assertion.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 8,\n    \"rationale\": \"This test has a unique purpose (verifying field exclusions). It does not duplicate coverage of other tests unless there are existing tests for 'adjudication' or 'outcome' fields.\",\n    \"suggestions\": [\n      \"Review the codebase to ensure no other tests cover these specific exclusion rules; if they exist, this test is redundant and should be removed.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 9,\n    \"rationale\": \"The assertion targets a very precise behavior: ensuring that 'SUCCESS_VERIFIED', 'check_1_pass', etc., do not appear in the resulting `text` feature string.\",\n    \"suggestions\": []\n  },\n  \"fast\": {\n    \"score\": 8,\n    \"rationale\": \"The test executes rapidly. It avoids artificial sleeps or heavy I/O operations; it only performs dictionary lookups and a single function call.\",\n    \"suggestions\": [\n      \"Remove any `time.sleep()` calls if the current implementation includes them.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 9,\n    \"rationale\": \"The test follows TDD principles: it specifies behavior (what fields must be excluded) before implementing logic (`_parse_attempt_record`), and uses a clean Arrange-Act-Assert structure.\",\n    \"suggestions\": []\n  },\n  \"summary\": \"Overall Score: 8.5/10\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 639,
+      "prompt_tokens": 580,
+      "total_tokens": 1219,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "40b223bf52fa5b5a6e5d9e49491116ba07ac79f4a1f34f5f8ea6c3389f94d707": {
+    "id": "chatcmpl-d8404df7-be3a-42df-bf4d-87e56ef083a1",
+    "created": 1785434859,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 9,\n    \"rationale\": \"The test clearly defines the business rule: `_evaluate_holdout_performance` must produce a `holdout_metrics.json` file containing specific keys (`accuracy`, `balanced_accuracy`) with expected values of 1.0 for this dataset.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 8,\n    \"rationale\": \"The test is decoupled from implementation details; it does not rely on the internal logic or specific parameters of `_evaluate_holdout_performance`, making it robust against future changes to that function.\",\n    \"suggestions\": []\n  },\n  \"repeatable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is deterministic and self-contained. However, the use of `tmp_path` implies a file system dependency which introduces non-determinism if multiple runs occur in parallel or on different filesystems without synchronization.\",\n    \"suggestions\": [\n      \"Remove reliance on external shared state (filesystem) by using an isolated temporary directory within the test scope instead of relying on global paths like `tmp_path` unless explicitly managed per-test isolation.\",\n      \"Ensure `_evaluate_holdout_performance` is deterministic; if it relies on random seeds or non-deterministic ordering, add explicit seeding in this test.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: the export of `holdout_metrics.json` with specific content. If it fails (e.g., missing keys or wrong values), the cause is instantly obvious and isolated to this single assertion.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"While useful for regression, this test duplicates coverage of other tests that likely verify `_evaluate_holdout_performance`'s return value directly (e.g., `assert metrics == {...}`). It adds little new insight.\",\n    \"suggestions\": [\n      \"Remove or consolidate the assertions about `metrics[\"] },\"granular\" : {\n        \"score\": 8,\n        \"rationale\": \"The test isolates precisely one behavior: writing a specific JSON file with exact key-value pairs. It does not mix unrelated logic.\",\n        \"suggestions\": []\n      },\n      \"fast\" : {\n        \"score\": 9,\n        \"rationale\": \"There are no artificial sleeps, heavy setups (beyond `tmp_path`), or unneeded slow I/O operations; the test runs in milliseconds.\",\n        \"suggestions\": [\n          \"Remove any unnecessary imports that could add overhead if unused.\"\n        ]\n      },\n      \"first_tdd\" : {\n        \"score\": 9,\n        \"rationale\": \"The test follows TDD principles: it specifies the expected behavior (what) and clean separation of Arrange-Act-Assert. The `tmp_path` is a valid 'Arrange' step for isolation.\",\n        \"suggestions\": []\n      },\n      \"summary\" : \"\"\n    }",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 683,
+      "prompt_tokens": 663,
+      "total_tokens": 1346,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "9a0354e530258a83783701409e040ca1735960d8d9e3e1e2a53b26f90bccd4c5": {
+    "id": "chatcmpl-fa693bc8-d3e5-4347-a9bf-6026c853256b",
+    "created": 1785434947,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 6,\n    \"rationale\": \"The test logic is understandable but suffers from poor documentation. The function `extract_dataset_from_attempts` does not exist or its signature/behavior are undefined in the provided snippet, making it impossible to verify if this specific assertion actually passes without running the code.\",\n    \"suggestions\": [\n      \"Define a clear docstring for `test_extract_dataset_from_attempts`. Explicitly state what data is expected and how labels should be derived from that data. If possible, include an inline comment explaining why 4 records were selected (e.g., 'Selecting exactly one record per decision type').\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 5,\n    \"rationale\": \"The test is brittle and tightly coupled to the specific content of `test_attempts.jsonl`. If that file changes or if a new 'skipped_pre_filter' record needs to be added without modifying this single assertion, the test will fail. It also lacks isolation from other tests sharing common fixtures.\",\n    \"suggestions\": [\n      \"Refactor into separate unit tests for each decision type (accepted/rejected/skipped) rather than one monolithic integration-style check on a file path that might change between runs or versions.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 4,\n    \"rationale\": \"The test relies heavily on the specific content of `test_attempts.jsonl`. If this JSONL changes slightly (e.g., adding a new record type), the assertion logic must be updated. It also lacks deterministic behavior regarding which records are selected if multiple matching criteria exist.\",\n    \"suggestions\": [\n      \"Ensure all test data is generated via code or fixtures, not hardcoded in file paths that might vary by environment.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 3,\n    \"rationale\": \"The assertion `assert len(texts) == 4` does not verify a specific business rule; it only verifies the count. If there are exactly 5 matching records in the file but one is skipped or malformed, this test will pass even though the logic failed to filter correctly.\",\n    \"suggestions\": [\n      \"Replace `assert len(texts) == 4` with a more specific assertion like: 'Verify that only accepted/rejected/skipped decisions are present and no invalid JSON lines were included in the output.'\",\n      \"Add assertions for each label value to ensure they match expectations (e.g., `[1, 0, 1, 0]`) rather than just counts.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 2,\n    \"rationale\": \"This test duplicates the coverage of other tests likely existing in this file or suite. It does not add new value; it simply re-verifies a subset of data that could be covered by general filtering logic.\",\n    \"suggestions\": [\n      \"Remove assertions for specific record counts and labels if they are already verified elsewhere, focusing only on the core 'filtering' behavior.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 2,\n    \"rationale\": \"The test is extremely coarse-grained. It asserts a global count of records rather than validating specific predicates or anchor values against expected strings.\",\n    \"suggestions\": [\n      \"Assert that the first record's `predicate` matches 'buffer overflow' and its label corresponds to an accepted decision, not just checking lengths.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 5,\n    \"rationale\": \"The test is reasonably fast as it involves simple file I/O. However, the `json.dumps` call inside a loop for every record adds unnecessary overhead compared to writing directly or using structured data.\",\n    \"suggestions\": [\n      \"Optimize JSON serialization by pre-creating lists of dicts and passing them once via `json.dump`, avoiding repeated string conversion in the loop.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 1,\n    \"rationale\": \"This is a classic 'Arrange-Act-Passive' test. The code does not define behavior (specification) before acting on it; instead, it assumes the function exists and runs without defining what `extract_dataset_from_attempts` should do.\",\n    \"suggestions\": [\n      \"Write this as an integration test *after* implementing or documenting the expected contract of `extract_dataset_from_attempts`. The 'Arrange' phase (defining input/output expectations) must precede any assertions.\"\n    ]\n  },\n  \"summary\": \"The provided snippet is a non-functional assertion",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1024,
+      "prompt_tokens": 811,
+      "total_tokens": 1835,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "5241abd751db1c2e3b2e9eaac70d74491167ef766e2e67c208e95f8f5e10efd1": {
+    "id": "chatcmpl-6a5711a0-f6e7-4f05-add5-91ee3e643e8d",
+    "created": 1785435061,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 6,\n    \"rationale\": \"The test logic is understandable but suffers from poor documentation. The function `extract_dataset_from_attempts` does not exist or its signature/behavior are undefined in the provided snippet, making it impossible to verify if this specific assertion actually passes without running the code.\",\n    \"suggestions\": [\n      \"Define a clear docstring for `test_extract_dataset_from_attempts`. Explicitly state what data is expected and how labels should be derived from that data. If possible, include an inline comment explaining why 4 records were selected (e.g., 'Selecting exactly one record per decision type').\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 5,\n    \"rationale\": \"The test is brittle and tightly coupled to the specific content of `test_attempts.jsonl`. If that file changes or if a new 'skipped_pre_filter' record needs to be added without modifying this single assertion, the test will fail. It also lacks isolation from other tests sharing common fixtures.\",\n    \"suggestions\": [\n      \"Refactor into separate unit tests for each decision type (accepted/rejected/skipped) rather than one monolithic integration-style check on a file path that might change between runs or versions.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 4,\n    \"rationale\": \"The test relies heavily on the specific content of `test_attempts.jsonl`. If this JSONL changes slightly (e.g., adding a new record type), the assertion logic must be updated. It also lacks deterministic behavior regarding which records are selected if multiple matching criteria exist.\",\n    \"suggestions\": [\n      \"Ensure all test data is generated via code or fixtures, not hardcoded in file paths that might vary by environment.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 3,\n    \"rationale\": \"The assertion `assert len(texts) == 4` does not verify a specific business rule; it only verifies the count. If there are exactly 5 matching records in the file but one is skipped or malformed, this test will pass even though the logic failed to filter correctly.\",\n    \"suggestions\": [\n      \"Replace `assert len(texts) == 4` with a more specific assertion like: 'Verify that only accepted/rejected/skipped decisions are present and no invalid JSON lines were included in the output.'\",\n      \"Add assertions for each label value to ensure they match expectations (e.g., `[1, 0, 1, 0]`) rather than just counts.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 2,\n    \"rationale\": \"This test duplicates the coverage of other tests likely existing in this file or suite. It does not add new value; it simply re-verifies a subset of data that could be covered by general filtering logic.\",\n    \"suggestions\": [\n      \"Remove assertions for specific record counts and labels if they are already verified elsewhere, focusing only on the core 'filtering' behavior.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 2,\n    \"rationale\": \"The test is extremely coarse-grained. It asserts a global count of records rather than validating specific predicates or anchor values against expected strings.\",\n    \"suggestions\": [\n      \"Assert that the first record's `predicate` matches 'buffer overflow' and its label corresponds to an accepted decision, not just checking lengths.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 5,\n    \"rationale\": \"The test is reasonably fast as it involves simple file I/O. However, the `json.dumps` call inside a loop for every record adds unnecessary overhead compared to writing directly or using structured data.\",\n    \"suggestions\": [\n      \"Optimize JSON serialization by pre-creating lists of dicts and passing them once via `json.dump`, avoiding repeated string conversion in the loop.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 1,\n    \"rationale\": \"This is a classic 'Arrange-Act-Passive' test. The code does not define behavior (specification) before acting on it; instead, it assumes the function exists and runs without defining what `extract_dataset_from_attempts` should do.\",\n    \"suggestions\": [\n      \"Write this as an integration test *after* implementing or documenting the expected contract of `extract_dataset_from_attempts`. The 'Arrange' phase (defining input/output expectations) must precede any assertions.\"\n    ]\n  },\n  \"summary\": \"The provided snippet is a non-functional assertion\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 1019,
+      "prompt_tokens": 1976,
+      "total_tokens": 2995,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "42a781713222f175eda2dba88ad08708b0555a29889e42e3fb90ccb909553e10": {
+    "id": "chatcmpl-b71203c3-b80f-49b2-9676-c87e43c12082",
+    "created": 1785435104,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n\"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the input (empty directory), expected outputs via helper functions, and specific assertions about length and label sets. It avoids implementation clutter.\", \"suggestions\": []},\n\"maintainable\": {\"score\": 9, \"rationale\": \"This is a pure unit test with no dependencies on external state or system internals; it only relies on the `extract_dataset_from_attempts` function's contract.\", \"suggestions\": []},\n\"repeatable\": {\"score\": 7, \"rationale\": \"The logic depends entirely on an existing helper function. If that helper is refactored to use a different data source (e.g., file system instead of directory), this test will fail without modification.\", \"suggestions\": [\"Ensure `extract_dataset_from_attempts` uses only deterministic in-memory operations or explicitly mocked external dependencies.\"]},\n\"atomic\": {\"score\": 9, \"rationale\": \"The assertion checks the length and set membership. If these values change unexpectedly (e.g., due to a bug), it is immediately obvious that something went wrong.\", \"suggestions\": []},\n\"necessary\": {\"score\": 8, \"rationale\": \"This test verifies specific invariants of `extract_dataset_from_attempts` when given an empty directory. It does not duplicate coverage for other scenarios (e.g., non-empty directories) unless those are explicitly tested elsewhere.\", \"suggestions\": [\"Ensure this is the only place where 'empty' input behavior is verified to avoid redundancy.\"]},\n\"granular\": {\"score\": 9, \"rationale\": \"The test isolates exactly one aspect: that `extract_dataset_from_attempts` returns at least 4 items with a specific label distribution. It does not mix unrelated behaviors.\", \"suggestions\": []},\n\"fast\": {\"score\": 8, \"rationale\": \"There are no artificial sleeps or heavy I/O operations; the test runs purely in memory using mocked `tmp_path`.\", \"suggestions\": [\"Ensure `extract_dataset_from_attempts` is fast enough for this specific case.\"]},\n\"first_tdd\": {\"score\": 9, \"rationale\": \"The code follows a clean Arrange-Act-Assert structure: setup (`empty_dir`) -> action (call helper) -> assertions. It explicitly tests the 'what' rather than the 'how'.\", \"suggestions\": []},\"summary\": \"This test is highly maintainable and fast but risks non-repeatability if `extract_dataset_from_attempts` changes its data source strategy.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 536,
+      "prompt_tokens": 461,
+      "total_tokens": 997,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
