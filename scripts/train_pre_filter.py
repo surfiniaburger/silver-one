@@ -31,6 +31,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import scenarios.debate._thread_limits  # noqa: F401 (Enforce OpenMP thread limits on import)
 
+from agentbeats.tracing import trace_span
+
 # Optional imports for model training and persistence
 try:
     import joblib
@@ -601,51 +603,56 @@ def train_pre_filter(
     train_setfit: bool = False,
 ) -> bool:
     """Train pre-filter models (Stage B XGBoost & Stage C SetFit) with leak-proof evaluation."""
-    safe_output_dir = _validate_safe_path(output_dir)
-    safe_output_dir.mkdir(parents=True, exist_ok=True)
+    with trace_span("train_pre_filter", attributes={"attempts_dir": str(attempts_dir), "output_dir": str(output_dir), "train_setfit": train_setfit}):
+        safe_output_dir = _validate_safe_path(output_dir)
+        safe_output_dir.mkdir(parents=True, exist_ok=True)
 
-    safe_attempts_dir = _validate_safe_path(attempts_dir)
-    texts, labels, cve_ids = extract_dataset_from_attempts(safe_attempts_dir)
-    if not texts:
-        logger.error("No valid attempt data available for training.")
-        return False
+        safe_attempts_dir = _validate_safe_path(attempts_dir)
+        with trace_span("train_pre_filter.dataset_extraction", attributes={"attempts_dir": str(safe_attempts_dir)}):
+            texts, labels, cve_ids = extract_dataset_from_attempts(safe_attempts_dir)
+        if not texts:
+            logger.error("No valid attempt data available for training.")
+            return False
 
-    try:
-        splits = partition_dataset_by_cve(texts, labels, cve_ids)
-        train_texts, train_labels = splits["train"]
-        val_texts, val_labels = splits["val"]
-        test_texts, test_labels = splits["test"]
+        try:
+            with trace_span("train_pre_filter.partition", attributes={"total_samples": len(texts)}):
+                splits = partition_dataset_by_cve(texts, labels, cve_ids)
+                train_texts, train_labels = splits["train"]
+                val_texts, val_labels = splits["val"]
+                test_texts, test_labels = splits["test"]
 
-        # If test set is empty, fall back to evaluating on validation or train split
-        if test_texts:
-            eval_texts, eval_labels = test_texts, test_labels
-        elif val_texts:
-            eval_texts, eval_labels = val_texts, val_labels
-        else:
-            eval_texts, eval_labels = train_texts, train_labels
+            # If test set is empty, fall back to evaluating on validation or train split
+            if test_texts:
+                eval_texts, eval_labels = test_texts, test_labels
+            elif val_texts:
+                eval_texts, eval_labels = val_texts, val_labels
+            else:
+                eval_texts, eval_labels = train_texts, train_labels
 
-        y_train = np.array(train_labels)
-        y_eval = np.array(eval_labels)
+            y_train = np.array(train_labels)
+            y_eval = np.array(eval_labels)
 
-        # Stage B Isolated Vectorization
-        _, x_train, _, x_eval = _train_stage_b_vectorizer(train_texts, val_texts, eval_texts, safe_output_dir)
+            # Stage B Isolated Vectorization & Training
+            with trace_span("train_pre_filter.stage_b", attributes={"train_samples": len(train_texts)}):
+                _, x_train, _, x_eval = _train_stage_b_vectorizer(train_texts, val_texts, eval_texts, safe_output_dir)
+                classifier = _train_stage_b_classifier(x_train, y_train, safe_output_dir)
 
-        # Stage B Classifier Training
-        classifier = _train_stage_b_classifier(x_train, y_train, safe_output_dir)
+            # Null Model Control Check
+            with trace_span("train_pre_filter.null_control_check"):
+                _run_null_model_sanity_check(x_train, y_train, x_eval, y_eval)
 
-        # Null Model Control Check
-        _run_null_model_sanity_check(x_train, y_train, x_eval, y_eval)
+            # Stage C SetFit Training
+            with trace_span("train_pre_filter.stage_c", attributes={"train_setfit": train_setfit}):
+                setfit_model = _train_stage_c_setfit(train_texts, train_labels, safe_output_dir, train_setfit)
 
-        # Stage C SetFit Training
-        setfit_model = _train_stage_c_setfit(train_texts, train_labels, safe_output_dir, train_setfit)
+            # Multi-Stage Holdout Benchmarking
+            with trace_span("train_pre_filter.evaluation", attributes={"eval_samples": len(eval_texts)}):
+                _evaluate_holdout_performance(classifier, x_eval, y_eval, safe_output_dir, eval_texts=eval_texts, setfit_model=setfit_model)
 
-        # Multi-Stage Holdout Benchmarking
-        _evaluate_holdout_performance(classifier, x_eval, y_eval, safe_output_dir, eval_texts=eval_texts, setfit_model=setfit_model)
-
-        return True
-    except Exception as e:
-        logger.exception("Pre-filter model training failed: %s", e)
-        return False
+            return True
+        except Exception as e:
+            logger.exception("Pre-filter model training failed: %s", e)
+            return False
 
 
 def main() -> None:
