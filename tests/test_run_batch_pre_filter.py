@@ -112,3 +112,11 @@ async def test_process_seed_pre_filter_rejection(tmp_path: Path):
     assert records[0]["skipped_pre_filter"] is True
     assert records[0]["input_block"] == "void vuln() { memcpy(a, b, c); }"
     assert records[0]["cve_id"] == "CVE-2024-9999"
+
+
+def test_combined_text_no_double_wrapping():
+    """Verify BarredPreFilter._get_combined_text does not double-wrap formatted text."""
+    pf = BarredPreFilter()
+    already_formatted = "Predicate: buffer overflow | Code: void foo() {}"
+    res = pf._get_combined_text(already_formatted, "")
+    assert res == already_formatted

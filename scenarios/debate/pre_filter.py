@@ -203,6 +203,8 @@ class BarredPreFilter:
             return decision
 
     def _get_combined_text(self, predicate: str, input_block: str) -> str:
+        if predicate.startswith("Predicate: ") and " | Code: " in predicate:
+            return predicate
         snippet = input_block[:1000] if input_block else ""
         return f"Predicate: {predicate} | Code: {snippet}"
 
