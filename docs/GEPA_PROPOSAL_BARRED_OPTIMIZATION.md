@@ -1,7 +1,7 @@
-# Proposal: Integrating GEPA (Genetic Execution-Trace Prompt Adaptation) into BARRED Multi-Agent Swarm
+# Proposal: Integrating GEPA (Genetic-Pareto Prompt Adaptation) into BARRED Multi-Agent Swarm
 
 ## Executive Summary
-This document proposes adopting **GEPA (Genetic Execution-Trace Prompt Adaptation, Berkeley / ICLR 2026)** to optimize prompt strategies and candidate refinement loops in the BARRED Multi-Agent Vulnerability Dataset Generation Swarm. Based on research highlighted by Avi Chawla (Daily Dose of Data Science), GEPA replaces scalar-reward RL (like GRPO) and naive single-turn retries by utilizing **full natural language execution traces** (debate arguments, judge rationales, verifier failure audits) to dynamically mutate system prompts across a Pareto frontier.
+This document proposes adopting **GEPA (Genetic-Pareto Prompt Adaptation, Berkeley / ICLR 2026)** to optimize prompt strategies and candidate refinement loops in the BARRED Multi-Agent Vulnerability Dataset Generation Swarm. Based on research highlighted by Avi Chawla (Daily Dose of Data Science) and published at ICLR 2026 ([OpenReview: GEPA](https://openreview.net/forum?id=vC3970b555)), GEPA replaces scalar-reward RL (like GRPO) and naive single-turn retries by utilizing **full natural language execution traces** (debate arguments, judge rationales, verifier failure audits) to dynamically mutate system prompts across a Pareto frontier.
 
 ---
 
@@ -18,7 +18,7 @@ Standard Reinforcement Learning methods (such as GRPO) collapse this multi-thous
 
 Similarly, naive retry loops attempt single-turn fixes without accumulating structural lessons across failure modes.
 
-### The GEPA Paradigm (Avi Chawla / Berkeley)
+### The GEPA Paradigm (Avi Chawla / Berkeley ICLR 2026)
 GEPA treats the execution rollout trace as a first-class natural language artifact:
 1. **Reflection LLM**: Rather than computing a numerical gradient, a Reflection LLM reads the full execution trace and feedback.
 2. **Targeted Prompt Mutation**: The Reflection LLM diagnoses the exact failure mechanism (e.g., missing bounds check, unvalidated length parameter) and mutates the generator or debater system prompt.
@@ -32,7 +32,7 @@ GEPA treats the execution rollout trace as a first-class natural language artifa
 | :--- | :--- | :--- | :--- | :--- |
 | **Feedback Signal** | Scalar Reward ($0.0 - 1.0$) | Task Score + Few-Shot Examples | Full Natural Language Trace ($\mu_f$) | Debate Adjudication + Verifier Audit |
 | **Optimization Target** | Model Weights via Policy Gradients | Instructions & Static Examples | Dynamic Multi-Module System Prompts | Generator, Pro/Con Debaters, Judge Prompts |
-| **Sample Efficiency** | Low ($10,000+$ rollouts) | Medium (Hundreds of examples) | **High ($10-50\times$ compute reduction)** | **High ($20-100$ failure traces)** |
+| **Sample Efficiency** | Low ($10,000+$ rollouts) | Medium (Hundreds of examples) | **High (Up to $35\times$ rollout reduction)** | **Target: $10-50\times$ token efficiency target over $20-100$ traces** |
 | **Population Selection** | Mean Baseline Advantage | Bayesian Optimization | **Pareto Frontier Selection** | **Taxonomy-based Pareto Frontier** |
 | **Infrastructure Needed** | GPU Training Cluster | Python Execution | Pure LLM Reflection / Zero GPU Training | Lightweight Python Orchestrator |
 
@@ -94,7 +94,7 @@ Pareto selection ensures that prompt variants excelling at complex kernel race c
 
 ## 4. A2A Housed Agent Architecture & Coupling Constraints
 
-In accordance with **Dave Farley's Coupling Principles** in `AI_REVIEWER_ENGINEERING_PRINCIPLES.md`, the Reflection engine is implemented as a **decoupled A2A (Agent-to-Agent) micro-service (`ReflectorAgent`)** running on Port `8004`, managed directly by `start_stack.sh`.
+In accordance with **Dave Farley's Coupling Principles** in `AI_REVIEWER_ENGINEERING_PRINCIPLES.md`, the Reflection engine will be implemented as a **decoupled A2A (Agent-to-Agent) micro-service (`ReflectorAgent`)** running on Port `8004`, managed directly by `start_stack.sh`.
 
 ```
         ┌─────────────────────────────────────────────────────────────┐
@@ -130,21 +130,26 @@ In accordance with **Dave Farley's Coupling Principles** in `AI_REVIEWER_ENGINEE
 ### Key Architectural Boundaries
 
 1. **Decoupled A2A Service Boundary (`ReflectorAgent`)**:
-   - `run_batch.py` does not contain inline prompt mutation logic. Instead, it communicates with `ReflectorAgent` via explicit HTTP Pydantic payloads (`ReflectRequest`, `ReflectResponse`).
-   - If `ReflectorAgent` is offline or times out, `run_batch.py` falls back gracefully to the static baseline prompt without failing the batch run.
+   - `run_batch.py` will not contain inline prompt mutation logic. Instead, it will communicate with `ReflectorAgent` via explicit HTTP Pydantic payloads (`ReflectRequest`, `ReflectResponse`).
+   - Structured responses route through `call_structured()` to enforce strict schema validation.
+   - **Mode-Specific Fallback Policy**:
+     - **Normal Live Mode**: If `ReflectorAgent` is offline or times out, `run_batch.py` falls back gracefully to the static baseline prompt without failing the batch run.
+     - **Replay Mode**: In record/replay mode (`ReplayManager`), replay cache misses must fail explicitly rather than silently falling back, maintaining strict experimental reproducibility.
 
 2. **Execution Lifecycle & Loop Memory**:
-   - **Initial Attempt (Attempt 1)**: Before starting a seed debate, `run_batch.py` asks `ReflectorAgent` for the best historical prompt variant for that CVE taxonomy. If no history exists, it uses the default baseline.
-   - **Refinement Attempt (Attempt 2+)**: If Attempt 1 fails verifier/judge audit, `run_batch.py` posts the failure trace $\mu_f$ to `ReflectorAgent`. The reflector diagnoses the defect (e.g. `anchors_too_few_after_normalization`), mutates the prompt directive for Attempt 2, and updates its Pareto ledger (`artifacts/gepa/pareto_frontier.json`).
+   - **Initial Attempt (Attempt 1)**: Before starting a seed debate, `run_batch.py` queries `ReflectorAgent` for the best historical prompt variant for that CVE taxonomy. If no history exists, it uses the default baseline.
+   - **Refinement Attempt (Attempt 2+)**: If Attempt 1 fails verifier/judge audit, `run_batch.py` posts the failure trace $\mu_f$ to `ReflectorAgent`. The reflector diagnoses the defect (e.g. `anchors_too_few_after_normalization`), mutates the prompt directive for Attempt 2, and updates its Pareto ledger.
 
-3. **Isolated Memory Ledger**:
-   - The Pareto state and mutation history reside strictly within `artifacts/gepa/`, preventing unstable LLM contract churn from leaking into core attempt log schemas.
+3. **Concurrency-Safe Memory Ledger**:
+   - The Pareto state and mutation history reside strictly within `artifacts/gepa/`.
+   - **Concurrency Safety**: File updates to `artifacts/gepa/pareto_frontier.json` are executed atomically using atomic file replacement (`write_to_temp_and_rename`) or file locks (`fcntl.flock`) to ensure concurrent seed tasks in `run_batch.py` do not overwrite mutations.
+   - **Append-Only Attempt History**: Historical mutation logs are maintained as append-only JSONL files (`artifacts/gepa/mutations.jsonl`).
 
 ---
 
 ## 5. Implementation Steps & Roadmap
 
 1. **Step 1: Metric & Trace Extractor**: Update `run_batch.py` and `scenarios/debate/run_batch.py` to extract full $\mu_f$ execution traces on failed attempts.
-2. **Step 2: GEPA Reflection Operator (`reflector_agent.py`)**: Implement the housed A2A Reflector Agent on Port `8004` (managed in `start_stack.sh`) using FastAPI and Pydantic contract validation.
-3. **Step 3: Pareto Population Registry**: Implement local Pareto prompt pool persistence in `artifacts/gepa/pareto_frontier.json` per CVE taxonomy bucket.
+2. **Step 2: Proposed GEPA Reflection Operator (`reflector_agent.py`)**: Implement the housed A2A Reflector Agent on Port `8004` (managed in `start_stack.sh`) using FastAPI, Pydantic contract validation, and `call_structured()` replay wrappers.
+3. **Step 3: Pareto Population Registry**: Implement local concurrency-safe Pareto prompt pool persistence in `artifacts/gepa/pareto_frontier.json` per CVE taxonomy bucket with file locking and append-only JSONL history.
 4. **Step 4: Benchmarking & Telemetry**: Measure token spend per accepted row and anchor completeness rates across standard retries vs. GEPA-reflected retries.
