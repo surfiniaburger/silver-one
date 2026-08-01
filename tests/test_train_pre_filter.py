@@ -96,13 +96,21 @@ def test_train_pre_filter_and_artifact_persistence(tmp_path):
     xgb_path = models_dir / "xgb.joblib"
 
     assert vec_path.exists()
+    assert (models_dir / "domain_scaler.joblib").exists()
     assert xgb_path.exists()
 
     # Verify model binaries can be loaded and executed
     vectorizer = joblib.load(vec_path)
+    scaler = joblib.load(models_dir / "domain_scaler.joblib")
     classifier = joblib.load(xgb_path)
 
-    features = vectorizer.transform(["Predicate: Test predicate | Code: void test() { }"])
+    from scenarios.debate.pre_filter import extract_domain_features_batch, _combine_features
+
+    test_texts = ["Predicate: Test predicate | Code: void test() { }"]
+    tfidf_feat = vectorizer.transform(test_texts)
+    domain_feat = extract_domain_features_batch(test_texts)
+    scaled_domain = scaler.transform(domain_feat)
+    features = _combine_features(tfidf_feat, scaled_domain)
     probs = classifier.predict_proba(features)
 
     assert probs.shape == (1, 2)
@@ -142,3 +150,23 @@ def test_pre_filter_integration_with_trained_models(tmp_path):
     decision = pre_filter.predict("Vulnerable to heap buffer overflow in parse_json", input_block="char *buf = malloc(10);")
     # Should evaluate via Stage A or Stage B
     assert decision.stage in ("heuristic", "xgboost")
+
+
+def test_extract_domain_features_dimensions():
+    from scenarios.debate.pre_filter import extract_domain_features, extract_domain_features_batch, FallbackStandardScaler
+    import numpy as np
+
+    sample_text = "Predicate: Vulnerable to buffer overflow | Code: void f() { memcpy(a, b, n); }"
+    feat = extract_domain_features(sample_text)
+
+    assert isinstance(feat, np.ndarray)
+    assert feat.shape == (60,)
+    assert not np.isnan(feat).any()
+
+    batch_feat = extract_domain_features_batch([sample_text, sample_text])
+    assert batch_feat.shape == (2, 60)
+
+    scaler = FallbackStandardScaler()
+    scaled = scaler.fit_transform(batch_feat)
+    assert scaled.shape == (2, 60)
+    assert not np.isnan(scaled).any()

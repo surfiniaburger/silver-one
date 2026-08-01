@@ -25,13 +25,25 @@ from typing import List, Tuple, Any, Dict, Optional
 
 import numpy as np
 import sys
+from pathlib import Path
 
 # Ensure project root is in sys.path for scenarios import
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+project_root = str(Path(__file__).resolve().parent.parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+if os.getcwd() not in sys.path:
+    sys.path.insert(0, os.getcwd())
 
 import scenarios.debate._thread_limits  # noqa: F401 (Enforce OpenMP thread limits on import)
 
 from agentbeats.tracing import trace_span
+from scenarios.debate.pre_filter import (
+    CODE_DELIMITER,
+    PREDICATE_PREFIX,
+    extract_domain_features_batch,
+    FallbackStandardScaler,
+    _combine_features,
+)
 
 # Optional imports for model training and persistence
 try:
@@ -227,7 +239,7 @@ def _parse_attempt_record(record: dict) -> Tuple[Optional[str], Optional[int], O
     cve_id = _extract_cve_id(record, predicate)
     code_snippet = _extract_code_snippet(record, judge_dict)
 
-    combined_text = f"Predicate: {predicate} | Code: {code_snippet[:1000]}"
+    combined_text = f"{PREDICATE_PREFIX}{predicate}{CODE_DELIMITER}{code_snippet[:1000]}"
     return combined_text, label, cve_id
 
 
@@ -371,8 +383,8 @@ def _train_stage_b_vectorizer(
     val_texts: List[str],
     test_texts: List[str],
     output_dir: Path,
-) -> Tuple[Any, np.ndarray, np.ndarray, np.ndarray]:
-    """Train TF-IDF vectorizer strictly on train_texts and transform all splits."""
+) -> Tuple[Any, Any, np.ndarray, np.ndarray, np.ndarray]:
+    """Train TF-IDF vectorizer and domain StandardScaler strictly on train_texts and transform all splits."""
     try:
         from sklearn.feature_extraction.text import TfidfVectorizer
         logger.info("Fitting scikit-learn TF-IDF Vectorizer strictly on X_train (char_wb 3-5 n-grams)...")
@@ -386,14 +398,37 @@ def _train_stage_b_vectorizer(
         logger.info("Fitting FallbackCharTfidfVectorizer strictly on X_train...")
         vectorizer = FallbackCharTfidfVectorizer(ngram_range=(3, 5), max_features=1000)
 
-    x_train = vectorizer.fit_transform(train_texts)
-    x_val = vectorizer.transform(val_texts) if val_texts else np.zeros((0, x_train.shape[1]))
-    x_test = vectorizer.transform(test_texts) if test_texts else np.zeros((0, x_train.shape[1]))
+    try:
+        from sklearn.preprocessing import StandardScaler
+        scaler: Any = StandardScaler()
+    except ImportError:
+        scaler = FallbackStandardScaler()
+
+    # 1. Fit TF-IDF on train_texts
+    x_train_tfidf = vectorizer.fit_transform(train_texts)
+    x_val_tfidf = vectorizer.transform(val_texts) if val_texts else np.zeros((0, x_train_tfidf.shape[1]))
+    x_test_tfidf = vectorizer.transform(test_texts) if test_texts else np.zeros((0, x_train_tfidf.shape[1]))
+
+    # 2. Extract and scale domain features strictly on train_texts
+    domain_train = extract_domain_features_batch(train_texts)
+    domain_val = extract_domain_features_batch(val_texts) if val_texts else np.zeros((0, domain_train.shape[1]), dtype=np.float32)
+    domain_test = extract_domain_features_batch(test_texts) if test_texts else np.zeros((0, domain_train.shape[1]), dtype=np.float32)
+
+    domain_train_scaled = scaler.fit_transform(domain_train)
+    domain_val_scaled = scaler.transform(domain_val) if val_texts else np.zeros((0, domain_train.shape[1]), dtype=np.float32)
+    domain_test_scaled = scaler.transform(domain_test) if test_texts else np.zeros((0, domain_train.shape[1]), dtype=np.float32)
+
+    # 3. Stack TF-IDF + Domain features
+    x_train_stacked = _combine_features(x_train_tfidf, domain_train_scaled)
+    x_val_stacked = _combine_features(x_val_tfidf, domain_val_scaled)
+    x_test_stacked = _combine_features(x_test_tfidf, domain_test_scaled)
 
     vec_path = output_dir / "vectorizer.joblib"
+    scaler_path = output_dir / "domain_scaler.joblib"
     _save_artifact(vectorizer, vec_path)
-    logger.info("Saved isolated TF-IDF vectorizer to '%s'.", vec_path)
-    return vectorizer, x_train, x_val, x_test
+    _save_artifact(scaler, scaler_path)
+    logger.info("Saved isolated TF-IDF vectorizer and domain scaler to '%s' and '%s'.", vec_path, scaler_path)
+    return vectorizer, scaler, x_train_stacked, x_val_stacked, x_test_stacked
 
 
 def _train_stage_b_classifier(x_train: np.ndarray, y_train: np.ndarray, output_dir: Path) -> Any:
@@ -603,18 +638,17 @@ def train_pre_filter(
     train_setfit: bool = False,
 ) -> bool:
     """Train pre-filter models (Stage B XGBoost & Stage C SetFit) with leak-proof evaluation."""
-    with trace_span("train_pre_filter", attributes={"attempts_dir": str(attempts_dir), "output_dir": str(output_dir), "train_setfit": train_setfit}):
-        safe_output_dir = _validate_safe_path(output_dir)
-        safe_output_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        with trace_span("train_pre_filter", attributes={"attempts_dir": str(attempts_dir), "output_dir": str(output_dir), "train_setfit": train_setfit}):
+            safe_output_dir = _validate_safe_path(output_dir)
+            safe_output_dir.mkdir(parents=True, exist_ok=True)
 
-        safe_attempts_dir = _validate_safe_path(attempts_dir)
-        with trace_span("train_pre_filter.dataset_extraction", attributes={"attempts_dir": str(safe_attempts_dir)}):
-            texts, labels, cve_ids = extract_dataset_from_attempts(safe_attempts_dir)
-        if not texts:
-            logger.error("No valid attempt data available for training.")
-            return False
+            safe_attempts_dir = _validate_safe_path(attempts_dir)
+            with trace_span("train_pre_filter.dataset_extraction", attributes={"attempts_dir": str(safe_attempts_dir)}):
+                texts, labels, cve_ids = extract_dataset_from_attempts(safe_attempts_dir)
+            if not texts:
+                raise ValueError(f"No valid attempt data found in '{safe_attempts_dir}'.")
 
-        try:
             with trace_span("train_pre_filter.partition", attributes={"total_samples": len(texts)}):
                 splits = partition_dataset_by_cve(texts, labels, cve_ids)
                 train_texts, train_labels = splits["train"]
@@ -634,7 +668,7 @@ def train_pre_filter(
 
             # Stage B Isolated Vectorization & Training
             with trace_span("train_pre_filter.stage_b", attributes={"train_samples": len(train_texts)}):
-                _, x_train, _, x_eval = _train_stage_b_vectorizer(train_texts, val_texts, eval_texts, safe_output_dir)
+                _, _, x_train, _, x_eval = _train_stage_b_vectorizer(train_texts, val_texts, eval_texts, safe_output_dir)
                 classifier = _train_stage_b_classifier(x_train, y_train, safe_output_dir)
 
             # Null Model Control Check
@@ -642,7 +676,10 @@ def train_pre_filter(
                 _run_null_model_sanity_check(x_train, y_train, x_eval, y_eval)
 
             # Stage C SetFit Training
-            with trace_span("train_pre_filter.stage_c", attributes={"train_setfit": train_setfit}):
+            if train_setfit:
+                with trace_span("train_pre_filter.stage_c", attributes={"train_setfit": train_setfit}):
+                    setfit_model = _train_stage_c_setfit(train_texts, train_labels, safe_output_dir, train_setfit)
+            else:
                 setfit_model = _train_stage_c_setfit(train_texts, train_labels, safe_output_dir, train_setfit)
 
             # Multi-Stage Holdout Benchmarking
@@ -650,9 +687,9 @@ def train_pre_filter(
                 _evaluate_holdout_performance(classifier, x_eval, y_eval, safe_output_dir, eval_texts=eval_texts, setfit_model=setfit_model)
 
             return True
-        except Exception as e:
-            logger.exception("Pre-filter model training failed: %s", e)
-            return False
+    except Exception as e:
+        logger.exception("Pre-filter model training failed: %s", e)
+        return False
 
 
 def main() -> None:

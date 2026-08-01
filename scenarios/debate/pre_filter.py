@@ -21,10 +21,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from time import perf_counter
+import sys
 import os
 import re
 import logging
-from typing import Optional, Union, Any
+from pathlib import Path
+
+# Ensure project root is in sys.path before importing scenarios packages
+project_root = str(Path(__file__).resolve().parent.parent.parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+if os.getcwd() not in sys.path:
+    sys.path.insert(0, os.getcwd())
 
 import scenarios.debate._thread_limits  # noqa: F401 (Enforce OpenMP thread limits on import)
 
@@ -33,6 +41,8 @@ from agentbeats.tracing import trace_span
 logger = logging.getLogger("pre_filter")
 
 # Attempt optional imports for Stage B / C models
+import numpy as np
+
 try:
     import joblib
 except ImportError:
@@ -42,6 +52,116 @@ try:
     from setfit import SetFitModel
 except ImportError:
     SetFitModel = None
+
+CODE_DELIMITER = " | Code: "
+PREDICATE_PREFIX = "Predicate: "
+
+SAFETY_KEYWORDS = [
+    "free", "malloc", "memcpy", "memset", "sizeof", "null", "nullptr",
+    "overflow", "use-after-free", "race condition", "out-of-bounds",
+    "script inclusion", "leakage", "unsanitized", "disclosure", "privilege",
+    "bypass", "pointer", "buffer", "integer", "format string", "injection",
+    "dereference", "vulnerable", "bounds", "uaf", "double free", "type confusion"
+]
+
+CONTROL_KEYWORDS = [
+    "if", "while", "for", "switch", "goto", "return", "struct", "typedef", "def", "class"
+]
+
+SYMBOLS = ["*", "&", "->", "[", "]", "(", ")", ";", "=", "+", "-", "<", ">", "/"]
+
+
+def extract_domain_features(text: str) -> np.ndarray:
+    """Extract domain-specific structural, vulnerability, and syntax numerical features."""
+    if CODE_DELIMITER in text:
+        parts = text.split(CODE_DELIMITER, 1)
+        pred = parts[0].replace(PREDICATE_PREFIX, "", 1)
+        code = parts[1]
+    else:
+        pred = text
+        code = ""
+
+    code_lower = code.lower()
+    pred_lower = pred.lower()
+
+    lines = code.split("\n") if code else []
+    line_count = float(len(lines))
+    char_count = float(len(code))
+    avg_line_len = float(char_count / max(line_count, 1.0))
+    max_indent = float(max([len(l) - len(l.lstrip()) for l in lines] or [0]) / 4.0)
+
+    control_counts = [float(code_lower.split().count(kw)) for kw in CONTROL_KEYWORDS]
+
+    full_text_lower = f"{pred_lower} {code_lower}"
+    safety_counts = [float(full_text_lower.count(kw)) for kw in SAFETY_KEYWORDS]
+
+    symbol_counts = [float(code.count(sym)) for sym in SYMBOLS]
+
+    pred_words = pred.split()
+    pred_word_count = float(len(pred_words))
+    pred_char_count = float(len(pred))
+    pred_upper_ratio = float(sum(1 for c in pred if c.isupper()) / max(len(pred), 1.0))
+    pred_digit_ratio = float(sum(1 for c in pred if c.isdigit()) / max(len(pred), 1.0))
+
+    feat_list = [
+        line_count,
+        char_count,
+        avg_line_len,
+        max_indent,
+        *control_counts,
+        *safety_counts,
+        *symbol_counts,
+        pred_word_count,
+        pred_char_count,
+        pred_upper_ratio,
+        pred_digit_ratio,
+    ]
+    return np.array(feat_list, dtype=np.float32)
+
+
+def extract_domain_features_batch(texts: list[str]) -> np.ndarray:
+    """Extract domain features for a batch of text documents."""
+    if not texts:
+        return np.zeros((0, 56), dtype=np.float32)
+    rows = [extract_domain_features(t) for t in texts]
+    return np.vstack(rows)
+
+
+class FallbackStandardScaler:
+    """Numpy Standard Scaler for domain numerical features with fallback if sklearn is absent."""
+
+    def __init__(self):
+        self.mean_: Optional[np.ndarray] = None
+        self.scale_: Optional[np.ndarray] = None
+
+    def fit(self, X: np.ndarray) -> FallbackStandardScaler:
+        if X.shape[0] == 0:
+            return self
+        self.mean_ = np.mean(X, axis=0)
+        std = np.std(X, axis=0)
+        std[np.isclose(std, 0.0)] = 1.0
+        self.scale_ = std
+        return self
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        if X.shape[0] == 0 or self.mean_ is None or self.scale_ is None:
+            return X
+        return (X - self.mean_) / self.scale_
+
+    def fit_transform(self, X: np.ndarray) -> np.ndarray:
+        return self.fit(X).transform(X)
+
+
+def _combine_features(x_tfidf: Any, x_domain_scaled: np.ndarray) -> Any:
+    """Stack TF-IDF sparse matrix with scaled dense domain features."""
+    try:
+        from scipy.sparse import issparse, hstack, csr_matrix
+        if issparse(x_tfidf):
+            x_domain_sparse = csr_matrix(x_domain_scaled)
+            return hstack([x_tfidf, x_domain_sparse]).tocsr()
+    except ImportError:
+        pass
+    return np.hstack([x_tfidf, x_domain_scaled])
 
 
 @dataclass(frozen=True)
@@ -68,7 +188,7 @@ NEGATIVE_RULES = (
 
 POSITIVE_RULES = (
     re.compile(
-        r"\b(vulnerable|buffer overflow|integer overflow|use after free|out of bounds|memory corruption|race condition|denial of service|injection)\b",
+        r"\b(buffer overflow|integer overflow|use after free|out of bounds|memory corruption|race condition|denial of service|injection)\b",
         re.I,
     ),
 )
@@ -105,6 +225,9 @@ class BarredPreFilter:
             xgb_path = str(base_dir / "xgb.joblib")
             setfit_dir = str(base_dir / "setfit_model")
 
+        from pathlib import Path
+        scaler_path = str(Path(vectorizer_path).parent / "domain_scaler.joblib")
+
         self.vectorizer_path = vectorizer_path
         self.xgb_path = xgb_path
         self.setfit_dir = setfit_dir
@@ -113,6 +236,7 @@ class BarredPreFilter:
         self.setfit_threshold = setfit_threshold
 
         self.vectorizer: Any = self._load_joblib(vectorizer_path)
+        self.domain_scaler: Any = self._load_joblib(scaler_path)
         self.xgb: Any = self._load_joblib(xgb_path)
         self.setfit: Any = self._load_setfit(setfit_dir)
 
@@ -183,17 +307,23 @@ class BarredPreFilter:
 
         return None
 
-    def predict(self, predicate: str, input_block: Optional[str] = None) -> PreFilterDecision:
-        """Run 3-Stage Cascade evaluation on candidate seed."""
+    def predict(
+        self,
+        predicate: str,
+        input_block: Optional[str] = None,
+        attempt_number: Optional[int] = None,
+    ) -> PreFilterDecision:
+        """Run 3-Stage Cascade evaluation on candidate seed / retry code."""
         input_code = input_block if input_block is not None else ""
         attributes = {
             "predicate_len": len(predicate) if predicate else 0,
             "input_block_len": len(input_code),
+            "attempt_number": attempt_number or 1,
         }
 
         with trace_span("pre_filter_evaluation", stage="pre_filter", attributes=attributes) as span:
             start_time = perf_counter()
-            decision = self._run_cascade(predicate, input_code, start_time)
+            decision = self._run_cascade(predicate, input_code, start_time, attempt_number=attempt_number)
 
             span.attributes["pre_filter.accept"] = decision.accept
             span.attributes["pre_filter.probability"] = decision.probability
@@ -203,19 +333,25 @@ class BarredPreFilter:
             return decision
 
     def _get_combined_text(self, predicate: str, input_block: str) -> str:
-        if predicate.startswith("Predicate: ") and " | Code: " in predicate:
-            parts = predicate.split(" | Code: ", 1)
+        if predicate.startswith(PREDICATE_PREFIX) and CODE_DELIMITER in predicate:
+            parts = predicate.split(CODE_DELIMITER, 1)
             pred_part = parts[0]
             code_part = parts[1][:1000] if len(parts) > 1 else ""
-            return f"{pred_part} | Code: {code_part}"
+            return f"{pred_part}{CODE_DELIMITER}{code_part}"
         snippet = input_block[:1000] if input_block else ""
-        return f"Predicate: {predicate} | Code: {snippet}"
+        return f"{PREDICATE_PREFIX}{predicate}{CODE_DELIMITER}{snippet}"
 
     def _eval_stage_b(self, combined_text: str) -> Optional[float]:
         if self.vectorizer is None or self.xgb is None:
             return None
         try:
-            features = self.vectorizer.transform([combined_text])
+            tfidf_feat = self.vectorizer.transform([combined_text])
+            if self.domain_scaler is not None:
+                domain_feat = extract_domain_features_batch([combined_text])
+                scaled_domain_feat = self.domain_scaler.transform(domain_feat)
+                features = _combine_features(tfidf_feat, scaled_domain_feat)
+            else:
+                features = tfidf_feat
             probs = self.xgb.predict_proba(features)
             return float(probs[0][1])
         except Exception as e:
@@ -232,7 +368,13 @@ class BarredPreFilter:
             logger.warning("Stage C prediction failed: %s", e)
             return None
 
-    def _run_cascade(self, predicate: str, input_block: str, start_time: float) -> PreFilterDecision:
+    def _run_cascade(
+        self,
+        predicate: str,
+        input_block: str,
+        start_time: float,
+        attempt_number: Optional[int] = None,
+    ) -> PreFilterDecision:
         # Stage A: Heuristics (<0.1ms)
         rule_prob = self.heuristic_score(predicate, input_block)
         if rule_prob is not None:
@@ -241,6 +383,17 @@ class BarredPreFilter:
                 accept=rule_prob >= 0.90,
                 probability=rule_prob,
                 stage="heuristic",
+                elapsed_ms=elapsed,
+            )
+
+        # Option C: ML Stage B (XGBoost) & Stage C (SetFit) evaluate candidate code on retry attempts.
+        # Initial seed prompts (attempt_number == 1) pass Stage B/C to allow initial LLM code synthesis.
+        if attempt_number == 1:
+            elapsed = round((perf_counter() - start_time) * 1000.0, 3)
+            return PreFilterDecision(
+                accept=True,
+                probability=1.0,
+                stage="initial_seed_pass",
                 elapsed_ms=elapsed,
             )
 
