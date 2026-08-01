@@ -93,10 +93,11 @@ async def test_process_seed_pre_filter_rejection(tmp_path: Path):
 
     await _process_seed(sem, 0, seed, ctx)
 
-    # Verify pre-filter was called with correct predicate and input_block
+    # Verify pre-filter was called with correct predicate, input_block, and attempt_number
     mock_pre_filter.predict.assert_called_once_with(
         "buffer overflow in memcpy",
-        "void vuln() { memcpy(a, b, c); }",
+        input_block="void vuln() { memcpy(a, b, c); }",
+        attempt_number=1,
     )
 
     # Verify manifest was updated to skipped_pre_filter

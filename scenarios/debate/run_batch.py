@@ -3,11 +3,16 @@ import asyncio
 import sys
 import os
 import argparse
+from pathlib import Path
+
+# Ensure project root is in sys.path before importing scenarios packages
+project_root = str(Path(__file__).resolve().parent.parent.parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+if os.getcwd() not in sys.path:
+    sys.path.insert(0, os.getcwd())
 
 import scenarios.debate._thread_limits  # noqa: F401 (Enforce OpenMP thread limits on import)
-
-# Add src and scenarios/debate to PYTHONPATH
-sys.path.append(os.getcwd())
 sys.path.append(os.path.join(os.getcwd(), "src"))
 
 from pathlib import Path
@@ -183,8 +188,13 @@ async def _process_seed(
             return
 
         if ctx.pre_filter is not None:
-            input_block = seed.get("input_block") or seed.get("topic") or ""
-            decision = ctx.pre_filter.predict(seed.get("predicate", ""), input_block)
+            attempt_number = seed.get("attempt_number") or 1
+            input_block = seed.get("input_block") or ""
+            decision = ctx.pre_filter.predict(
+                seed.get("predicate", ""),
+                input_block=input_block,
+                attempt_number=attempt_number,
+            )
             if not decision.accept:
                 await _handle_pre_filter_rejection(i, seed, item_seed, decision, ctx, write_manifest)
                 return

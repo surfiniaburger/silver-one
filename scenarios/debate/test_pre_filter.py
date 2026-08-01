@@ -1,6 +1,16 @@
 from unittest.mock import MagicMock
 from time import perf_counter
 import logging
+import sys
+import os
+from pathlib import Path
+
+# Ensure project root is in sys.path before importing scenarios packages
+project_root = str(Path(__file__).resolve().parent.parent.parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+if os.getcwd() not in sys.path:
+    sys.path.insert(0, os.getcwd())
 
 from scenarios.debate.pre_filter import BarredPreFilter, PreFilterDecision
 
@@ -84,6 +94,7 @@ def test_stage_b_xgboost_accept_and_reject_thresholds():
     )
     pre_filter.vectorizer = MagicMock()
     pre_filter.vectorizer.transform.return_value = "mock_features"
+    pre_filter.domain_scaler = None
 
     # High probability -> Accept via xgboost
     mock_xgb_high = MagicMock()
@@ -114,6 +125,7 @@ def test_stage_c_setfit_fallback_on_ambiguous_xgboost():
     )
     pre_filter.vectorizer = MagicMock()
     pre_filter.vectorizer.transform.return_value = "mock_features"
+    pre_filter.domain_scaler = None
 
     # Stage B returns ambiguous 0.50 probability
     mock_xgb = MagicMock()
@@ -148,3 +160,30 @@ def test_performance_latency_budget():
     assert len(decisions) == 100
     # Average wall-clock latency per prediction including trace_span entry/exit must be <10ms
     assert avg_external_latency_ms < 10.0
+
+
+def test_option_c_attempt_scoping_initial_seed_vs_retry():
+    pre_filter = BarredPreFilter(
+        vectorizer_path="artifacts/models/non_existent.joblib",
+        xgb_path="artifacts/models/non_existent.joblib",
+        setfit_dir="artifacts/models/non_existent",
+    )
+    mock_vec = MagicMock()
+    mock_vec.transform.return_value = "mock_feats"
+    pre_filter.vectorizer = mock_vec
+    pre_filter.domain_scaler = None
+
+    mock_xgb = MagicMock()
+    mock_xgb.predict_proba.return_value = [[0.98, 0.02]]  # Extremely low probability <= 0.05
+    pre_filter.xgb = mock_xgb
+
+    # Attempt 1 (Initial seed prompt without candidate code) -> passes Stage B/C ML rejection with initial_seed_pass stage
+    d_initial = pre_filter.predict("An arbitrary length calculation error in header parser", input_block="", attempt_number=1)
+    assert d_initial.accept is True
+    assert d_initial.stage == "initial_seed_pass"
+
+    # Attempt 2 (Retry attempt with generated candidate code) -> evaluates Stage B XGBoost and rejects low prob
+    d_retry = pre_filter.predict("An arbitrary length calculation error in header parser", input_block="void test() { char buf[10]; }", attempt_number=2)
+    assert d_retry.accept is False
+    assert d_retry.stage == "xgboost"
+    assert d_retry.probability == 0.02
