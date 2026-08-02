@@ -141,10 +141,10 @@ def test_seeds_sha256_in_manifest(tmp_path: Path):
     from scenarios.debate.run_batch import _compute_seeds_sha256, _load_seeds_with_hash
 
     seeds_file = tmp_path / "test_seeds.jsonl"
-    seed_content = '{"predicate": "buffer overflow check", "topic": "test code"}\n'
-    seeds_file.write_text(seed_content, encoding="utf-8")
+    seed_bytes = b'{"predicate": "buffer overflow check", "topic": "test code"}\n'
+    seeds_file.write_bytes(seed_bytes)
 
-    expected_sha256 = hashlib.sha256(seed_content.encode("utf-8")).hexdigest()
+    expected_sha256 = hashlib.sha256(seed_bytes).hexdigest()
 
     # Call production helper and verify single-read digest & seeds
     digest, seeds = _load_seeds_with_hash(str(seeds_file))
