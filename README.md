@@ -427,7 +427,7 @@ See `AGENT.md` for repository-specific coding and review instructions.
 
  - **Pioneer Agent: Continual Improvement of Small Language Models in Production** — Dhruv Atreja, Julia White, Nikhil Nayak, Kelton Zhang, Henrijs Princis, George Hurn-Maloney, Ash Lewis, Urchade Zaratiana (Fastino Labs), arXiv:2604.09791, Apr 10, 2026. Role: engineering systems paper that inspired telemetry-driven adaptation loops used in our evaluation.
 
- - **GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning** — Lakshya Agrawal*, Shachar Don-Yehiya*, Sumanth Hegde*, Vikas Yadav*, Aniruddha Nrusimha, Aaron Ding, Jesse Zhang, Ion Stoica, Joseph E. Gonzalez (UC Berkeley & Stanford), ICLR 2026, OpenReview: RQm2KQTM5r. Role: reflective execution-trace prompt adaptation paradigm that replaces scalar-reward RL and naive retries with full natural language failure diagnosis and Pareto frontier prompt selection. (*equal contribution)
+ - **GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning** — Lakshya A. Agrawal*, Shangyin Tan*, Dilara Soylu*, Noah Ziems*, et al., ICLR 2026 / arXiv:2507.19457. Role: reflective execution-trace prompt adaptation paradigm that replaces scalar-reward RL and naive retries with full natural language failure diagnosis and Pareto frontier prompt selection. (*equal contribution)
 
 ## License
 

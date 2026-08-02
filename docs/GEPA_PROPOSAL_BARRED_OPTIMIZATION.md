@@ -1,7 +1,7 @@
 # Proposal: Integrating GEPA (Genetic-Pareto Prompt Adaptation) into BARRED Multi-Agent Swarm
 
 ## Executive Summary
-This document proposes adopting **GEPA (Genetic-Pareto Prompt Adaptation)**—based on the research paper *"GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning"* by Agrawal et al. (UC Berkeley & Stanford, ICLR 2026, [OpenReview: RQm2KQTM5r](https://openreview.net/forum?id=RQm2KQTM5r)) as highlighted by Avi Chawla (Daily Dose of Data Science)—to optimize prompt strategies and candidate refinement loops in the BARRED Multi-Agent Vulnerability Dataset Generation Swarm. GEPA replaces scalar-reward RL (like GRPO) and naive single-turn retries by utilizing **full natural language execution traces** (debate arguments, judge rationales, verifier failure audits) to dynamically mutate system prompts across a Pareto frontier.
+This document proposes adopting **GEPA (Genetic-Pareto Prompt Adaptation)**—based on the research paper *"GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning"* by Lakshya A. Agrawal, Shangyin Tan, Dilara Soylu, Noah Ziems, et al. (ICLR 2026 / [arXiv:2507.19457](https://arxiv.org/abs/2507.19457)) as highlighted by Avi Chawla (Daily Dose of Data Science)—to optimize prompt strategies and candidate refinement loops in the BARRED Multi-Agent Vulnerability Dataset Generation Swarm. GEPA replaces scalar-reward RL (like GRPO) and naive single-turn retries by utilizing **full natural language execution traces** (debate arguments, judge rationales, verifier failure audits) to dynamically mutate system prompts across a Pareto frontier.
 
 ---
 
