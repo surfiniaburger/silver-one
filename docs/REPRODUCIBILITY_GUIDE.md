@@ -53,16 +53,17 @@ Before executing a benchmark run, verify seed manifest integrity:
 ```bash
 shasum -a 256 scenarios/debate/manifests/cve_seeds_v1_pilot10.jsonl
 shasum -a 256 scenarios/debate/manifests/cve_seeds_v1_fresh10.jsonl
+shasum -a 256 scenarios/debate/manifests/cve_seeds_v1_full50.jsonl
 ```
 
-The SHA-256 digest of the exact bytes of the seed file is automatically computed and recorded in `artifacts/runs/<run-id>/batch_manifest.json` under the `seeds_sha256` key alongside `seeds_path`:
+The SHA-256 digest of the exact bytes of the seed file is automatically computed in a single atomic file read and recorded in `artifacts/runs/<run-id>/batch_manifest.json` under the `seeds_sha256` key alongside `seeds_path`:
 
 ```json
 {
   "schema_version": 1,
   "run_id": "pilot-v1-seed42",
   "seeds_path": "scenarios/debate/manifests/cve_seeds_v1_pilot10.jsonl",
-  "seeds_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  "seeds_sha256": "<COMPUTED_SEEDS_SHA256_HEX_DIGEST>"
 }
 ```
 

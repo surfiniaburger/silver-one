@@ -136,8 +136,9 @@ def test_combined_text_truncates_oversized_preformatted_code():
 
 
 def test_seeds_sha256_in_manifest(tmp_path: Path):
-    """Verify seeds_sha256 digest is correctly computed and saved in manifest."""
+    """Verify seeds_sha256 digest is correctly computed by production helpers."""
     import hashlib
+    from scenarios.debate.run_batch import _compute_seeds_sha256, _load_seeds_with_hash
 
     seeds_file = tmp_path / "test_seeds.jsonl"
     seed_content = '{"predicate": "buffer overflow check", "topic": "test code"}\n'
@@ -145,8 +146,11 @@ def test_seeds_sha256_in_manifest(tmp_path: Path):
 
     expected_sha256 = hashlib.sha256(seed_content.encode("utf-8")).hexdigest()
 
-    # Read seeds file and check sha256 computation logic matches run_batch.py
-    with open(seeds_file, "rb") as sf:
-        actual_sha256 = hashlib.sha256(sf.read()).hexdigest()
+    # Call production helper and verify single-read digest & seeds
+    digest, seeds = _load_seeds_with_hash(str(seeds_file))
+    assert digest == expected_sha256
+    assert len(seeds) == 1
+    assert seeds[0]["predicate"] == "buffer overflow check"
 
-    assert actual_sha256 == expected_sha256
+    # Verify backward-compatible helper
+    assert _compute_seeds_sha256(str(seeds_file)) == expected_sha256

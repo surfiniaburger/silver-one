@@ -38,22 +38,36 @@ def _load_processed_predicates(output_path: str) -> set:
     return processed
 
 
-def _load_seeds(seeds_path: str) -> list:
+def _load_seeds_with_hash(seeds_path: str) -> tuple[str, list]:
+    """Read seed file bytes once, compute SHA-256 digest, and parse JSONL items."""
+    with open(seeds_path, "rb") as f:
+        raw_bytes = f.read()
+
+    digest = hashlib.sha256(raw_bytes).hexdigest()
+    text = raw_bytes.decode("utf-8")
+
     seeds = []
-    with open(seeds_path, "r", encoding="utf-8") as f:
-        for lineno, line in enumerate(f, 1):
-            if not line.strip():
-                continue
-            try:
-                seeds.append(json.loads(line))
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"Invalid JSONL in {seeds_path} at line {lineno}: {exc}") from exc
+    for lineno, line in enumerate(text.splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            seeds.append(json.loads(line))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid JSONL in {seeds_path} at line {lineno}: {exc}") from exc
+
+    return digest, seeds
+
+
+def _load_seeds(seeds_path: str) -> list:
+    """Backward-compatible wrapper returning seeds list."""
+    _, seeds = _load_seeds_with_hash(seeds_path)
     return seeds
 
 
 def _compute_seeds_sha256(seeds_path: str) -> str:
-    with open(seeds_path, "rb") as sf:
-        return hashlib.sha256(sf.read()).hexdigest()
+    """Backward-compatible wrapper returning seeds SHA-256 digest."""
+    digest, _ = _load_seeds_with_hash(seeds_path)
+    return digest
 
 
 def _parse_args(cmd_args: list[str] | None = None) -> argparse.Namespace:
@@ -236,16 +250,13 @@ async def run_batch():
         print(f"Error: {args.seeds} not found.")
         return
 
-    # Load existing results to support resume
+    # Load existing results and seeds (single-read for seeds and digest calculation)
     processed_predicates = await asyncio.to_thread(_load_processed_predicates, args.output)
-    seeds = await asyncio.to_thread(_load_seeds, args.seeds)
+    seeds_sha256, seeds = await asyncio.to_thread(_load_seeds_with_hash, args.seeds)
 
     pre_filter = BarredPreFilter(model_dir=Path(args.model_dir)) if args.pre_filter else None
     if pre_filter:
         print(f"BARRED 3-Stage Pre-Filter enabled (models loaded from '{args.model_dir}').")
-
-    # Compute SHA-256 digest of exact seed file bytes asynchronously
-    seeds_sha256 = await asyncio.to_thread(_compute_seeds_sha256, args.seeds)
 
     manifest_items = [
         {
