@@ -78,7 +78,7 @@ def test_default_pass_fallback_when_models_missing(caplog):
         setfit_dir="artifacts/models/non_existent_setfit",
     )
     with caplog.at_level(logging.WARNING):
-        decision = pre_filter.predict("An ambiguous test predicate for processing", input_block="def process_data(data): return data")
+        decision = pre_filter.predict("An ambiguous test predicate for processing", input_block="def process_data(data): return data", attempt_number=2)
 
     assert decision.stage == "default_pass"
     assert decision.accept is True
@@ -101,7 +101,7 @@ def test_stage_b_xgboost_accept_and_reject_thresholds():
     mock_xgb_high.predict_proba.return_value = [[0.002, 0.998]]
     pre_filter.xgb = mock_xgb_high
 
-    decision_accept = pre_filter.predict("An ambiguous test predicate for processing", input_block="def process_data(data): return data")
+    decision_accept = pre_filter.predict("An ambiguous test predicate for processing", input_block="def process_data(data): return data", attempt_number=2)
     assert decision_accept.stage == "xgboost"
     assert decision_accept.accept is True
     assert decision_accept.probability == 0.998
@@ -111,7 +111,7 @@ def test_stage_b_xgboost_accept_and_reject_thresholds():
     mock_xgb_low.predict_proba.return_value = [[0.98, 0.02]]
     pre_filter.xgb = mock_xgb_low
 
-    decision_reject = pre_filter.predict("An ambiguous test predicate for processing", input_block="def process_data(data): return data")
+    decision_reject = pre_filter.predict("An ambiguous test predicate for processing", input_block="def process_data(data): return data", attempt_number=2)
     assert decision_reject.stage == "xgboost"
     assert decision_reject.accept is False
     assert decision_reject.probability == 0.02
@@ -137,7 +137,7 @@ def test_stage_c_setfit_fallback_on_ambiguous_xgboost():
     mock_setfit.predict_proba.return_value = [[0.20, 0.80]]
     pre_filter.setfit = mock_setfit
 
-    decision = pre_filter.predict("An ambiguous test predicate for processing", input_block="def process_data(data): return data")
+    decision = pre_filter.predict("An ambiguous test predicate for processing", input_block="def process_data(data): return data", attempt_number=2)
     assert decision.stage == "setfit"
     assert decision.accept is True
     assert decision.probability == 0.80
@@ -153,7 +153,7 @@ def test_performance_latency_budget():
     sample_code = "def benchmark_fn(x, y):\n    return x + y"
 
     start_wall = perf_counter()
-    decisions = [pre_filter.predict(sample_predicate, sample_code) for _ in range(100)]
+    decisions = [pre_filter.predict(sample_predicate, sample_code, attempt_number=2) for _ in range(100)]
     total_elapsed_ms = (perf_counter() - start_wall) * 1000.0
     avg_external_latency_ms = total_elapsed_ms / len(decisions)
 

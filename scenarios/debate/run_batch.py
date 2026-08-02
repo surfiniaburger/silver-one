@@ -2,6 +2,7 @@ import json
 import asyncio
 import sys
 import os
+import hashlib
 import argparse
 from pathlib import Path
 
@@ -37,17 +38,36 @@ def _load_processed_predicates(output_path: str) -> set:
     return processed
 
 
-def _load_seeds(seeds_path: str) -> list:
+def _load_seeds_with_hash(seeds_path: str) -> tuple[str, list]:
+    """Read seed file bytes once, compute SHA-256 digest, and parse JSONL items."""
+    with open(seeds_path, "rb") as f:
+        raw_bytes = f.read()
+
+    digest = hashlib.sha256(raw_bytes).hexdigest()
+    text = raw_bytes.decode("utf-8")
+
     seeds = []
-    with open(seeds_path, "r", encoding="utf-8") as f:
-        for lineno, line in enumerate(f, 1):
-            if not line.strip():
-                continue
-            try:
-                seeds.append(json.loads(line))
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"Invalid JSONL in {seeds_path} at line {lineno}: {exc}") from exc
+    for lineno, line in enumerate(text.splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            seeds.append(json.loads(line))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid JSONL in {seeds_path} at line {lineno}: {exc}") from exc
+
+    return digest, seeds
+
+
+def _load_seeds(seeds_path: str) -> list:
+    """Backward-compatible wrapper returning seeds list."""
+    _, seeds = _load_seeds_with_hash(seeds_path)
     return seeds
+
+
+def _compute_seeds_sha256(seeds_path: str) -> str:
+    """Backward-compatible wrapper returning seeds SHA-256 digest."""
+    digest, _ = _load_seeds_with_hash(seeds_path)
+    return digest
 
 
 def _parse_args(cmd_args: list[str] | None = None) -> argparse.Namespace:
@@ -230,9 +250,9 @@ async def run_batch():
         print(f"Error: {args.seeds} not found.")
         return
 
-    # Load existing results to support resume
+    # Load existing results and seeds (single-read for seeds and digest calculation)
     processed_predicates = await asyncio.to_thread(_load_processed_predicates, args.output)
-    seeds = await asyncio.to_thread(_load_seeds, args.seeds)
+    seeds_sha256, seeds = await asyncio.to_thread(_load_seeds_with_hash, args.seeds)
 
     pre_filter = BarredPreFilter(model_dir=Path(args.model_dir)) if args.pre_filter else None
     if pre_filter:
@@ -260,6 +280,7 @@ async def run_batch():
         "started_at": batch_started_at,
         "clock_now": batch_started_at,
         "seeds_path": args.seeds,
+        "seeds_sha256": seeds_sha256,
         "output_path": args.output,
         "attempts_path": args.attempts_out or f"artifacts/attempts/{args.run_id}.jsonl",
         "cassette_path": args.cassette_path or f"artifacts/cassettes/{args.run_id}.json",
@@ -299,6 +320,13 @@ async def run_batch():
             for i, s in enumerate(seeds)
         )
     )
+
+    failed_items = [item for item in manifest["items"] if item.get("status") == "error"]
+    if failed_items:
+        print(f"\n[ERROR] {len(failed_items)} item(s) failed during batch execution.")
+        if args.mode == "replay":
+            raise RuntimeError(f"Replay mode failed for {len(failed_items)} seed(s). Batch execution aborted.")
+        sys.exit(1)
 
 if __name__ == "__main__":
     asyncio.run(run_batch())

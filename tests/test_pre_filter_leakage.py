@@ -57,7 +57,7 @@ def test_vectorizer_vocabulary_isolation(tmp_path: Path):
     val_texts = ["integer overflow in malloc"]
     test_texts = ["use after free in close"]
 
-    vectorizer, scaler, _, _, _ = _train_stage_b_vectorizer(train_texts, val_texts, test_texts, tmp_path)
+    vectorizer, _scaler, _, _, _ = _train_stage_b_vectorizer(train_texts, val_texts, test_texts, tmp_path)
 
     # Vocabulary keys should come strictly from train_texts
     train_ngrams = set()

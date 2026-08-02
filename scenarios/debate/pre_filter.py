@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from time import perf_counter
+from typing import Any, Optional
 import sys
 import os
 import re
@@ -88,7 +89,7 @@ def extract_domain_features(text: str) -> np.ndarray:
     line_count = float(len(lines))
     char_count = float(len(code))
     avg_line_len = float(char_count / max(line_count, 1.0))
-    max_indent = float(max([len(l) - len(l.lstrip()) for l in lines] or [0]) / 4.0)
+    max_indent = float(max([len(line) - len(line.lstrip()) for line in lines] or [0]) / 4.0)
 
     control_counts = [float(code_lower.split().count(kw)) for kw in CONTROL_KEYWORDS]
 
@@ -122,7 +123,7 @@ def extract_domain_features(text: str) -> np.ndarray:
 def extract_domain_features_batch(texts: list[str]) -> np.ndarray:
     """Extract domain features for a batch of text documents."""
     if not texts:
-        return np.zeros((0, 56), dtype=np.float32)
+        return np.zeros((0, 60), dtype=np.float32)
     rows = [extract_domain_features(t) for t in texts]
     return np.vstack(rows)
 
@@ -315,15 +316,16 @@ class BarredPreFilter:
     ) -> PreFilterDecision:
         """Run 3-Stage Cascade evaluation on candidate seed / retry code."""
         input_code = input_block if input_block is not None else ""
+        normalized_attempt = attempt_number or 1
         attributes = {
             "predicate_len": len(predicate) if predicate else 0,
             "input_block_len": len(input_code),
-            "attempt_number": attempt_number or 1,
+            "attempt_number": normalized_attempt,
         }
 
         with trace_span("pre_filter_evaluation", stage="pre_filter", attributes=attributes) as span:
             start_time = perf_counter()
-            decision = self._run_cascade(predicate, input_code, start_time, attempt_number=attempt_number)
+            decision = self._run_cascade(predicate, input_code, start_time, attempt_number=normalized_attempt)
 
             span.attributes["pre_filter.accept"] = decision.accept
             span.attributes["pre_filter.probability"] = decision.probability

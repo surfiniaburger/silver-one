@@ -133,3 +133,24 @@ def test_combined_text_truncates_oversized_preformatted_code():
     assert res.startswith("Predicate: memory corruption check | Code: ")
     code_part = res.split(" | Code: ", 1)[1]
     assert len(code_part) == 1000
+
+
+def test_seeds_sha256_in_manifest(tmp_path: Path):
+    """Verify seeds_sha256 digest is correctly computed by production helpers."""
+    import hashlib
+    from scenarios.debate.run_batch import _compute_seeds_sha256, _load_seeds_with_hash
+
+    seeds_file = tmp_path / "test_seeds.jsonl"
+    seed_bytes = b'{"predicate": "buffer overflow check", "topic": "test code"}\n'
+    seeds_file.write_bytes(seed_bytes)
+
+    expected_sha256 = hashlib.sha256(seed_bytes).hexdigest()
+
+    # Call production helper and verify single-read digest & seeds
+    digest, seeds = _load_seeds_with_hash(str(seeds_file))
+    assert digest == expected_sha256
+    assert len(seeds) == 1
+    assert seeds[0]["predicate"] == "buffer overflow check"
+
+    # Verify backward-compatible helper
+    assert _compute_seeds_sha256(str(seeds_file)) == expected_sha256
