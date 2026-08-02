@@ -2,7 +2,7 @@
 
 > "Changing world values are inputs. Inputs are recorded. Recorded inputs are replayable. Replayable workflows are evolvable."
 
-This document provides a step-by-step guide for reproducing the **BARRED Multi-Agent Vulnerability Dataset Swarm** results, version-controlling machine learning models (`artifacts/models`), executing the 2x2 Evaluation Matrix, and maintaining the active learning continual retraining flywheel.
+This document provides a step-by-step guide for reproducing the **BARRED Multi-Agent Vulnerability Dataset Swarm** results, version-controlling machine learning models (`artifacts/models`), executing the 2x2 Evaluation Matrix, and performing rigorous statistical hypothesis testing according to NeurIPS / ICLR empirical standards.
 
 ---
 
@@ -10,7 +10,7 @@ This document provides a step-by-step guide for reproducing the **BARRED Multi-A
 
 Following MLOps and Data Version Control (DVC) best practices (Chawla, 2023), reproducing synthetic agent swarm datasets requires versioning three distinct pillars:
 
-```
+```text
 ┌─────────────────────────┐  ┌─────────────────────────┐  ┌─────────────────────────┐
 │     1. CODE VERSION     │  │   2. RUN CONFIGURATION  │  │   3. DATA & MODEL STATE │
 │   (Git Branch & PRs)    │  │   (Seed, Clock, Profile)│  │   (DVC/Hashes/Cassettes)│
@@ -44,6 +44,7 @@ Following MLOps and Data Version Control (DVC) best practices (Chawla, 2023), re
 Seed datasets reside under version-controlled manifest paths:
 
 - `scenarios/debate/manifests/cve_seeds_v1_pilot10.jsonl` (Canonical 10-seed pilot split)
+- `scenarios/debate/manifests/cve_seeds_v1_fresh10.jsonl` (Canonical 10-seed fresh out-of-distribution split)
 - `scenarios/debate/manifests/cve_seeds_v1_full50.jsonl` (Canonical 50-seed benchmark split)
 
 ### Verifying Seed File Hashes
@@ -51,9 +52,19 @@ Before executing a benchmark run, verify seed manifest integrity:
 
 ```bash
 shasum -a 256 scenarios/debate/manifests/cve_seeds_v1_pilot10.jsonl
+shasum -a 256 scenarios/debate/manifests/cve_seeds_v1_fresh10.jsonl
 ```
 
-The SHA-256 digest is automatically recorded in `artifacts/runs/<run-id>/batch_manifest.json`.
+The SHA-256 digest of the exact bytes of the seed file is automatically computed and recorded in `artifacts/runs/<run-id>/batch_manifest.json` under the `seeds_sha256` key alongside `seeds_path`:
+
+```json
+{
+  "schema_version": 1,
+  "run_id": "pilot-v1-seed42",
+  "seeds_path": "scenarios/debate/manifests/cve_seeds_v1_pilot10.jsonl",
+  "seeds_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}
+```
 
 ---
 
@@ -61,7 +72,7 @@ The SHA-256 digest is automatically recorded in `artifacts/runs/<run-id>/batch_m
 
 To distinguish between **CVE Prompt Data** (the problem instances) and **PRNG Seeds** (LLM sampling controls), all evaluation runs map to the **2x2 Evaluation Matrix**:
 
-```
+```text
                             Fixed CVE Data Seeds            Fresh/New CVE Data Seeds
                        (cve_seeds_v1_pilot10.jsonl)         (cve_seeds_v1_fresh10.jsonl)
                     ┌────────────────────────────────┬────────────────────────────────┐
@@ -73,135 +84,133 @@ Different PRNG Seeds│ 3. Swarm Stability Benchmark   │ 4. Full Out-of-Distri
                     └────────────────────────────────┴────────────────────────────────┘
 ```
 
-- **Cell 1 (Replay)**: Verifies deterministic playback from cached cassettes.
-- **Cell 3 (Stability)**: Uses the exact same 10 CVE data seeds across 3 random seeds to prove that token savings ($32.5\% \rightarrow 41.0\%$) are statistically stable ($41.0\% \pm 1.2\%$) and not a fluke of sampling.
-- **Cell 4 (Generalization)**: Uses 10 fresh, unseen CVE data seeds to prove that Pre-Filter Stage B/C models generalize to new vulnerability classes without overfitting.
+### Execution Procedures for All Four Matrix Cells
+
+#### Cell 1: Cassette Replay Verification (Fixed Data + Fixed PRNG)
+- **Goal**: Validate zero-network deterministic replay from cached cassettes.
+- **Command**:
+  ```bash
+  uv run python scenarios/debate/run_batch.py \
+    --run-id cell1-replay \
+    --seed 42 --mode replay \
+    --clock-now 2026-08-01T04:00:00Z \
+    --seeds scenarios/debate/manifests/cve_seeds_v1_pilot10.jsonl \
+    --output training_corpus_cell1.jsonl \
+    --attempts-out artifacts/attempts/cell1-replay.jsonl
+  ```
+- **Expected Artifacts**: `training_corpus_cell1.jsonl`, `artifacts/attempts/cell1-replay.jsonl`.
+
+#### Cell 2: Single Out-of-Sample Baseline (Fresh Data + Fixed PRNG)
+- **Goal**: Evaluate single-run performance on unseen vulnerability predicates.
+- **Command**:
+  ```bash
+  uv run python scenarios/debate/run_batch.py \
+    --run-id cell2-fresh-base \
+    --seed 42 --mode record \
+    --clock-now 2026-08-01T04:00:00Z \
+    --seeds scenarios/debate/manifests/cve_seeds_v1_fresh10.jsonl \
+    --output training_corpus_cell2.jsonl \
+    --attempts-out artifacts/attempts/cell2-fresh-base.jsonl
+  ```
+- **Expected Artifacts**: `training_corpus_cell2.jsonl`, `artifacts/attempts/cell2-fresh-base.jsonl`.
+
+#### Cell 3: Swarm Stability Benchmark (Fixed Data + Different PRNG Seeds)
+- **Goal**: Measure empirical run-to-run variation across multiple random initializations on the benchmark dataset.
+- **Commands**:
+  ```bash
+  for s in 42 1337 2026; do
+    uv run python scenarios/debate/run_batch.py \
+      --run-id cell3-stability-seed$s \
+      --seed $s --mode record \
+      --clock-now 2026-08-01T04:00:00Z \
+      --seeds scenarios/debate/manifests/cve_seeds_v1_pilot10.jsonl \
+      --output training_corpus_cell3_seed$s.jsonl \
+      --attempts-out artifacts/attempts/cell3-stability-seed$s.jsonl
+  done
+  ```
+- **Expected Artifacts**: `training_corpus_cell3_seed*.jsonl`, `artifacts/attempts/cell3-stability-seed*.jsonl`.
+
+#### Cell 4: Full Out-of-Distribution Generalization Test (Fresh Data + Different PRNG Seeds)
+- **Goal**: Evaluate pre-filter generalization across fresh vulnerability classes under stochastic variation.
+- **Commands**:
+  ```bash
+  for s in 42 1337 2026; do
+    uv run python scenarios/debate/run_batch.py \
+      --run-id cell4-ood-seed$s \
+      --seed $s --mode record \
+      --clock-now 2026-08-01T04:00:00Z \
+      --seeds scenarios/debate/manifests/cve_seeds_v1_fresh10.jsonl \
+      --output training_corpus_cell4_seed$s.jsonl \
+      --attempts-out artifacts/attempts/cell4-ood-seed$s.jsonl
+  done
+  ```
+- **Expected Artifacts**: `training_corpus_cell4_seed*.jsonl`, `artifacts/attempts/cell4-ood-seed*.jsonl`.
 
 ---
 
-## 4. Triplicate Empirical Verification Protocol (3-Run Benchmark)
+## 4. Empirical Stability & Run-to-Run Variation
 
-To execute Cell 3 of the matrix and demonstrate statistical significance across random initializations:
+When evaluating small sample initializations ($N = 3$ runs), reporting **Mean ± Standard Deviation** quantifies **empirical run-to-run variation** (LLM sampling noise).
 
-### Step 1: Run 3 Independent Random Seed Batches
-
-```bash
-# Run 1: Base Seed 42
-uv run python scenarios/debate/run_batch.py \
-  --run-id trip-v1-seed42 \
-  --seed 42 \
-  --mode record \
-  --clock-now 2026-08-01T04:00:00Z \
-  --seeds scenarios/debate/manifests/cve_seeds_v1_pilot10.jsonl \
-  --output training_corpus_trip_42.jsonl \
-  --attempts-out artifacts/attempts/trip-v1-seed42.jsonl
-
-# Run 2: Base Seed 1337
-uv run python scenarios/debate/run_batch.py \
-  --run-id trip-v1-seed1337 \
-  --seed 1337 \
-  --mode record \
-  --clock-now 2026-08-01T04:00:00Z \
-  --seeds scenarios/debate/manifests/cve_seeds_v1_pilot10.jsonl \
-  --output training_corpus_trip_1337.jsonl \
-  --attempts-out artifacts/attempts/trip-v1-seed1337.jsonl
-
-# Run 3: Base Seed 2026
-uv run python scenarios/debate/run_batch.py \
-  --run-id trip-v1-seed2026 \
-  --seed 2026 \
-  --mode record \
-  --clock-now 2026-08-01T04:00:00Z \
-  --seeds scenarios/debate/manifests/cve_seeds_v1_pilot10.jsonl \
-  --output training_corpus_trip_2026.jsonl \
-  --attempts-out artifacts/attempts/trip-v1-seed2026.jsonl
-```
-
-### Step 2: Compute Offline B-Gate Quality Metrics
-
-```bash
-./scripts/run_b_gate.sh training_corpus_trip_42.jsonl artifacts/attempts/trip-v1-seed42.jsonl artifacts/metrics/b_gate-trip-42.json
-./scripts/run_b_gate.sh training_corpus_trip_1337.jsonl artifacts/attempts/trip-v1-seed1337.jsonl artifacts/metrics/b_gate-trip-1337.json
-./scripts/run_b_gate.sh training_corpus_trip_2026.jsonl artifacts/attempts/trip-v1-seed2026.jsonl artifacts/metrics/b_gate-trip-2026.json
-```
-
-### Step 3: Compute Multi-Run Aggregate Telemetry (Mean ± StdDev)
+### Computing Aggregate Telemetry
 
 ```bash
 uv run python scripts/debate_telemetry.py \
-  --aggregate-runs trip-v1-seed42 trip-v1-seed1337 trip-v1-seed2026 \
-  --output-markdown reports/triplicate_verification_report.md
+  --aggregate-runs cell3-stability-seed42 cell3-stability-seed1337 cell3-stability-seed2026 \
+  --output-markdown reports/stability_benchmark_report.md
 ```
+
+This generates a stability report detailing **Mean ± StdDev** for:
+- Token efficiency improvement (%)
+- Accepted corpus rows
+- B-gate pass rate
+- Verifier anchor grounding rate
 
 ---
 
-## 5. Continual Pre-Filter Retraining Flywheel ($v1.0 \rightarrow v2.0 \rightarrow v3.0$)
+## 5. Formal Statistical Significance Standard (NeurIPS / ICLR Guidelines)
 
-As batch runs complete, every execution appends new labeled attempt traces into `artifacts/attempts/*.jsonl`. This forms an **Active Learning Data Flywheel**:
+To establish **true statistical significance** (beyond run-to-run variation), LLM agent swarm benchmarks must comply with NeurIPS / ICLR statistical evaluation guidelines:
 
-```
-  ┌────────────────────────────────────────────────────────────────────────┐
-  │                        Active Learning Flywheel                         │
-  └───────────────────────────────────┬────────────────────────────────────┘
-                                      │
-  1. RUN BATCH WITH MODEL v1.0 ───────┼────────► 2. LOG NEW ATTEMPTS
-  (Filters current run)               │          (artifacts/attempts/*.jsonl)
-                                      │                        │
-  4. EVALUATE v2.0 vs v1.0 ◄──────────┼────────── 3. RETRAIN MODEL v2.0
-  (Measures accuracy gain)            │          (scripts/train_pre_filter.py)
-                                      │
-```
+### A. Two-Sample Welch's t-Test & Non-Parametric Mann-Whitney U Test
+When comparing a candidate pre-filter configuration against an un-adapted baseline across $N \ge 5$ runs per condition:
+- **Welch's Two-Sample t-Test**: Used for continuous token usage metrics where variances between baseline and candidate runs may differ ($s_1^2 \ne s_2^2$).
+- **Mann-Whitney U Test**: Non-parametric rank-sum test applied to non-normal LLM token spend distributions.
 
-### Retraining Protocol
-
-#### 1. Versioned Model Checkpoint Directories
-Model artifacts are versioned in discrete directories:
-- `artifacts/models/v1.0_pre_filter/` (Initial baseline model trained on ~100 attempts)
-- `artifacts/models/v2.0_pre_filter/` (Retrained model after accumulating ~400 attempts)
-- `artifacts/models/v3.0_pre_filter/` (Retrained model after full 50-CVE batch execution)
-
-#### 2. Executing Leak-Proof Model Retraining
-Run `scripts/train_pre_filter.py` over accumulated attempt logs:
-
-```bash
-uv run python scripts/train_pre_filter.py \
-  --attempts-dir artifacts/attempts \
-  --output-dir artifacts/models/v2.0_pre_filter \
-  --train-setfit
-```
-
-`partition_dataset_by_cve` automatically groups all attempt samples by CVE ID, ensuring strict leak-proof holdout evaluation between training and test splits.
-
-#### 3. Comparing Model Performance (A/B Benchmark)
-Compare `holdout_metrics.json` across versioned checkpoints:
-
-```bash
-diff artifacts/models/v1.0_pre_filter/holdout_metrics.json artifacts/models/v2.0_pre_filter/holdout_metrics.json
-```
-
-As the attempt dataset grows, Stage B (XGBoost) and Stage C (SetFit) achieve higher ROC-AUC and F1 scores, driving pre-filter token efficiency gains from **$41\%$ up toward $60-70\%$** on future runs.
+### B. 95% Confidence Intervals & Significance Decision Rule
+- **95% Confidence Interval (CI)**: Reported alongside mean deltas:
+  $$\text{Mean Delta} \pm t_{0.025, \text{df}} \times \text{SE}$$
+- **Decision Rule**: A performance gain is declared **statistically significant** if and only if:
+  1. The two-tailed $p$-value satisfies $p < 0.05$ ($\alpha = 0.05$).
+  2. The 95% Confidence Interval for token reduction strictly excludes zero ($0.0$).
 
 ---
 
-## 6. Zero-Network Cassette Replay Verification
+## 6. Zero-Network Cassette Replay & Fail-Closed Verification
 
 To verify that a recorded run can be 100% reproduced without making network calls or incurring LLM cost:
 
 ```bash
 uv run python scenarios/debate/run_batch.py \
-  --run-id trip-v1-seed42 \
+  --run-id cell1-replay \
   --seed 42 \
   --mode replay \
   --clock-now 2026-08-01T04:00:00Z \
   --seeds scenarios/debate/manifests/cve_seeds_v1_pilot10.jsonl \
   --output training_corpus_replay_42.jsonl \
-  --attempts-out artifacts/attempts/trip-v1-replay-42.jsonl
+  --attempts-out artifacts/attempts/cell1-replay.jsonl
 ```
 
-### Validating Replay Bit-Identity
+### Fail-Closed Replay Behavior
+If any seed in `--mode replay` encounters a cassette cache miss (`OfflineReplayError`), `run_batch.py` **fails closed**: it prints an explicit error and aborts with a non-zero exit code (`sys.exit(1)`), preventing corrupted or incomplete replay runs.
+
+### Validating Replay Artifact Identity
+Compare the recorded corpus, attempt logs, and batch manifest against the replayed run:
 
 ```bash
 diff training_corpus_trip_42.jsonl training_corpus_replay_42.jsonl
+diff artifacts/attempts/trip-v1-seed42.jsonl artifacts/attempts/cell1-replay.jsonl
+diff artifacts/runs/trip-v1-seed42/batch_manifest.json artifacts/runs/cell1-replay/batch_manifest.json
 ```
 
-Zero diff output confirms 100% deterministic reproducibility.
+Zero diff output across corpus, attempts, and manifest confirms 100% deterministic reproducibility.

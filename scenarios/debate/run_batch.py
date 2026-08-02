@@ -2,6 +2,7 @@ import json
 import asyncio
 import sys
 import os
+import hashlib
 import argparse
 from pathlib import Path
 
@@ -48,6 +49,11 @@ def _load_seeds(seeds_path: str) -> list:
             except json.JSONDecodeError as exc:
                 raise ValueError(f"Invalid JSONL in {seeds_path} at line {lineno}: {exc}") from exc
     return seeds
+
+
+def _compute_seeds_sha256(seeds_path: str) -> str:
+    with open(seeds_path, "rb") as sf:
+        return hashlib.sha256(sf.read()).hexdigest()
 
 
 def _parse_args(cmd_args: list[str] | None = None) -> argparse.Namespace:
@@ -238,6 +244,9 @@ async def run_batch():
     if pre_filter:
         print(f"BARRED 3-Stage Pre-Filter enabled (models loaded from '{args.model_dir}').")
 
+    # Compute SHA-256 digest of exact seed file bytes asynchronously
+    seeds_sha256 = await asyncio.to_thread(_compute_seeds_sha256, args.seeds)
+
     manifest_items = [
         {
             "index": i,
@@ -260,6 +269,7 @@ async def run_batch():
         "started_at": batch_started_at,
         "clock_now": batch_started_at,
         "seeds_path": args.seeds,
+        "seeds_sha256": seeds_sha256,
         "output_path": args.output,
         "attempts_path": args.attempts_out or f"artifacts/attempts/{args.run_id}.jsonl",
         "cassette_path": args.cassette_path or f"artifacts/cassettes/{args.run_id}.json",
@@ -299,6 +309,13 @@ async def run_batch():
             for i, s in enumerate(seeds)
         )
     )
+
+    failed_items = [item for item in manifest["items"] if item.get("status") == "error"]
+    if failed_items:
+        print(f"\n[ERROR] {len(failed_items)} item(s) failed during batch execution.")
+        if args.mode == "replay":
+            raise RuntimeError(f"Replay mode failed for {len(failed_items)} seed(s). Batch execution aborted.")
+        sys.exit(1)
 
 if __name__ == "__main__":
     asyncio.run(run_batch())
