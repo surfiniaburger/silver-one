@@ -1,11 +1,11 @@
 """Unit & Integration Tests for Leak-Proof Pre-Filter Training Pipeline.
 
 Verifies:
-1. Strict CVE ID grouped data partitioning (zero cross-split prompt bleeding).
+1. Strict Scenario Grouped data partitioning (zero cross-split prompt bleeding).
 2. Isolated vectorization (vocabulary built strictly from X_train).
 3. Class-balanced null-model sanity check (shuffled label performance <= 0.55).
 4. Zero target-derived feature leakage in text extraction.
-5. Independent holdout benchmark metrics export.
+5. Independent evaluation metrics calculation.
 """
 
 from __future__ import annotations
@@ -17,16 +17,16 @@ import numpy as np
 
 from scripts.train_pre_filter import (
     _parse_attempt_record,
-    partition_dataset_by_cve,
+    partition_dataset_by_scenario_stratified,
     _train_stage_b_vectorizer,
     _run_null_model_sanity_check,
-    _evaluate_holdout_performance,
+    _evaluate_stage_b,
     FallbackClassifier,
 )
 
 
 def test_cve_grouping_isolation():
-    """Verify all attempt records sharing a CVE ID reside strictly in the same split."""
+    """Verify all attempt records sharing a scenario ID reside strictly in the same split."""
     texts = [
         "Predicate: vuln A | Code: code A1",
         "Predicate: vuln A | Code: code A2",
@@ -35,29 +35,24 @@ def test_cve_grouping_isolation():
         "Predicate: vuln D | Code: code D1",
     ]
     labels = [1, 1, 0, 1, 0]
-    cve_ids = ["CVE-2024-0001", "CVE-2024-0001", "CVE-2024-0002", "CVE-2024-0003", "CVE-2024-0004"]
+    scenario_ids = ["HASH-0001", "HASH-0001", "HASH-0002", "HASH-0003", "HASH-0004"]
 
-    splits = partition_dataset_by_cve(texts, labels, cve_ids, train_ratio=0.6, val_ratio=0.2)
-    train_texts, _ = splits["train"]
-    val_texts, _ = splits["val"]
-    test_texts, _ = splits["test"]
+    folds = partition_dataset_by_scenario_stratified(texts, labels, scenario_ids, n_splits=3)
+    assert len(folds) == 3
 
-    # CVE-2024-0001 must not appear in both train and test/val
-    train_cve_1 = any("vuln A" in t for t in train_texts)
-    val_cve_1 = any("vuln A" in t for t in val_texts)
-    test_cve_1 = any("vuln A" in t for t in test_texts)
-
-    # Exactly one partition must hold vuln A
-    assert sum([train_cve_1, val_cve_1, test_cve_1]) == 1
+    # Verify HASH-0001 items are never split across train and test in any fold
+    for fold in folds:
+        train_scenarios = set(fold["train_scenario_ids"])
+        test_scenarios = set(fold["test_scenario_ids"])
+        assert train_scenarios.isdisjoint(test_scenarios), "Scenario ID leaked between train and test splits!"
 
 
 def test_vectorizer_vocabulary_isolation(tmp_path: Path):
     """Verify TF-IDF vectorizer vocabulary is fit strictly on training texts."""
     train_texts = ["vulnerable buffer overflow in parse_string"]
-    val_texts = ["integer overflow in malloc"]
-    test_texts = ["use after free in close"]
+    test_texts = ["integer overflow in malloc"]
 
-    vectorizer, _scaler, _, _, _ = _train_stage_b_vectorizer(train_texts, val_texts, test_texts, tmp_path)
+    vectorizer, _scaler, _, _ = _train_stage_b_vectorizer(train_texts, test_texts, output_dir=None)
 
     # Vocabulary keys should come strictly from train_texts
     train_ngrams = set()
@@ -94,7 +89,7 @@ def test_no_target_derived_feature_leakage():
         "winner": "agent_green",
     }
 
-    text, label, cve_id = _parse_attempt_record(raw_record)
+    text, label, scenario_id = _parse_attempt_record(raw_record)
     assert text is not None
     assert label == 1
 
@@ -106,7 +101,7 @@ def test_no_target_derived_feature_leakage():
 
 
 def test_holdout_metrics_export(tmp_path: Path):
-    """Verify _evaluate_holdout_performance creates holdout_metrics.json with required keys."""
+    """Verify _evaluate_stage_b creates evaluation metrics dict with required keys."""
     classifier = FallbackClassifier()
     x_train = np.array([[1.0, 0.0], [0.9, 0.1], [0.0, 1.0], [0.1, 0.9]], dtype=np.float32)
     y_train = np.array([1, 1, 0, 0])
@@ -115,13 +110,6 @@ def test_holdout_metrics_export(tmp_path: Path):
     x_test = np.array([[0.95, 0.05], [0.05, 0.95]], dtype=np.float32)
     y_test = np.array([1, 0])
 
-    metrics = _evaluate_holdout_performance(classifier, x_test, y_test, tmp_path)
+    metrics = _evaluate_stage_b(classifier, x_test, y_test)
     assert metrics["accuracy"] == 1.0
     assert metrics["balanced_accuracy"] == 1.0
-
-    metrics_file = tmp_path / "holdout_metrics.json"
-    assert metrics_file.exists()
-    with metrics_file.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-    assert data["test_samples"] == 2
-    assert data["accuracy"] == 1.0

@@ -32,5 +32,6 @@ scenarios/debate/cve_seeds_200.jsonl
 ddods/
 jcrume/
 
+checkpoints/
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
