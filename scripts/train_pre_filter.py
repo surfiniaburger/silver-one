@@ -922,6 +922,60 @@ def _json_default_encoder(obj: Any) -> Any:
     return str(obj)
 
 
+def _train_final_production_models(
+    texts: List[str],
+    labels: List[int],
+    output_dir: Path,
+    train_setfit: bool = False,
+) -> None:
+    """Train and persist final Stage B (and optional Stage C) production models on full dataset."""
+    logger.info("Training final production models on full dataset (%d samples)...", len(texts))
+    _, _, x_full, _ = _train_stage_b_vectorizer(texts, [], output_dir=output_dir)
+    y_full = np.array(labels)
+    _train_stage_b_classifier(x_full, y_full, output_dir=output_dir)
+
+    if train_setfit:
+        _train_stage_c_setfit(texts, labels, output_dir=output_dir, train_setfit=True)
+
+
+def _print_cv_summary_report(
+    n_folds: int,
+    texts: List[str],
+    scenario_ids: List[str],
+    macro_metrics: Dict[str, Any],
+    pooled_metrics: Dict[str, Any],
+) -> None:
+    """Print clean CV metrics summary to console stdout."""
+    b_pooled_cm = pooled_metrics["stage_b_xgboost"]["confusion_matrix"]
+    b_pooled_acc = pooled_metrics["stage_b_xgboost"]["accuracy"]
+    b_pooled_bal_acc = pooled_metrics["stage_b_xgboost"]["balanced_accuracy"]
+
+    print("\n=======================================================")
+    print(f"=== {n_folds}-FOLD STRATIFIED SCENARIO-GROUPED CV RESULTS ===")
+    print("=======================================================")
+    print(f"Total Samples: {len(texts)} | Total Unique Scenarios: {len(set(scenario_ids))}")
+    print("\n--- Stage B (XGBoost) ---")
+    print(f"  Macro Mean Balanced Accuracy: {macro_metrics['stage_b_xgboost']['mean_balanced_accuracy']:.4f} ± {macro_metrics['stage_b_xgboost']['std_balanced_accuracy']:.4f}")
+    print(f"  Macro Mean Accuracy:          {macro_metrics['stage_b_xgboost']['mean_accuracy']:.4f} ± {macro_metrics['stage_b_xgboost']['std_accuracy']:.4f}")
+    print(f"  Pooled Out-of-Fold BalAcc:   {b_pooled_bal_acc:.4f} (Accuracy: {b_pooled_acc:.4f})")
+    print(f"  Pooled Confusion Matrix:      TN={b_pooled_cm['tn']}, FP={b_pooled_cm['fp']}, FN={b_pooled_cm['fn']}, TP={b_pooled_cm['tp']}")
+    print(f"  Pooled Sensitivity (TPR):     {b_pooled_cm['sensitivity']:.4f}")
+    print(f"  Pooled Specificity (TNR):     {b_pooled_cm['specificity']:.4f}")
+    if pooled_metrics["stage_b_xgboost"].get("roc_auc") is not None:
+        print(f"  Pooled ROC-AUC Score:         {pooled_metrics['stage_b_xgboost']['roc_auc']:.4f}")
+    if pooled_metrics["stage_b_xgboost"].get("pr_auc") is not None:
+        print(f"  Pooled PR-AUC Score:          {pooled_metrics['stage_b_xgboost']['pr_auc']:.4f}")
+
+    if "stage_c_setfit" in macro_metrics:
+        print("\n--- Stage C (SetFit) ---")
+        print(f"  Macro Mean Balanced Accuracy: {macro_metrics['stage_c_setfit']['mean_balanced_accuracy']:.4f} ± {macro_metrics['stage_c_setfit']['std_balanced_accuracy']:.4f}")
+        print(f"  Macro Mean Accuracy:          {macro_metrics['stage_c_setfit']['mean_accuracy']:.4f} ± {macro_metrics['stage_c_setfit']['std_accuracy']:.4f}")
+        print(f"  Pooled Out-of-Fold BalAcc:   {pooled_metrics['stage_c_setfit']['balanced_accuracy']:.4f}")
+        print(f"  Pooled Confusion Matrix:      TN={pooled_metrics['stage_c_setfit']['confusion_matrix']['tn']}, FP={pooled_metrics['stage_c_setfit']['confusion_matrix']['fp']}, FN={pooled_metrics['stage_c_setfit']['confusion_matrix']['fn']}, TP={pooled_metrics['stage_c_setfit']['confusion_matrix']['tp']}")
+
+    print("=======================================================\n")
+
+
 def run_kfold_cross_validation(
     texts: List[str],
     labels: List[int],
@@ -966,34 +1020,7 @@ def run_kfold_cross_validation(
         "fold_details": fold_results,
     }
 
-    b_pooled_cm = pooled_metrics["stage_b_xgboost"]["confusion_matrix"]
-    b_pooled_acc = pooled_metrics["stage_b_xgboost"]["accuracy"]
-    b_pooled_bal_acc = pooled_metrics["stage_b_xgboost"]["balanced_accuracy"]
-
-    print("\n=======================================================")
-    print(f"=== {len(folds)}-FOLD STRATIFIED SCENARIO-GROUPED CV RESULTS ===")
-    print("=======================================================")
-    print(f"Total Samples: {len(texts)} | Total Unique Scenarios: {len(set(scenario_ids))}")
-    print("\n--- Stage B (XGBoost) ---")
-    print(f"  Macro Mean Balanced Accuracy: {macro_metrics['stage_b_xgboost']['mean_balanced_accuracy']:.4f} ± {macro_metrics['stage_b_xgboost']['std_balanced_accuracy']:.4f}")
-    print(f"  Macro Mean Accuracy:          {macro_metrics['stage_b_xgboost']['mean_accuracy']:.4f} ± {macro_metrics['stage_b_xgboost']['std_accuracy']:.4f}")
-    print(f"  Pooled Out-of-Fold BalAcc:   {b_pooled_bal_acc:.4f} (Accuracy: {b_pooled_acc:.4f})")
-    print(f"  Pooled Confusion Matrix:      TN={b_pooled_cm['tn']}, FP={b_pooled_cm['fp']}, FN={b_pooled_cm['fn']}, TP={b_pooled_cm['tp']}")
-    print(f"  Pooled Sensitivity (TPR):     {b_pooled_cm['sensitivity']:.4f}")
-    print(f"  Pooled Specificity (TNR):     {b_pooled_cm['specificity']:.4f}")
-    if pooled_metrics["stage_b_xgboost"].get("roc_auc") is not None:
-        print(f"  Pooled ROC-AUC Score:         {pooled_metrics['stage_b_xgboost']['roc_auc']:.4f}")
-    if pooled_metrics["stage_b_xgboost"].get("pr_auc") is not None:
-        print(f"  Pooled PR-AUC Score:          {pooled_metrics['stage_b_xgboost']['pr_auc']:.4f}")
-
-    if "stage_c_setfit" in macro_metrics:
-        print("\n--- Stage C (SetFit) ---")
-        print(f"  Macro Mean Balanced Accuracy: {macro_metrics['stage_c_setfit']['mean_balanced_accuracy']:.4f} ± {macro_metrics['stage_c_setfit']['std_balanced_accuracy']:.4f}")
-        print(f"  Macro Mean Accuracy:          {macro_metrics['stage_c_setfit']['mean_accuracy']:.4f} ± {macro_metrics['stage_c_setfit']['std_accuracy']:.4f}")
-        print(f"  Pooled Out-of-Fold BalAcc:   {pooled_metrics['stage_c_setfit']['balanced_accuracy']:.4f}")
-        print(f"  Pooled Confusion Matrix:      TN={pooled_metrics['stage_c_setfit']['confusion_matrix']['tn']}, FP={pooled_metrics['stage_c_setfit']['confusion_matrix']['fp']}, FN={pooled_metrics['stage_c_setfit']['confusion_matrix']['fn']}, TP={pooled_metrics['stage_c_setfit']['confusion_matrix']['tp']}")
-
-    print("=======================================================\n")
+    _print_cv_summary_report(len(folds), texts, scenario_ids, macro_metrics, pooled_metrics)
 
     # Persist full report
     report_path = output_dir / "cv_holdout_metrics.json"
@@ -1004,13 +1031,7 @@ def run_kfold_cross_validation(
     logger.info("Saved Stratified Scenario-Grouped CV report to '%s'.", safe_report_path)
 
     # Train final production model on full dataset
-    logger.info("Training final production models on full dataset...")
-    _, _, x_full, _ = _train_stage_b_vectorizer(texts, [], output_dir=output_dir)
-    y_full = np.array(labels)
-    _train_stage_b_classifier(x_full, y_full, output_dir=output_dir)
-
-    if train_setfit:
-        _train_stage_c_setfit(texts, labels, output_dir=output_dir, train_setfit=True)
+    _train_final_production_models(texts, labels, output_dir=output_dir, train_setfit=train_setfit)
 
     return full_report
 
@@ -1043,10 +1064,7 @@ def train_pre_filter(
                 run_kfold_cross_validation(texts, labels, scenario_ids, safe_output_dir, n_splits=k_folds, train_setfit=train_setfit)
             else:
                 logger.info("k_folds <= 1 specified. Training single split...")
-                _, _, x_full, _ = _train_stage_b_vectorizer(texts, [], output_dir=safe_output_dir)
-                _train_stage_b_classifier(x_full, np.array(labels), output_dir=safe_output_dir)
-                if train_setfit:
-                    _train_stage_c_setfit(texts, labels, output_dir=safe_output_dir, train_setfit=True)
+                _train_final_production_models(texts, labels, output_dir=safe_output_dir, train_setfit=train_setfit)
 
             return True
     except Exception as e:
