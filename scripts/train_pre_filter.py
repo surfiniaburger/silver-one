@@ -512,6 +512,19 @@ def _write_model_manifest(
                 "size_bytes": len(content),
             }
 
+    setfit_dir = safe_dir / "setfit_model"
+    if setfit_dir.exists() and setfit_dir.is_dir():
+        for file_path in sorted(setfit_dir.rglob("*")):
+            if file_path.is_file() and not file_path.name.startswith(".tmp"):
+                rel_path = str(file_path.relative_to(safe_dir))
+                with file_path.open("rb") as f:
+                    content = f.read()
+                artifacts_info[rel_path] = {
+                    "sha256": hashlib.sha256(content).hexdigest(),
+                    "size_bytes": len(content),
+                }
+
+
     manifest_data = {
         "schema_version": 1,
         "artifacts": artifacts_info,

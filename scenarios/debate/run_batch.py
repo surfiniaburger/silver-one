@@ -144,6 +144,15 @@ class BatchContext:
     pre_filter: BarredPreFilter | None = None
 
 
+import errno
+
+_UNSUPPORTED_FSYNC_ERRNOS = {
+    getattr(errno, name)
+    for name in ("EINVAL", "ENOTSUP", "EBADF", "EOPNOTSUPP")
+    if hasattr(errno, name)
+}
+
+
 def _append_attempt_record(attempts_path: str, record: dict) -> None:
     if not isinstance(record, dict) or not record:
         return
@@ -156,8 +165,11 @@ def _append_attempt_record(attempts_path: str, record: dict) -> None:
         f.flush()
         try:
             os.fsync(f.fileno())
-        except OSError:
-            pass
+        except OSError as exc:
+            if exc.errno not in _UNSUPPORTED_FSYNC_ERRNOS:
+                raise RuntimeError(f"Durable attempt log file sync failed for '{attempts_path}': {exc}") from exc
+
+
 
 
 

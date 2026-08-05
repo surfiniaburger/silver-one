@@ -117,9 +117,9 @@ def test_train_pre_filter_and_artifact_persistence(tmp_path):
     assert 0.0 <= probs[0][1] <= 1.0
 
 
-def test_pre_filter_integration_with_trained_models(tmp_path):
+def _setup_attempts_and_train(tmp_path: Path) -> tuple[Path, Path]:
     attempts_dir = tmp_path / "attempts"
-    attempts_dir.mkdir()
+    attempts_dir.mkdir(exist_ok=True)
 
     log_file = attempts_dir / "sample.jsonl"
     records = [
@@ -134,6 +134,11 @@ def test_pre_filter_integration_with_trained_models(tmp_path):
 
     models_dir = tmp_path / "models"
     train_pre_filter(attempts_dir, models_dir, train_setfit=False)
+    return attempts_dir, models_dir
+
+
+def test_pre_filter_integration_with_trained_models(tmp_path):
+    _, models_dir = _setup_attempts_and_train(tmp_path)
 
     # Initialize BarredPreFilter pointing to trained binaries
     pre_filter = BarredPreFilter(
@@ -173,22 +178,7 @@ def test_extract_domain_features_dimensions():
 
 
 def test_model_manifest_generation_and_validation(tmp_path):
-    attempts_dir = tmp_path / "attempts"
-    attempts_dir.mkdir()
-
-    log_file = attempts_dir / "sample.jsonl"
-    records = [
-        {"decision": "accepted", "predicate": "Vulnerable to heap buffer overflow in parse_json", "input_block": "char *buf = malloc(10);"},
-        {"decision": "accepted", "predicate": "Vulnerable to stack corruption in parse_path", "input_block": "char path[32]; strcpy(path, input);"},
-        {"decision": "rejected", "predicate": "buy miracle followers click here now", "input_block": "print('click link')"},
-        {"decision": "rejected", "predicate": "regular math addition function", "input_block": "int x = 1 + 2;"},
-    ]
-    with log_file.open("w", encoding="utf-8") as f:
-        for rec in records:
-            f.write(json.dumps(rec) + "\n")
-
-    models_dir = tmp_path / "models"
-    train_pre_filter(attempts_dir, models_dir, train_setfit=False)
+    _, models_dir = _setup_attempts_and_train(tmp_path)
 
     manifest_path = models_dir / "model_manifest.json"
     assert manifest_path.exists()
@@ -215,4 +205,5 @@ def test_model_manifest_generation_and_validation(tmp_path):
     filter_tampered = BarredPreFilter(model_dir=models_dir)
     assert filter_tampered.vectorizer is None
     assert filter_tampered.xgb is None
+
 
