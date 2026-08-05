@@ -162,20 +162,20 @@ class FallbackClassifier:
         self.pos_mean: Optional[np.ndarray] = None
         self.neg_mean: Optional[np.ndarray] = None
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> None:
-        if X.shape[0] == 0:
+    def fit(self, x_data: np.ndarray, y: np.ndarray) -> None:
+        if x_data.shape[0] == 0:
             return
         pos_mask = y == 1
         neg_mask = y == 0
 
-        self.pos_mean = np.mean(X[pos_mask], axis=0) if np.any(pos_mask) else np.zeros(X.shape[1])
-        self.neg_mean = np.mean(X[neg_mask], axis=0) if np.any(neg_mask) else np.zeros(X.shape[1])
+        self.pos_mean = np.mean(x_data[pos_mask], axis=0) if np.any(pos_mask) else np.zeros(x_data.shape[1])
+        self.neg_mean = np.mean(x_data[neg_mask], axis=0) if np.any(neg_mask) else np.zeros(x_data.shape[1])
 
-    def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        if X.shape[0] == 0:
+    def predict_proba(self, x_data: np.ndarray) -> np.ndarray:
+        if x_data.shape[0] == 0:
             return np.zeros((0, 2), dtype=np.float32)
         probs = []
-        for row in X:
+        for row in x_data:
             pos_dist = float(np.linalg.norm(row - self.pos_mean)) if self.pos_mean is not None else 1.0
             neg_dist = float(np.linalg.norm(row - self.neg_mean)) if self.neg_mean is not None else 1.0
 
@@ -187,25 +187,26 @@ class FallbackClassifier:
 
         return np.array(probs, dtype=np.float32)
 
-    def predict(self, X: np.ndarray) -> np.ndarray:
-        if X.shape[0] == 0:
+    def predict(self, x_data: np.ndarray) -> np.ndarray:
+        if x_data.shape[0] == 0:
             return np.array([], dtype=np.int32)
-        probs = self.predict_proba(X)
+        probs = self.predict_proba(x_data)
         return (probs[:, 1] >= 0.5).astype(int)
 
 
-def _extract_cve_id(record: dict, predicate: str) -> str:
-    """Resolve CVE identifier or generate deterministic hash fallback."""
+def _extract_scenario_id(record: dict, predicate: str) -> str:
+    """Resolve scenario identifier from record/seed metadata or generate deterministic predicate hash fallback."""
     seed_val = record.get("seed")
     seed_dict = seed_val if isinstance(seed_val, dict) else {}
     cve_id = record.get("cve_id") or seed_dict.get("cve_id")
     if cve_id:
         return str(cve_id)
-
+    # Tier 2: Regex search for literal "CVE-YYYY-XXXX" patterns inside the predicate text
     cve_match = CVE_REGEX.search(predicate)
     if cve_match:
         return cve_match.group(0).upper()
-
+    
+    # Tier 3 (Primary Fallback): Deterministic SHA-256 Hash of the Predicate Text
     return f"HASH-{hashlib.sha256(predicate.encode('utf-8')).hexdigest()[:10]}"
 
 
@@ -220,7 +221,7 @@ def _extract_code_snippet(record: dict, judge_dict: dict) -> str:
 
 
 def _parse_attempt_record(record: dict) -> Tuple[Optional[str], Optional[int], Optional[str]]:
-    """Extract (combined_text, label, cve_id) from a single attempt record dictionary."""
+    """Extract (combined_text, label, scenario_id) from a single attempt record dictionary."""
     if not isinstance(record, dict):
         return None, None, None
 
@@ -235,18 +236,18 @@ def _parse_attempt_record(record: dict) -> Tuple[Optional[str], Optional[int], O
         return None, None, None
 
     label = 1 if decision == "accepted" else 0
-    cve_id = _extract_cve_id(record, predicate)
+    scenario_id = _extract_scenario_id(record, predicate)
     code_snippet = _extract_code_snippet(record, judge_dict)
 
     combined_text = f"{PREDICATE_PREFIX}{predicate}{CODE_DELIMITER}{code_snippet[:1000]}"
-    return combined_text, label, cve_id
+    return combined_text, label, scenario_id
 
 
 def _process_jsonl_file(jsonl_file: Path) -> Tuple[List[str], List[int], List[str]]:
-    """Process a single JSONL file and extract texts, labels, and cve_ids."""
+    """Process a single JSONL file and extract texts, labels, and scenario_ids."""
     texts: List[str] = []
     labels: List[int] = []
-    cve_ids: List[str] = []
+    scenario_ids: List[str] = []
 
     try:
         with jsonl_file.open("r", encoding="utf-8") as f:
@@ -256,25 +257,77 @@ def _process_jsonl_file(jsonl_file: Path) -> Tuple[List[str], List[int], List[st
                     continue
                 try:
                     record = json.loads(line)
-                    text, label, cve_id = _parse_attempt_record(record)
-                    if text is not None and label is not None and cve_id is not None:
+                    text, label, scenario_id = _parse_attempt_record(record)
+                    if text is not None and label is not None and scenario_id is not None:
                         texts.append(text)
                         labels.append(label)
-                        cve_ids.append(cve_id)
+                        scenario_ids.append(scenario_id)
                 except Exception as e:
                     logger.debug("Skipping malformed record at line %d in '%s': %s", line_idx, jsonl_file.name, e)
                     continue
     except Exception as e:
         logger.warning("Failed to process attempt log '%s': %s", jsonl_file.name, e)
 
-    return texts, labels, cve_ids
+    return texts, labels, scenario_ids
 
 
-def extract_dataset_from_attempts(attempts_dir: Path) -> Tuple[List[str], List[int], List[str]]:
-    """Scan all .jsonl files in attempts_dir and extract (X_texts, y_labels, cve_ids)."""
+
+
+
+def collapse_near_duplicate_samples(
+    texts: List[str],
+    labels: List[int],
+    scenario_ids: List[str],
+    similarity_threshold: float = 0.95,
+) -> Tuple[List[str], List[int], List[str]]:
+    """Collapse near-duplicate texts using pairwise TF-IDF cosine similarity >= threshold."""
+    if len(texts) <= 1:
+        return texts, labels, scenario_ids
+
+    try:
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.metrics.pairwise import cosine_similarity
+
+        vec = TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5), min_df=1)
+        tfidf_mat = vec.fit_transform(texts)
+        sim_mat = cosine_similarity(tfidf_mat)
+
+        keep_indices = []
+        visited = set()
+        n = len(texts)
+
+        for i in range(n):
+            if i in visited:
+                continue
+            keep_indices.append(i)
+            visited.add(i)
+            for j in range(i + 1, n):
+                if j not in visited and sim_mat[i, j] >= similarity_threshold:
+                    visited.add(j)
+
+        collapsed_texts = [texts[i] for i in keep_indices]
+        collapsed_labels = [labels[i] for i in keep_indices]
+        collapsed_scenarios = [scenario_ids[i] for i in keep_indices]
+
+        logger.info(
+            "Near-duplicate collapsing (threshold=%.2f): reduced %d -> %d samples (%d removed).",
+            similarity_threshold, len(texts), len(collapsed_texts), len(texts) - len(collapsed_texts)
+        )
+        return collapsed_texts, collapsed_labels, collapsed_scenarios
+    except Exception as err:
+        logger.warning("Near-duplicate collapsing failed (%s). Retaining un-collapsed dataset.", err)
+        return texts, labels, scenario_ids
+
+
+def extract_dataset_from_attempts(
+    attempts_dir: Path,
+    dedup_near_duplicates: bool = False,
+    similarity_threshold: float = 0.95,
+) -> Tuple[List[str], List[int], List[str]]:
+    """Scan all .jsonl files in attempts_dir and extract (X_texts, y_labels, scenario_ids)."""
     texts: List[str] = []
     labels: List[int] = []
-    cve_ids: List[str] = []
+    scenario_ids: List[str] = []
 
     safe_attempts_dir = _validate_safe_path(attempts_dir)
     if not safe_attempts_dir.exists():
@@ -282,88 +335,138 @@ def extract_dataset_from_attempts(attempts_dir: Path) -> Tuple[List[str], List[i
         for text, label, cve in SYNTHETIC_DATA:
             texts.append(text)
             labels.append(label)
-            cve_ids.append(cve)
-        return texts, labels, cve_ids
+            scenario_ids.append(cve)
+        return texts, labels, scenario_ids
 
     jsonl_files = sorted(safe_attempts_dir.glob("*.jsonl"))
     logger.info("Found %d attempt files in '%s'. Extracting records...", len(jsonl_files), safe_attempts_dir)
 
     for jsonl_file in jsonl_files:
-        file_texts, file_labels, file_cves = _process_jsonl_file(jsonl_file)
+        file_texts, file_labels, file_scenarios = _process_jsonl_file(jsonl_file)
         texts.extend(file_texts)
         labels.extend(file_labels)
-        cve_ids.extend(file_cves)
+        scenario_ids.extend(file_scenarios)
 
-    logger.info("Extracted %d valid attempt samples (%d accepted, %d rejected).",
-                len(texts), sum(labels), len(labels) - sum(labels))
+    # Deduplicate exact (text, label) pairs across batch attempt runs
+    seen_hashes = set()
+    dedup_texts: List[str] = []
+    dedup_labels: List[int] = []
+    dedup_scenarios: List[str] = []
+
+    for t, l, s in zip(texts, labels, scenario_ids):
+        item_hash = hashlib.sha256(f"{t}||{l}".encode("utf-8")).hexdigest()
+        if item_hash not in seen_hashes:
+            seen_hashes.add(item_hash)
+            dedup_texts.append(t)
+            dedup_labels.append(l)
+            dedup_scenarios.append(s)
+
+    removed_cnt = len(texts) - len(dedup_texts)
+    if removed_cnt > 0:
+        logger.info("Deduplicated dataset: removed %d exact duplicate attempt records across runs.", removed_cnt)
+
+    texts, labels, scenario_ids = dedup_texts, dedup_labels, dedup_scenarios
+
+    if dedup_near_duplicates:
+        texts, labels, scenario_ids = collapse_near_duplicate_samples(
+            texts, labels, scenario_ids, similarity_threshold=similarity_threshold
+        )
+
+    logger.info("Final extracted dataset: %d unique attempt samples (%d accepted, %d rejected across %d scenarios).",
+                len(texts), sum(labels), len(labels) - sum(labels), len(set(scenario_ids)))
 
     if len(texts) < 4:
         logger.warning("Extracted sample count (%d) is below minimum (4). Appending synthetic samples.", len(texts))
         for text, label, cve in SYNTHETIC_DATA:
             texts.append(text)
             labels.append(label)
-            cve_ids.append(cve)
+            scenario_ids.append(cve)
 
-    return texts, labels, cve_ids
+    return texts, labels, scenario_ids
 
 
-def partition_dataset_by_cve(
+def partition_dataset_by_scenario_stratified(
     texts: List[str],
     labels: List[int],
-    cve_ids: List[str],
-    train_ratio: float = 0.8,
-    val_ratio: float = 0.1,
-) -> Dict[str, Tuple[List[str], List[int]]]:
-    """Group attempt records strictly by cve_id into Train, Validation, and Test sets."""
-    grouped: Dict[str, List[Tuple[str, int]]] = defaultdict(list)
-    for text, label, cve in zip(texts, labels, cve_ids):
-        grouped[cve].append((text, label))
+    scenario_ids: List[str],
+    n_splits: int = 5,
+    seed: int = 42,
+) -> List[Dict[str, Any]]:
+    """Partition dataset into Stratified Scenario-Grouped folds (zero scenario-predicate leakage across splits)."""
+    unique_scenarios = len(set(scenario_ids))
+    if unique_scenarios < 2:
+        raise ValueError(
+            f"Scenario-grouped cross-validation requires at least 2 unique scenario IDs, but found {unique_scenarios}."
+        )
 
-    unique_cves = sorted(grouped.keys())
-    # Deterministic shuffle (fixed seed=1337) so lexicographic order does not bias split labels
-    rng = np.random.default_rng(seed=1337)
-    cve_arr = np.array(unique_cves)
-    rng.shuffle(cve_arr)
-    unique_cves = list(cve_arr)
+    effective_n_splits = max(2, min(n_splits, len(texts), unique_scenarios))
+    try:
+        from sklearn.model_selection import StratifiedGroupKFold
+        sgkf = StratifiedGroupKFold(n_splits=effective_n_splits, shuffle=True, random_state=seed)
+        x_arr = np.array(texts, dtype=object)
+        y_arr = np.array(labels, dtype=int)
+        groups_arr = np.array(scenario_ids, dtype=object)
 
-    n_cves = len(unique_cves)
+        folds = []
+        for fold_idx, (train_idx, test_idx) in enumerate(sgkf.split(x_arr, y_arr, groups=groups_arr), 1):
+            train_scenarios = set(groups_arr[train_idx])
+            test_scenarios = set(groups_arr[test_idx])
+            folds.append({
+                "fold": fold_idx,
+                "train_idx": train_idx,
+                "test_idx": test_idx,
+                "train_texts": list(x_arr[train_idx]),
+                "train_labels": list(y_arr[train_idx]),
+                "test_texts": list(x_arr[test_idx]),
+                "test_labels": list(y_arr[test_idx]),
+                "test_scenario_ids": sorted(test_scenarios),
+                "train_scenario_ids": sorted(train_scenarios),
+            })
+        return folds
+    except (ImportError, ValueError):
+        logger.warning("scikit-learn StratifiedGroupKFold unavailable or failed due to class counts. Using fallback scenario bucket partitioning.")
+        grouped: Dict[str, List[Tuple[str, int]]] = defaultdict(list)
+        for t, l, s in zip(texts, labels, scenario_ids):
+            grouped[s].append((t, l))
 
-    if n_cves < 3:
-        # Fallback to sample-level split if insufficient unique CVEs
-        n_train = max(1, int(len(texts) * train_ratio))
-        n_val = max(1, int(len(texts) * val_ratio)) if len(texts) >= 3 else 0
-        return {
-            "train": (texts[:n_train], labels[:n_train]),
-            "val": (texts[n_train : n_train + n_val], labels[n_train : n_train + n_val]),
-            "test": (texts[n_train + n_val :], labels[n_train + n_val :]),
-        }
+        scenario_acc_rates = []
+        for s_id, items in grouped.items():
+            tot = len(items)
+            acc = sum(l for _, l in items)
+            rate = acc / tot if tot > 0 else 0.0
+            scenario_acc_rates.append((rate, tot, s_id))
 
-    n_train_cves = max(1, int(n_cves * train_ratio))
-    n_val_cves = max(1, int(n_cves * val_ratio))
+        scenario_acc_rates.sort(reverse=True)
+        fold_buckets: List[List[str]] = [[] for _ in range(effective_n_splits)]
+        for idx, (_, _, s_id) in enumerate(scenario_acc_rates):
+            fold_buckets[idx % effective_n_splits].append(s_id)
 
-    train_cve_set = set(unique_cves[:n_train_cves])
-    val_cve_set = set(unique_cves[n_train_cves : n_train_cves + n_val_cves])
+        folds = []
+        texts_arr = np.array(texts, dtype=object)
+        labels_arr = np.array(labels, dtype=int)
+        scenarios_arr = np.array(scenario_ids, dtype=object)
 
-    splits: Dict[str, Tuple[List[str], List[int]]] = {
-        "train": ([], []),
-        "val": ([], []),
-        "test": ([], []),
-    }
+        for fold_idx in range(1, effective_n_splits + 1):
+            test_scenarios_set = set(fold_buckets[fold_idx - 1])
+            test_mask = np.array([s in test_scenarios_set for s in scenario_ids])
+            train_mask = ~test_mask
 
-    for cve, items in grouped.items():
-        if cve in train_cve_set:
-            target = "train"
-        elif cve in val_cve_set:
-            target = "val"
-        else:
-            target = "test"
+            train_idx = np.nonzero(train_mask)[0]
+            test_idx = np.nonzero(test_mask)[0]
 
-        t_texts, t_labels = splits[target]
-        for txt, lbl in items:
-            t_texts.append(txt)
-            t_labels.append(lbl)
+            folds.append({
+                "fold": fold_idx,
+                "train_idx": train_idx,
+                "test_idx": test_idx,
+                "train_texts": list(texts_arr[train_idx]),
+                "train_labels": list(labels_arr[train_idx]),
+                "test_texts": list(texts_arr[test_idx]),
+                "test_labels": list(labels_arr[test_idx]),
+                "test_scenario_ids": sorted(test_scenarios_set),
+                "train_scenario_ids": sorted(set(scenarios_arr[train_mask])),
+            })
 
-    return splits
+        return folds
 
 
 def _save_artifact(obj: Any, target_path: Path) -> None:
@@ -379,11 +482,10 @@ def _save_artifact(obj: Any, target_path: Path) -> None:
 
 def _train_stage_b_vectorizer(
     train_texts: List[str],
-    val_texts: List[str],
     test_texts: List[str],
-    output_dir: Path,
-) -> Tuple[Any, Any, np.ndarray, np.ndarray, np.ndarray]:
-    """Train TF-IDF vectorizer and domain StandardScaler strictly on train_texts and transform all splits."""
+    output_dir: Optional[Path] = None,
+) -> Tuple[Any, Any, np.ndarray, np.ndarray]:
+    """Train TF-IDF vectorizer and domain StandardScaler strictly on train_texts and transform train & test splits."""
     try:
         from sklearn.feature_extraction.text import TfidfVectorizer
         logger.info("Fitting scikit-learn TF-IDF Vectorizer strictly on X_train (char_wb 3-5 n-grams)...")
@@ -405,32 +507,30 @@ def _train_stage_b_vectorizer(
 
     # 1. Fit TF-IDF on train_texts
     x_train_tfidf = vectorizer.fit_transform(train_texts)
-    x_val_tfidf = vectorizer.transform(val_texts) if val_texts else np.zeros((0, x_train_tfidf.shape[1]))
     x_test_tfidf = vectorizer.transform(test_texts) if test_texts else np.zeros((0, x_train_tfidf.shape[1]))
 
     # 2. Extract and scale domain features strictly on train_texts
     domain_train = extract_domain_features_batch(train_texts)
-    domain_val = extract_domain_features_batch(val_texts) if val_texts else np.zeros((0, domain_train.shape[1]), dtype=np.float32)
     domain_test = extract_domain_features_batch(test_texts) if test_texts else np.zeros((0, domain_train.shape[1]), dtype=np.float32)
 
     domain_train_scaled = scaler.fit_transform(domain_train)
-    domain_val_scaled = scaler.transform(domain_val) if val_texts else np.zeros((0, domain_train.shape[1]), dtype=np.float32)
     domain_test_scaled = scaler.transform(domain_test) if test_texts else np.zeros((0, domain_train.shape[1]), dtype=np.float32)
 
     # 3. Stack TF-IDF + Domain features
     x_train_stacked = _combine_features(x_train_tfidf, domain_train_scaled)
-    x_val_stacked = _combine_features(x_val_tfidf, domain_val_scaled)
     x_test_stacked = _combine_features(x_test_tfidf, domain_test_scaled)
 
-    vec_path = output_dir / "vectorizer.joblib"
-    scaler_path = output_dir / "domain_scaler.joblib"
-    _save_artifact(vectorizer, vec_path)
-    _save_artifact(scaler, scaler_path)
-    logger.info("Saved isolated TF-IDF vectorizer and domain scaler to '%s' and '%s'.", vec_path, scaler_path)
-    return vectorizer, scaler, x_train_stacked, x_val_stacked, x_test_stacked
+    if output_dir is not None:
+        vec_path = output_dir / "vectorizer.joblib"
+        scaler_path = output_dir / "domain_scaler.joblib"
+        _save_artifact(vectorizer, vec_path)
+        _save_artifact(scaler, scaler_path)
+        logger.info("Saved isolated TF-IDF vectorizer and domain scaler to '%s' and '%s'.", vec_path, scaler_path)
+
+    return vectorizer, scaler, x_train_stacked, x_test_stacked
 
 
-def _train_stage_b_classifier(x_train: np.ndarray, y_train: np.ndarray, output_dir: Path) -> Any:
+def _train_stage_b_classifier(x_train: np.ndarray, y_train: np.ndarray, output_dir: Optional[Path] = None) -> Any:
     """Train and persist Stage B classifier (XGBoost / Fallback) on x_train."""
     try:
         from xgboost import XGBClassifier
@@ -456,9 +556,11 @@ def _train_stage_b_classifier(x_train: np.ndarray, y_train: np.ndarray, output_d
         classifier = FallbackClassifier()
 
     classifier.fit(x_train, y_train)
-    xgb_path = output_dir / "xgb.joblib"
-    _save_artifact(classifier, xgb_path)
-    logger.info("Saved Stage B classifier to '%s'.", xgb_path)
+    if output_dir is not None:
+        xgb_path = output_dir / "xgb.joblib"
+        _save_artifact(classifier, xgb_path)
+        logger.info("Saved Stage B classifier to '%s'.", xgb_path)
+
     return classifier
 
 
@@ -471,6 +573,27 @@ def _compute_balanced_accuracy(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     spec = float(np.mean(y_pred[neg_mask] == 0)) if np.any(neg_mask) else 0.5
 
     return (sens + spec) / 2.0
+
+
+def _compute_confusion_matrix(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, Any]:
+    """Compute explicit confusion matrix breakdown."""
+    tn = int(np.sum((y_true == 0) & (y_pred == 0)))
+    fp = int(np.sum((y_true == 0) & (y_pred == 1)))
+    fn = int(np.sum((y_true == 1) & (y_pred == 0)))
+    tp = int(np.sum((y_true == 1) & (y_pred == 1)))
+
+    sens = float(tp / (tp + fn)) if (tp + fn) > 0 else 0.0
+    spec = float(tn / (tn + fp)) if (tn + fp) > 0 else 0.0
+
+    return {
+        "tn": tn,
+        "fp": fp,
+        "fn": fn,
+        "tp": tp,
+        "matrix": [[tn, fp], [fn, tp]],
+        "sensitivity": round(sens, 4),
+        "specificity": round(spec, 4),
+    }
 
 
 def _run_null_model_sanity_check(x_train: np.ndarray, y_train: np.ndarray, x_test: np.ndarray, y_test: np.ndarray) -> float:
@@ -498,27 +621,35 @@ def _run_null_model_sanity_check(x_train: np.ndarray, y_train: np.ndarray, x_tes
     return balanced_acc
 
 
-def _evaluate_stage_b(classifier: Any, x_eval: np.ndarray, y_eval: np.ndarray) -> Dict[str, float]:
-    """Compute Stage B (XGBoost) accuracy metrics."""
+def _evaluate_stage_b(classifier: Any, x_eval: np.ndarray, y_eval: np.ndarray) -> Dict[str, Any]:
+    """Compute Stage B (XGBoost) accuracy metrics, confusion matrix, and predictions."""
+    probs_b = classifier.predict_proba(x_eval)[:, 1] if hasattr(classifier, "predict_proba") else None
     if hasattr(classifier, "predict"):
         y_pred_b = classifier.predict(x_eval)
-    elif hasattr(classifier, "predict_proba"):
-        probs_b = classifier.predict_proba(x_eval)[:, 1]
+    elif probs_b is not None:
         y_pred_b = (probs_b >= 0.5).astype(int)
     else:
         y_pred_b = np.ones(len(y_eval), dtype=int)
 
     acc = float(np.mean(y_pred_b == y_eval))
     bal_acc = _compute_balanced_accuracy(y_eval, y_pred_b)
-    return {"accuracy": round(acc, 4), "balanced_accuracy": round(bal_acc, 4)}
+    cm = _compute_confusion_matrix(y_eval, y_pred_b)
+
+    return {
+        "accuracy": round(acc, 4),
+        "balanced_accuracy": round(bal_acc, 4),
+        "predictions": y_pred_b.tolist(),
+        "probabilities": [round(float(p), 4) for p in probs_b] if probs_b is not None else [],
+        "confusion_matrix": cm,
+    }
 
 
-def _evaluate_stage_c(model_dir: Path, eval_texts: Optional[List[str]], y_eval: np.ndarray, setfit_model: Any = None) -> Optional[Dict[str, float]]:
+def _evaluate_stage_c(model_dir: Optional[Path], eval_texts: Optional[List[str]], y_eval: np.ndarray, setfit_model: Any = None) -> Optional[Dict[str, Any]]:
     """Compute Stage C (SetFit) accuracy metrics."""
     if not eval_texts or SetFitModel is None:
         return None
 
-    if setfit_model is None and (model_dir / "setfit_model").exists():
+    if setfit_model is None and model_dir is not None and (model_dir / "setfit_model").exists():
         try:
             setfit_model = SetFitModel.from_pretrained(str(model_dir / "setfit_model"))
         except Exception:
@@ -532,78 +663,20 @@ def _evaluate_stage_c(model_dir: Path, eval_texts: Optional[List[str]], y_eval: 
         y_pred_c = np.array([int(p) for p in preds_c])
         acc_c = float(np.mean(y_pred_c == y_eval))
         bal_acc_c = _compute_balanced_accuracy(y_eval, y_pred_c)
-        return {"accuracy": round(acc_c, 4), "balanced_accuracy": round(bal_acc_c, 4)}
+        cm_c = _compute_confusion_matrix(y_eval, y_pred_c)
+        return {
+            "accuracy": round(acc_c, 4),
+            "balanced_accuracy": round(bal_acc_c, 4),
+            "predictions": y_pred_c.tolist(),
+            "confusion_matrix": cm_c,
+        }
     except Exception as e:
         logger.warning("SetFit holdout evaluation failed: %s", e)
         return None
 
 
-def _evaluate_cascade(model_dir: Path, eval_texts: Optional[List[str]], y_eval: np.ndarray) -> Optional[Dict[str, Any]]:
-    """Compute full 3-stage cascade accuracy metrics."""
-    if not eval_texts:
-        return None
-
-    try:
-        from scenarios.debate.pre_filter import BarredPreFilter
-        cascade = BarredPreFilter(model_dir=model_dir)
-        cascade_preds = [1 if cascade.predict(predicate=t, input_block="").accept else 0 for t in eval_texts]
-        y_pred = np.array(cascade_preds)
-        acc = float(np.mean(y_pred == y_eval))
-        bal_acc = _compute_balanced_accuracy(y_eval, y_pred)
-        return {
-            "accuracy": round(acc, 4),
-            "balanced_accuracy": round(bal_acc, 4),
-            "intercepted_count": int(np.sum(y_pred == 0)),
-        }
-    except Exception as e:
-        logger.warning("Cascade evaluation failed: %s", e)
-        return None
-
-
-def _evaluate_holdout_performance(
-    classifier: Any,
-    x_eval: np.ndarray,
-    y_eval: np.ndarray,
-    output_dir: Path,
-    eval_texts: Optional[List[str]] = None,
-    setfit_model: Any = None,
-) -> Dict[str, Any]:
-    """Compute and persist independent holdout metrics for Stage B, Stage C, and Cascade."""
-    if x_eval.shape[0] == 0:
-        logger.warning("Holdout test set is empty. Skipping detailed metric export.")
-        return {}
-
-    y_arr = np.array(y_eval)
-    stage_b_metrics = _evaluate_stage_b(classifier, x_eval, y_arr)
-
-    metrics: Dict[str, Any] = {
-        "test_samples": int(len(y_arr)),
-        "accepted_samples": int(np.sum(y_arr == 1)),
-        "rejected_samples": int(np.sum(y_arr == 0)),
-        "stage_b_xgboost": stage_b_metrics,
-        "accuracy": stage_b_metrics["accuracy"],
-        "balanced_accuracy": stage_b_metrics["balanced_accuracy"],
-    }
-
-    stage_c_metrics = _evaluate_stage_c(output_dir, eval_texts, y_arr, setfit_model=setfit_model)
-    if stage_c_metrics is not None:
-        metrics["stage_c_setfit"] = stage_c_metrics
-
-    cascade_metrics = _evaluate_cascade(output_dir, eval_texts, y_arr)
-    if cascade_metrics is not None:
-        metrics["cascade_overall"] = cascade_metrics
-
-    metrics_path = output_dir / "holdout_metrics.json"
-    safe_metrics_path = _validate_safe_path(metrics_path)
-    with safe_metrics_path.open("w", encoding="utf-8") as f:
-        json.dump(metrics, f, indent=2)
-
-    logger.info("Holdout Evaluation Metrics saved to '%s':\n%s", safe_metrics_path, json.dumps(metrics, indent=2))
-    return metrics
-
-
-def _train_stage_c_setfit(texts: List[str], labels: List[int], output_dir: Path, train_setfit: bool) -> Any:
-    """Train and persist Stage C SetFit transformer model if requested."""
+def _train_stage_c_setfit(texts: List[str], labels: List[int], output_dir: Optional[Path], train_setfit: bool) -> Any:
+    """Train and persist Stage C SetFit transformer model, logging in-sample fit performance."""
     if not train_setfit:
         logger.info("Stage C (SetFit) training disabled via --no-setfit flag.")
         return None
@@ -612,9 +685,7 @@ def _train_stage_c_setfit(texts: List[str], labels: List[int], output_dir: Path,
         logger.warning("SetFit package is not installed. Skipping Stage C training.")
         return None
 
-    setfit_dir = output_dir / "setfit_model"
-    safe_setfit_dir = _validate_safe_path(setfit_dir)
-    logger.info("Fitting SetFit Transformer Model...")
+    logger.info("Fitting SetFit Transformer Model on %d training samples...", len(texts))
     try:
         setfit_data = Dataset.from_dict({"text": texts, "label": labels})
         setfit_model = SetFitModel.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
@@ -623,67 +694,323 @@ def _train_stage_c_setfit(texts: List[str], labels: List[int], output_dir: Path,
             train_dataset=setfit_data,
         )
         trainer.train()
-        setfit_model.save_pretrained(str(safe_setfit_dir))
-        logger.info("Saved SetFit model to '%s'.", safe_setfit_dir)
+
+        # In-sample fit sanity check
+        in_sample_preds = setfit_model.predict(texts)
+        y_pred_in = np.array([int(p) for p in in_sample_preds])
+        y_true_in = np.array(labels)
+        in_acc = float(np.mean(y_pred_in == y_true_in))
+        in_bal_acc = _compute_balanced_accuracy(y_true_in, y_pred_in)
+
+        head_norm = None
+        if hasattr(setfit_model, "model_head") and hasattr(setfit_model.model_head, "coef_"):
+            head_norm = float(np.linalg.norm(setfit_model.model_head.coef_))
+
+        logger.info("SetFit In-Sample Fit Verification:")
+        logger.info("  Training Accuracy: %.4f | Balanced Accuracy: %.4f", in_acc, in_bal_acc)
+        if head_norm is not None:
+            logger.info("  Classification Head Weight Norm: %.4f", head_norm)
+
+        if output_dir is not None:
+            setfit_dir = output_dir / "setfit_model"
+            safe_setfit_dir = _validate_safe_path(setfit_dir)
+            setfit_model.save_pretrained(str(safe_setfit_dir))
+            logger.info("Saved SetFit model to '%s'.", safe_setfit_dir)
+
         return setfit_model
     except Exception as e:
         logger.warning("SetFit model training failed: %s", e)
         return None
 
 
+def _process_single_cv_fold(
+    fold_info: Dict[str, Any],
+    n_splits: int,
+    train_setfit: bool,
+) -> Tuple[Dict[str, Any], Tuple[List[int], List[int], List[float]], Optional[List[int]]]:
+    """Execute training and evaluation on a single CV fold split."""
+    f_idx = fold_info["fold"]
+    tr_texts, tr_labels = fold_info["train_texts"], fold_info["train_labels"]
+    te_texts, te_labels = fold_info["test_texts"], fold_info["test_labels"]
+    test_scenarios = fold_info["test_scenario_ids"]
+
+    logger.info("\n--- FOLD %d/%d ---", f_idx, n_splits)
+    logger.info("  Train: %d samples (%d acc, %d rej) across %d scenarios",
+                len(tr_texts), sum(tr_labels), len(tr_labels) - sum(tr_labels), len(fold_info["train_scenario_ids"]))
+    logger.info("  Test:  %d samples (%d acc, %d rej) across %d scenarios (%s)",
+                len(te_texts), sum(te_labels), len(te_labels) - sum(te_labels), len(test_scenarios), test_scenarios[:4])
+
+    y_tr = np.array(tr_labels)
+    y_te = np.array(te_labels)
+
+    # 1. Per-fold isolated vectorization & training
+    _, _, x_tr, x_te = _train_stage_b_vectorizer(tr_texts, te_texts, output_dir=None)
+    clf_b = _train_stage_b_classifier(x_tr, y_tr, output_dir=None)
+
+    # 2. Evaluate Stage B
+    b_res = _evaluate_stage_b(clf_b, x_te, y_te)
+    b_probs = b_res["probabilities"] or []
+
+    logger.info("  Fold %d Stage B XGBoost: Acc=%.4f, BalAcc=%.4f | CM: %s",
+                f_idx, b_res["accuracy"], b_res["balanced_accuracy"], b_res["confusion_matrix"]["matrix"])
+
+    # 3. Evaluate Stage C (SetFit) if enabled
+    c_res = None
+    c_preds = None
+    if train_setfit:
+        setfit_clf = _train_stage_c_setfit(tr_texts, tr_labels, output_dir=None, train_setfit=True)
+        if setfit_clf is not None:
+            c_res = _evaluate_stage_c(model_dir=None, eval_texts=te_texts, y_eval=y_te, setfit_model=setfit_clf)
+            if c_res is not None:
+                c_preds = c_res["predictions"]
+                logger.info("  Fold %d Stage C SetFit:  Acc=%.4f, BalAcc=%.4f | CM: %s",
+                            f_idx, c_res["accuracy"], c_res["balanced_accuracy"], c_res["confusion_matrix"]["matrix"])
+
+    fold_record = {
+        "fold": f_idx,
+        "test_scenario_ids": test_scenarios,
+        "test_sample_count": len(te_labels),
+        "test_positive_count": sum(te_labels),
+        "test_negative_count": len(te_labels) - sum(te_labels),
+        "stage_b_xgboost": b_res,
+        "stage_c_setfit": c_res,
+    }
+    return fold_record, (te_labels, b_res["predictions"], b_probs), c_preds
+
+
+def _compute_macro_cv_metrics(fold_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Calculate macro-averaged mean ± std across all folds."""
+    b_accs = [f["stage_b_xgboost"]["accuracy"] for f in fold_results]
+    b_bal_accs = [f["stage_b_xgboost"]["balanced_accuracy"] for f in fold_results]
+
+    macro = {
+        "stage_b_xgboost": {
+            "mean_accuracy": round(float(np.mean(b_accs)), 4),
+            "std_accuracy": round(float(np.std(b_accs)), 4),
+            "mean_balanced_accuracy": round(float(np.mean(b_bal_accs)), 4),
+            "std_balanced_accuracy": round(float(np.std(b_bal_accs)), 4),
+        }
+    }
+
+    c_folds = [f for f in fold_results if f.get("stage_c_setfit") is not None]
+    if c_folds:
+        c_accs = [f["stage_c_setfit"]["accuracy"] for f in c_folds]
+        c_bal_accs = [f["stage_c_setfit"]["balanced_accuracy"] for f in c_folds]
+        macro["stage_c_setfit"] = {
+            "mean_accuracy": round(float(np.mean(c_accs)), 4),
+            "std_accuracy": round(float(np.std(c_accs)), 4),
+            "mean_balanced_accuracy": round(float(np.mean(c_bal_accs)), 4),
+            "std_balanced_accuracy": round(float(np.std(c_bal_accs)), 4),
+        }
+
+    return macro
+
+
+def _compute_pooled_cv_metrics(
+    oof_y_true: List[int],
+    oof_preds_b: List[int],
+    oof_probs_b: List[float],
+    oof_y_true_c: List[int],
+    oof_preds_c: List[int],
+) -> Dict[str, Any]:
+    """Calculate micro-averaged out-of-fold pooled metrics across all samples."""
+    y_true_arr = np.array(oof_y_true)
+    y_pred_b_arr = np.array(oof_preds_b)
+
+    b_pooled_cm = _compute_confusion_matrix(y_true_arr, y_pred_b_arr)
+    b_pooled_acc = float(np.mean(y_pred_b_arr == y_true_arr))
+    b_pooled_bal_acc = _compute_balanced_accuracy(y_true_arr, y_pred_b_arr)
+
+    roc_auc = None
+    pr_auc = None
+    if oof_probs_b and len(oof_probs_b) == len(oof_y_true) and len(set(oof_y_true)) > 1:
+        try:
+            from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
+            probs_arr = np.array(oof_probs_b)
+            roc_auc = round(float(roc_auc_score(y_true_arr, probs_arr)), 4)
+            precisions, recalls, _ = precision_recall_curve(y_true_arr, probs_arr)
+            pr_auc = round(float(auc(recalls, precisions)), 4)
+        except Exception:
+            pass
+
+    pooled: Dict[str, Any] = {
+        "stage_b_xgboost": {
+            "accuracy": round(b_pooled_acc, 4),
+            "balanced_accuracy": round(b_pooled_bal_acc, 4),
+            "confusion_matrix": b_pooled_cm,
+            "roc_auc": roc_auc,
+            "pr_auc": pr_auc,
+            "out_of_fold_probabilities": oof_probs_b,
+        }
+    }
+
+    if oof_preds_c and oof_y_true_c and len(oof_preds_c) == len(oof_y_true_c):
+        y_true_c_arr = np.array(oof_y_true_c)
+        y_pred_c_arr = np.array(oof_preds_c)
+        c_pooled_cm = _compute_confusion_matrix(y_true_c_arr, y_pred_c_arr)
+        c_pooled_acc = float(np.mean(y_pred_c_arr == y_true_c_arr))
+        c_pooled_bal_acc = _compute_balanced_accuracy(y_true_c_arr, y_pred_c_arr)
+        pooled["stage_c_setfit"] = {
+            "accuracy": round(c_pooled_acc, 4),
+            "balanced_accuracy": round(c_pooled_bal_acc, 4),
+            "confusion_matrix": c_pooled_cm,
+        }
+
+    return pooled
+
+
+def _json_default_encoder(obj: Any) -> Any:
+    """Convert numpy types or non-serializable objects for JSON serialization."""
+    if isinstance(obj, (np.integer, np.int64)):
+        return int(obj)
+    if isinstance(obj, (np.floating, np.float32, np.float64)):
+        return float(obj)
+    return str(obj)
+
+
+def _train_final_production_models(
+    texts: List[str],
+    labels: List[int],
+    output_dir: Path,
+    train_setfit: bool = False,
+) -> None:
+    """Train and persist final Stage B (and optional Stage C) production models on full dataset."""
+    logger.info("Training final production models on full dataset (%d samples)...", len(texts))
+    _, _, x_full, _ = _train_stage_b_vectorizer(texts, [], output_dir=output_dir)
+    y_full = np.array(labels)
+    _train_stage_b_classifier(x_full, y_full, output_dir=output_dir)
+
+    if train_setfit:
+        _train_stage_c_setfit(texts, labels, output_dir=output_dir, train_setfit=True)
+
+
+def _print_cv_summary_report(
+    n_folds: int,
+    texts: List[str],
+    scenario_ids: List[str],
+    macro_metrics: Dict[str, Any],
+    pooled_metrics: Dict[str, Any],
+) -> None:
+    """Print clean CV metrics summary to console stdout."""
+    b_pooled_cm = pooled_metrics["stage_b_xgboost"]["confusion_matrix"]
+    b_pooled_acc = pooled_metrics["stage_b_xgboost"]["accuracy"]
+    b_pooled_bal_acc = pooled_metrics["stage_b_xgboost"]["balanced_accuracy"]
+
+    print("\n=======================================================")
+    print(f"=== {n_folds}-FOLD STRATIFIED SCENARIO-GROUPED CV RESULTS ===")
+    print("=======================================================")
+    print(f"Total Samples: {len(texts)} | Total Unique Scenarios: {len(set(scenario_ids))}")
+    print("\n--- Stage B (XGBoost) ---")
+    print(f"  Macro Mean Balanced Accuracy: {macro_metrics['stage_b_xgboost']['mean_balanced_accuracy']:.4f} ± {macro_metrics['stage_b_xgboost']['std_balanced_accuracy']:.4f}")
+    print(f"  Macro Mean Accuracy:          {macro_metrics['stage_b_xgboost']['mean_accuracy']:.4f} ± {macro_metrics['stage_b_xgboost']['std_accuracy']:.4f}")
+    print(f"  Pooled Out-of-Fold BalAcc:   {b_pooled_bal_acc:.4f} (Accuracy: {b_pooled_acc:.4f})")
+    print(f"  Pooled Confusion Matrix:      TN={b_pooled_cm['tn']}, FP={b_pooled_cm['fp']}, FN={b_pooled_cm['fn']}, TP={b_pooled_cm['tp']}")
+    print(f"  Pooled Sensitivity (TPR):     {b_pooled_cm['sensitivity']:.4f}")
+    print(f"  Pooled Specificity (TNR):     {b_pooled_cm['specificity']:.4f}")
+    if pooled_metrics["stage_b_xgboost"].get("roc_auc") is not None:
+        print(f"  Pooled ROC-AUC Score:         {pooled_metrics['stage_b_xgboost']['roc_auc']:.4f}")
+    if pooled_metrics["stage_b_xgboost"].get("pr_auc") is not None:
+        print(f"  Pooled PR-AUC Score:          {pooled_metrics['stage_b_xgboost']['pr_auc']:.4f}")
+
+    if "stage_c_setfit" in macro_metrics:
+        print("\n--- Stage C (SetFit) ---")
+        print(f"  Macro Mean Balanced Accuracy: {macro_metrics['stage_c_setfit']['mean_balanced_accuracy']:.4f} ± {macro_metrics['stage_c_setfit']['std_balanced_accuracy']:.4f}")
+        print(f"  Macro Mean Accuracy:          {macro_metrics['stage_c_setfit']['mean_accuracy']:.4f} ± {macro_metrics['stage_c_setfit']['std_accuracy']:.4f}")
+        print(f"  Pooled Out-of-Fold BalAcc:   {pooled_metrics['stage_c_setfit']['balanced_accuracy']:.4f}")
+        print(f"  Pooled Confusion Matrix:      TN={pooled_metrics['stage_c_setfit']['confusion_matrix']['tn']}, FP={pooled_metrics['stage_c_setfit']['confusion_matrix']['fp']}, FN={pooled_metrics['stage_c_setfit']['confusion_matrix']['fn']}, TP={pooled_metrics['stage_c_setfit']['confusion_matrix']['tp']}")
+
+    print("=======================================================\n")
+
+
+def run_kfold_cross_validation(
+    texts: List[str],
+    labels: List[int],
+    scenario_ids: List[str],
+    output_dir: Path,
+    n_splits: int = 5,
+    train_setfit: bool = False,
+    seed: int = 42,
+) -> Dict[str, Any]:
+    """Execute Stratified Scenario-Grouped K-Fold CV with macro/pooled metrics and per-fold tracking."""
+    logger.info("Starting %d-Fold Stratified Scenario-Grouped Cross-Validation...", n_splits)
+    folds = partition_dataset_by_scenario_stratified(texts, labels, scenario_ids, n_splits=n_splits, seed=seed)
+
+    fold_results = []
+    oof_y_true: List[int] = []
+    oof_preds_b: List[int] = []
+    oof_probs_b: List[float] = []
+    oof_y_true_c: List[int] = []
+    oof_preds_c: List[int] = []
+
+    for fold_info in folds:
+        fold_rec, (te_labels, b_preds, b_probs), c_preds = _process_single_cv_fold(fold_info, n_splits, train_setfit)
+        fold_results.append(fold_rec)
+        oof_y_true.extend(te_labels)
+        oof_preds_b.extend(b_preds)
+        oof_probs_b.extend(b_probs)
+        if c_preds is not None:
+            oof_y_true_c.extend(te_labels)
+            oof_preds_c.extend(c_preds)
+
+    macro_metrics = _compute_macro_cv_metrics(fold_results)
+    pooled_metrics = _compute_pooled_cv_metrics(oof_y_true, oof_preds_b, oof_probs_b, oof_y_true_c, oof_preds_c)
+
+    full_report = {
+        "total_samples": len(texts),
+        "total_scenarios": len(set(scenario_ids)),
+        "n_folds": len(folds),
+        "requested_n_folds": n_splits,
+        "partition_seed": seed,
+        "macro_metrics": macro_metrics,
+        "pooled_micro_metrics": pooled_metrics,
+        "fold_details": fold_results,
+    }
+
+    _print_cv_summary_report(len(folds), texts, scenario_ids, macro_metrics, pooled_metrics)
+
+    # Persist full report
+    report_path = output_dir / "cv_holdout_metrics.json"
+    safe_report_path = _validate_safe_path(report_path)
+    with safe_report_path.open("w", encoding="utf-8") as f:
+        json.dump(full_report, f, indent=2, default=_json_default_encoder)
+
+    logger.info("Saved Stratified Scenario-Grouped CV report to '%s'.", safe_report_path)
+
+    # Train final production model on full dataset
+    _train_final_production_models(texts, labels, output_dir=output_dir, train_setfit=train_setfit)
+
+    return full_report
+
+
 def train_pre_filter(
     attempts_dir: Path,
     output_dir: Path,
     train_setfit: bool = False,
+    k_folds: int = 5,
+    dedup_near_duplicates: bool = False,
+    similarity_threshold: float = 0.95,
 ) -> bool:
-    """Train pre-filter models (Stage B XGBoost & Stage C SetFit) with leak-proof evaluation."""
+    """Train pre-filter models with Stratified Scenario-Grouped K-Fold Cross Validation."""
     try:
-        with trace_span("train_pre_filter", attributes={"attempts_dir": str(attempts_dir), "output_dir": str(output_dir), "train_setfit": train_setfit}):
+        with trace_span("train_pre_filter", attributes={"attempts_dir": str(attempts_dir), "output_dir": str(output_dir), "train_setfit": train_setfit, "k_folds": k_folds, "dedup_near_duplicates": dedup_near_duplicates}):
             safe_output_dir = _validate_safe_path(output_dir)
             safe_output_dir.mkdir(parents=True, exist_ok=True)
 
             safe_attempts_dir = _validate_safe_path(attempts_dir)
             with trace_span("train_pre_filter.dataset_extraction", attributes={"attempts_dir": str(safe_attempts_dir)}):
-                texts, labels, cve_ids = extract_dataset_from_attempts(safe_attempts_dir)
+                texts, labels, scenario_ids = extract_dataset_from_attempts(
+                    safe_attempts_dir,
+                    dedup_near_duplicates=dedup_near_duplicates,
+                    similarity_threshold=similarity_threshold,
+                )
             if not texts:
                 raise ValueError(f"No valid attempt data found in '{safe_attempts_dir}'.")
 
-            with trace_span("train_pre_filter.partition", attributes={"total_samples": len(texts)}):
-                splits = partition_dataset_by_cve(texts, labels, cve_ids)
-                train_texts, train_labels = splits["train"]
-                val_texts, val_labels = splits["val"]
-                test_texts, test_labels = splits["test"]
-
-            # If test set is empty, fall back to evaluating on validation or train split
-            if test_texts:
-                eval_texts, eval_labels = test_texts, test_labels
-            elif val_texts:
-                eval_texts, eval_labels = val_texts, val_labels
+            if k_folds > 1:
+                run_kfold_cross_validation(texts, labels, scenario_ids, safe_output_dir, n_splits=k_folds, train_setfit=train_setfit)
             else:
-                eval_texts, eval_labels = train_texts, train_labels
-
-            y_train = np.array(train_labels)
-            y_eval = np.array(eval_labels)
-
-            # Stage B Isolated Vectorization & Training
-            with trace_span("train_pre_filter.stage_b", attributes={"train_samples": len(train_texts)}):
-                _, _, x_train, _, x_eval = _train_stage_b_vectorizer(train_texts, val_texts, eval_texts, safe_output_dir)
-                classifier = _train_stage_b_classifier(x_train, y_train, safe_output_dir)
-
-            # Null Model Control Check
-            with trace_span("train_pre_filter.null_control_check"):
-                _run_null_model_sanity_check(x_train, y_train, x_eval, y_eval)
-
-            # Stage C SetFit Training
-            if train_setfit:
-                with trace_span("train_pre_filter.stage_c", attributes={"train_setfit": train_setfit}):
-                    setfit_model = _train_stage_c_setfit(train_texts, train_labels, safe_output_dir, train_setfit)
-            else:
-                setfit_model = _train_stage_c_setfit(train_texts, train_labels, safe_output_dir, train_setfit)
-
-            # Multi-Stage Holdout Benchmarking
-            with trace_span("train_pre_filter.evaluation", attributes={"eval_samples": len(eval_texts)}):
-                _evaluate_holdout_performance(classifier, x_eval, y_eval, safe_output_dir, eval_texts=eval_texts, setfit_model=setfit_model)
+                logger.info("k_folds <= 1 specified. Training single split...")
+                _train_final_production_models(texts, labels, output_dir=safe_output_dir, train_setfit=train_setfit)
 
             return True
     except Exception as e:
@@ -692,9 +1019,12 @@ def train_pre_filter(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train BARRED 3-Stage Acceptance Pre-Filter Models.")
+    parser = argparse.ArgumentParser(description="Train BARRED 3-Stage Acceptance Pre-Filter Models with Stratified Scenario-Grouped K-Fold CV.")
     parser.add_argument("--attempts-dir", type=str, default="artifacts/attempts", help="Directory containing attempt log JSONL files.")
     parser.add_argument("--output-dir", type=str, default="artifacts/models", help="Directory to save trained model artifacts.")
+    parser.add_argument("--k-folds", type=int, default=5, help="Number of Stratified Scenario-Grouped CV folds (default: 5).")
+    parser.add_argument("--dedup-near-duplicates", action="store_true", default=False, help="Enable cosine-similarity near-duplicate sample collapsing.")
+    parser.add_argument("--similarity-threshold", type=float, default=0.95, help="Cosine similarity threshold for near-duplicate collapsing (default: 0.95).")
     parser.add_argument("--train-setfit", action="store_true", default=False, help="Enable heavy SetFit transformer model training.")
     parser.add_argument("--no-setfit", dest="train_setfit", action="store_false", help="Disable SetFit transformer model training.")
 
@@ -702,7 +1032,14 @@ def main() -> None:
     attempts_path = Path(args.attempts_dir)
     output_path = Path(args.output_dir)
 
-    if train_pre_filter(attempts_path, output_path, train_setfit=args.train_setfit):
+    if train_pre_filter(
+        attempts_path,
+        output_path,
+        train_setfit=args.train_setfit,
+        k_folds=args.k_folds,
+        dedup_near_duplicates=args.dedup_near_duplicates,
+        similarity_threshold=args.similarity_threshold,
+    ):
         logger.info("Pre-filter training pipeline completed successfully!")
     else:
         logger.error("Pre-filter training failed.")
