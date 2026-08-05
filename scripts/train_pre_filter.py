@@ -328,6 +328,117 @@ def extract_dataset_from_attempts(attempts_dir: Path) -> Tuple[List[str], List[i
     return texts, labels, scenario_ids
 
 
+def collapse_near_duplicate_samples(
+    texts: List[str],
+    labels: List[int],
+    scenario_ids: List[str],
+    similarity_threshold: float = 0.95,
+) -> Tuple[List[str], List[int], List[str]]:
+    """Collapse near-duplicate texts using pairwise TF-IDF cosine similarity >= threshold."""
+    if len(texts) <= 1:
+        return texts, labels, scenario_ids
+
+    try:
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.metrics.pairwise import cosine_similarity
+
+        vec = TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5), min_df=1)
+        tfidf_mat = vec.fit_transform(texts)
+        sim_mat = cosine_similarity(tfidf_mat)
+
+        keep_indices = []
+        visited = set()
+        n = len(texts)
+
+        for i in range(n):
+            if i in visited:
+                continue
+            keep_indices.append(i)
+            visited.add(i)
+            for j in range(i + 1, n):
+                if j not in visited and sim_mat[i, j] >= similarity_threshold:
+                    visited.add(j)
+
+        collapsed_texts = [texts[i] for i in keep_indices]
+        collapsed_labels = [labels[i] for i in keep_indices]
+        collapsed_scenarios = [scenario_ids[i] for i in keep_indices]
+
+        logger.info(
+            "Near-duplicate collapsing (threshold=%.2f): reduced %d -> %d samples (%d removed).",
+            similarity_threshold, len(texts), len(collapsed_texts), len(texts) - len(collapsed_texts)
+        )
+        return collapsed_texts, collapsed_labels, collapsed_scenarios
+    except Exception as err:
+        logger.warning("Near-duplicate collapsing failed (%s). Retaining un-collapsed dataset.", err)
+        return texts, labels, scenario_ids
+
+
+def extract_dataset_from_attempts(
+    attempts_dir: Path,
+    dedup_near_duplicates: bool = False,
+    similarity_threshold: float = 0.95,
+) -> Tuple[List[str], List[int], List[str]]:
+    """Scan all .jsonl files in attempts_dir and extract (X_texts, y_labels, scenario_ids)."""
+    texts: List[str] = []
+    labels: List[int] = []
+    scenario_ids: List[str] = []
+
+    safe_attempts_dir = _validate_safe_path(attempts_dir)
+    if not safe_attempts_dir.exists():
+        logger.warning("Attempts directory '%s' does not exist. Using synthetic training set.", safe_attempts_dir)
+        for text, label, cve in SYNTHETIC_DATA:
+            texts.append(text)
+            labels.append(label)
+            scenario_ids.append(cve)
+        return texts, labels, scenario_ids
+
+    jsonl_files = sorted(safe_attempts_dir.glob("*.jsonl"))
+    logger.info("Found %d attempt files in '%s'. Extracting records...", len(jsonl_files), safe_attempts_dir)
+
+    for jsonl_file in jsonl_files:
+        file_texts, file_labels, file_scenarios = _process_jsonl_file(jsonl_file)
+        texts.extend(file_texts)
+        labels.extend(file_labels)
+        scenario_ids.extend(file_scenarios)
+
+    # Deduplicate exact (text, label) pairs across batch attempt runs
+    seen_hashes = set()
+    dedup_texts: List[str] = []
+    dedup_labels: List[int] = []
+    dedup_scenarios: List[str] = []
+
+    for t, l, s in zip(texts, labels, scenario_ids):
+        item_hash = hashlib.sha256(f"{t}||{l}".encode("utf-8")).hexdigest()
+        if item_hash not in seen_hashes:
+            seen_hashes.add(item_hash)
+            dedup_texts.append(t)
+            dedup_labels.append(l)
+            dedup_scenarios.append(s)
+
+    removed_cnt = len(texts) - len(dedup_texts)
+    if removed_cnt > 0:
+        logger.info("Deduplicated dataset: removed %d exact duplicate attempt records across runs.", removed_cnt)
+
+    texts, labels, scenario_ids = dedup_texts, dedup_labels, dedup_scenarios
+
+    if dedup_near_duplicates:
+        texts, labels, scenario_ids = collapse_near_duplicate_samples(
+            texts, labels, scenario_ids, similarity_threshold=similarity_threshold
+        )
+
+    logger.info("Final extracted dataset: %d unique attempt samples (%d accepted, %d rejected across %d scenarios).",
+                len(texts), sum(labels), len(labels) - sum(labels), len(set(scenario_ids)))
+
+    if len(texts) < 4:
+        logger.warning("Extracted sample count (%d) is below minimum (4). Appending synthetic samples.", len(texts))
+        for text, label, cve in SYNTHETIC_DATA:
+            texts.append(text)
+            labels.append(label)
+            scenario_ids.append(cve)
+
+    return texts, labels, scenario_ids
+
+
 def partition_dataset_by_scenario_stratified(
     texts: List[str],
     labels: List[int],
@@ -336,7 +447,13 @@ def partition_dataset_by_scenario_stratified(
     seed: int = 42,
 ) -> List[Dict[str, Any]]:
     """Partition dataset into Stratified Scenario-Grouped folds (zero scenario-predicate leakage across splits)."""
-    effective_n_splits = max(2, min(n_splits, len(texts), len(set(scenario_ids))))
+    unique_scenarios = len(set(scenario_ids))
+    if unique_scenarios < 2:
+        raise ValueError(
+            f"Scenario-grouped cross-validation requires at least 2 unique scenario IDs, but found {unique_scenarios}."
+        )
+
+    effective_n_splits = max(2, min(n_splits, len(texts), unique_scenarios))
     try:
         from sklearn.model_selection import StratifiedGroupKFold
         sgkf = StratifiedGroupKFold(n_splits=effective_n_splits, shuffle=True, random_state=seed)
@@ -729,16 +846,16 @@ def _compute_macro_cv_metrics(fold_results: List[Dict[str, Any]]) -> Dict[str, A
         }
     }
 
-    if fold_results and fold_results[0].get("stage_c_setfit") is not None:
-        c_accs = [f["stage_c_setfit"]["accuracy"] for f in fold_results if f.get("stage_c_setfit")]
-        c_bal_accs = [f["stage_c_setfit"]["balanced_accuracy"] for f in fold_results if f.get("stage_c_setfit")]
-        if c_accs:
-            macro["stage_c_setfit"] = {
-                "mean_accuracy": round(float(np.mean(c_accs)), 4),
-                "std_accuracy": round(float(np.std(c_accs)), 4),
-                "mean_balanced_accuracy": round(float(np.mean(c_bal_accs)), 4),
-                "std_balanced_accuracy": round(float(np.std(c_bal_accs)), 4),
-            }
+    c_folds = [f for f in fold_results if f.get("stage_c_setfit") is not None]
+    if c_folds:
+        c_accs = [f["stage_c_setfit"]["accuracy"] for f in c_folds]
+        c_bal_accs = [f["stage_c_setfit"]["balanced_accuracy"] for f in c_folds]
+        macro["stage_c_setfit"] = {
+            "mean_accuracy": round(float(np.mean(c_accs)), 4),
+            "std_accuracy": round(float(np.std(c_accs)), 4),
+            "mean_balanced_accuracy": round(float(np.mean(c_bal_accs)), 4),
+            "std_balanced_accuracy": round(float(np.std(c_bal_accs)), 4),
+        }
 
     return macro
 
@@ -747,6 +864,7 @@ def _compute_pooled_cv_metrics(
     oof_y_true: List[int],
     oof_preds_b: List[int],
     oof_probs_b: List[float],
+    oof_y_true_c: List[int],
     oof_preds_c: List[int],
 ) -> Dict[str, Any]:
     """Calculate micro-averaged out-of-fold pooled metrics across all samples."""
@@ -757,20 +875,35 @@ def _compute_pooled_cv_metrics(
     b_pooled_acc = float(np.mean(y_pred_b_arr == y_true_arr))
     b_pooled_bal_acc = _compute_balanced_accuracy(y_true_arr, y_pred_b_arr)
 
+    roc_auc = None
+    pr_auc = None
+    if oof_probs_b and len(oof_probs_b) == len(oof_y_true) and len(set(oof_y_true)) > 1:
+        try:
+            from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
+            probs_arr = np.array(oof_probs_b)
+            roc_auc = round(float(roc_auc_score(y_true_arr, probs_arr)), 4)
+            precisions, recalls, _ = precision_recall_curve(y_true_arr, probs_arr)
+            pr_auc = round(float(auc(recalls, precisions)), 4)
+        except Exception:
+            pass
+
     pooled: Dict[str, Any] = {
         "stage_b_xgboost": {
             "accuracy": round(b_pooled_acc, 4),
             "balanced_accuracy": round(b_pooled_bal_acc, 4),
             "confusion_matrix": b_pooled_cm,
+            "roc_auc": roc_auc,
+            "pr_auc": pr_auc,
             "out_of_fold_probabilities": oof_probs_b,
         }
     }
 
-    if oof_preds_c:
+    if oof_preds_c and oof_y_true_c and len(oof_preds_c) == len(oof_y_true_c):
+        y_true_c_arr = np.array(oof_y_true_c)
         y_pred_c_arr = np.array(oof_preds_c)
-        c_pooled_cm = _compute_confusion_matrix(y_true_arr, y_pred_c_arr)
-        c_pooled_acc = float(np.mean(y_pred_c_arr == y_true_arr))
-        c_pooled_bal_acc = _compute_balanced_accuracy(y_true_arr, y_pred_c_arr)
+        c_pooled_cm = _compute_confusion_matrix(y_true_c_arr, y_pred_c_arr)
+        c_pooled_acc = float(np.mean(y_pred_c_arr == y_true_c_arr))
+        c_pooled_bal_acc = _compute_balanced_accuracy(y_true_c_arr, y_pred_c_arr)
         pooled["stage_c_setfit"] = {
             "accuracy": round(c_pooled_acc, 4),
             "balanced_accuracy": round(c_pooled_bal_acc, 4),
@@ -796,15 +929,17 @@ def run_kfold_cross_validation(
     output_dir: Path,
     n_splits: int = 5,
     train_setfit: bool = False,
+    seed: int = 42,
 ) -> Dict[str, Any]:
     """Execute Stratified Scenario-Grouped K-Fold CV with macro/pooled metrics and per-fold tracking."""
     logger.info("Starting %d-Fold Stratified Scenario-Grouped Cross-Validation...", n_splits)
-    folds = partition_dataset_by_scenario_stratified(texts, labels, scenario_ids, n_splits=n_splits)
+    folds = partition_dataset_by_scenario_stratified(texts, labels, scenario_ids, n_splits=n_splits, seed=seed)
 
     fold_results = []
     oof_y_true: List[int] = []
     oof_preds_b: List[int] = []
     oof_probs_b: List[float] = []
+    oof_y_true_c: List[int] = []
     oof_preds_c: List[int] = []
 
     for fold_info in folds:
@@ -814,15 +949,18 @@ def run_kfold_cross_validation(
         oof_preds_b.extend(b_preds)
         oof_probs_b.extend(b_probs)
         if c_preds is not None:
+            oof_y_true_c.extend(te_labels)
             oof_preds_c.extend(c_preds)
 
     macro_metrics = _compute_macro_cv_metrics(fold_results)
-    pooled_metrics = _compute_pooled_cv_metrics(oof_y_true, oof_preds_b, oof_probs_b, oof_preds_c)
+    pooled_metrics = _compute_pooled_cv_metrics(oof_y_true, oof_preds_b, oof_probs_b, oof_y_true_c, oof_preds_c)
 
     full_report = {
         "total_samples": len(texts),
         "total_scenarios": len(set(scenario_ids)),
-        "n_folds": n_splits,
+        "n_folds": len(folds),
+        "requested_n_folds": n_splits,
+        "partition_seed": seed,
         "macro_metrics": macro_metrics,
         "pooled_micro_metrics": pooled_metrics,
         "fold_details": fold_results,
@@ -833,7 +971,7 @@ def run_kfold_cross_validation(
     b_pooled_bal_acc = pooled_metrics["stage_b_xgboost"]["balanced_accuracy"]
 
     print("\n=======================================================")
-    print(f"=== {n_splits}-FOLD STRATIFIED SCENARIO-GROUPED CV RESULTS ===")
+    print(f"=== {len(folds)}-FOLD STRATIFIED SCENARIO-GROUPED CV RESULTS ===")
     print("=======================================================")
     print(f"Total Samples: {len(texts)} | Total Unique Scenarios: {len(set(scenario_ids))}")
     print("\n--- Stage B (XGBoost) ---")
@@ -843,6 +981,10 @@ def run_kfold_cross_validation(
     print(f"  Pooled Confusion Matrix:      TN={b_pooled_cm['tn']}, FP={b_pooled_cm['fp']}, FN={b_pooled_cm['fn']}, TP={b_pooled_cm['tp']}")
     print(f"  Pooled Sensitivity (TPR):     {b_pooled_cm['sensitivity']:.4f}")
     print(f"  Pooled Specificity (TNR):     {b_pooled_cm['specificity']:.4f}")
+    if pooled_metrics["stage_b_xgboost"].get("roc_auc") is not None:
+        print(f"  Pooled ROC-AUC Score:         {pooled_metrics['stage_b_xgboost']['roc_auc']:.4f}")
+    if pooled_metrics["stage_b_xgboost"].get("pr_auc") is not None:
+        print(f"  Pooled PR-AUC Score:          {pooled_metrics['stage_b_xgboost']['pr_auc']:.4f}")
 
     if "stage_c_setfit" in macro_metrics:
         print("\n--- Stage C (SetFit) ---")
@@ -863,8 +1005,7 @@ def run_kfold_cross_validation(
 
     # Train final production model on full dataset
     logger.info("Training final production models on full dataset...")
-    _train_stage_b_vectorizer(texts, [], output_dir=output_dir)
-    _, _, x_full, _ = _train_stage_b_vectorizer(texts, [], output_dir=None)
+    _, _, x_full, _ = _train_stage_b_vectorizer(texts, [], output_dir=output_dir)
     y_full = np.array(labels)
     _train_stage_b_classifier(x_full, y_full, output_dir=output_dir)
 
@@ -879,16 +1020,22 @@ def train_pre_filter(
     output_dir: Path,
     train_setfit: bool = False,
     k_folds: int = 5,
+    dedup_near_duplicates: bool = False,
+    similarity_threshold: float = 0.95,
 ) -> bool:
     """Train pre-filter models with Stratified Scenario-Grouped K-Fold Cross Validation."""
     try:
-        with trace_span("train_pre_filter", attributes={"attempts_dir": str(attempts_dir), "output_dir": str(output_dir), "train_setfit": train_setfit, "k_folds": k_folds}):
+        with trace_span("train_pre_filter", attributes={"attempts_dir": str(attempts_dir), "output_dir": str(output_dir), "train_setfit": train_setfit, "k_folds": k_folds, "dedup_near_duplicates": dedup_near_duplicates}):
             safe_output_dir = _validate_safe_path(output_dir)
             safe_output_dir.mkdir(parents=True, exist_ok=True)
 
             safe_attempts_dir = _validate_safe_path(attempts_dir)
             with trace_span("train_pre_filter.dataset_extraction", attributes={"attempts_dir": str(safe_attempts_dir)}):
-                texts, labels, scenario_ids = extract_dataset_from_attempts(safe_attempts_dir)
+                texts, labels, scenario_ids = extract_dataset_from_attempts(
+                    safe_attempts_dir,
+                    dedup_near_duplicates=dedup_near_duplicates,
+                    similarity_threshold=similarity_threshold,
+                )
             if not texts:
                 raise ValueError(f"No valid attempt data found in '{safe_attempts_dir}'.")
 
@@ -896,8 +1043,7 @@ def train_pre_filter(
                 run_kfold_cross_validation(texts, labels, scenario_ids, safe_output_dir, n_splits=k_folds, train_setfit=train_setfit)
             else:
                 logger.info("k_folds <= 1 specified. Training single split...")
-                _train_stage_b_vectorizer(texts, [], output_dir=safe_output_dir)
-                _, _, x_full, _ = _train_stage_b_vectorizer(texts, [], output_dir=None)
+                _, _, x_full, _ = _train_stage_b_vectorizer(texts, [], output_dir=safe_output_dir)
                 _train_stage_b_classifier(x_full, np.array(labels), output_dir=safe_output_dir)
                 if train_setfit:
                     _train_stage_c_setfit(texts, labels, output_dir=safe_output_dir, train_setfit=True)
@@ -913,6 +1059,8 @@ def main() -> None:
     parser.add_argument("--attempts-dir", type=str, default="artifacts/attempts", help="Directory containing attempt log JSONL files.")
     parser.add_argument("--output-dir", type=str, default="artifacts/models", help="Directory to save trained model artifacts.")
     parser.add_argument("--k-folds", type=int, default=5, help="Number of Stratified Scenario-Grouped CV folds (default: 5).")
+    parser.add_argument("--dedup-near-duplicates", action="store_true", default=False, help="Enable cosine-similarity near-duplicate sample collapsing.")
+    parser.add_argument("--similarity-threshold", type=float, default=0.95, help="Cosine similarity threshold for near-duplicate collapsing (default: 0.95).")
     parser.add_argument("--train-setfit", action="store_true", default=False, help="Enable heavy SetFit transformer model training.")
     parser.add_argument("--no-setfit", dest="train_setfit", action="store_false", help="Disable SetFit transformer model training.")
 
@@ -920,7 +1068,14 @@ def main() -> None:
     attempts_path = Path(args.attempts_dir)
     output_path = Path(args.output_dir)
 
-    if train_pre_filter(attempts_path, output_path, train_setfit=args.train_setfit, k_folds=args.k_folds):
+    if train_pre_filter(
+        attempts_path,
+        output_path,
+        train_setfit=args.train_setfit,
+        k_folds=args.k_folds,
+        dedup_near_duplicates=args.dedup_near_duplicates,
+        similarity_threshold=args.similarity_threshold,
+    ):
         logger.info("Pre-filter training pipeline completed successfully!")
     else:
         logger.error("Pre-filter training failed.")

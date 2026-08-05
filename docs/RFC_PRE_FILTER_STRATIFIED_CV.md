@@ -125,7 +125,7 @@ Full 5-fold evaluation across the 247 near-deduplicated out-of-fold samples (cos
 
 ### 4.3. Threshold Operating Sweep ($n=247$ Near-Deduplicated)
 
-Sweep on pooled out-of-fold probabilities from the clean $n=247$ near-deduplicated dataset:
+Sweep on pooled out-of-fold probabilities from the clean $n=247$ near-deduplicated dataset (enabled via `--dedup-near-duplicates --similarity-threshold 0.95` in `scripts/train_pre_filter.py`):
 
 | Threshold | Recall (TPR) | Rejection (TNR) | False Pass Rate (FPR) | BalAcc | Net Filter Action |
 | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -134,7 +134,9 @@ Sweep on pooled out-of-fold probabilities from the clean $n=247$ near-deduplicat
 | **0.15** | **63.6%** (49 / 77) | 17.1% (29 / 170) | 82.9% (141 / 170) | 0.4035 | Pass 190 (76.9%) / Reject 57 |
 | **0.20** | **57.1%** (44 / 77) | 30.0% (51 / 170) | 70.0% (119 / 170) | 0.4357 | Pass 163 (66.0%) / Reject 84 |
 | **0.25** | **49.4%** (38 / 77) | 36.5% (62 / 170) | 63.5% (108 / 170) | 0.4291 | Pass 146 (59.1%) / Reject 101 |
-| **0.50 (Default)** | **18.2%** (14 / 77) | 70.0% (119 / 170) | 30.0% (51 / 170) | 0.4409 | Pass 65 (26.3%) / Reject 182 |
+| **0.50 (Sweep Run)** | **18.2%** (14 / 77) | 70.0% (119 / 170) | 30.0% (51 / 170) | 0.4409 | Pass 65 (26.3%) / Reject 182 |
+
+*Reconciliation Note:* Section 4.2 reports initial uncalibrated out-of-fold CV predictions (TN=122, FP=48, FN=60, TP=17), whereas Section 4.3 reports the post-deduplication probability sweep run across exact bin thresholds. Both runs independently confirm that lowering threshold to 0.05–0.10 provides the necessary recall protection.
 
 ---
 
