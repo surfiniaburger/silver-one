@@ -271,61 +271,7 @@ def _process_jsonl_file(jsonl_file: Path) -> Tuple[List[str], List[int], List[st
     return texts, labels, scenario_ids
 
 
-def extract_dataset_from_attempts(attempts_dir: Path) -> Tuple[List[str], List[int], List[str]]:
-    """Scan all .jsonl files in attempts_dir and extract (X_texts, y_labels, scenario_ids)."""
-    texts: List[str] = []
-    labels: List[int] = []
-    scenario_ids: List[str] = []
 
-    safe_attempts_dir = _validate_safe_path(attempts_dir)
-    if not safe_attempts_dir.exists():
-        logger.warning("Attempts directory '%s' does not exist. Using synthetic training set.", safe_attempts_dir)
-        for text, label, cve in SYNTHETIC_DATA:
-            texts.append(text)
-            labels.append(label)
-            scenario_ids.append(cve)
-        return texts, labels, scenario_ids
-
-    jsonl_files = sorted(safe_attempts_dir.glob("*.jsonl"))
-    logger.info("Found %d attempt files in '%s'. Extracting records...", len(jsonl_files), safe_attempts_dir)
-
-    for jsonl_file in jsonl_files:
-        file_texts, file_labels, file_scenarios = _process_jsonl_file(jsonl_file)
-        texts.extend(file_texts)
-        labels.extend(file_labels)
-        scenario_ids.extend(file_scenarios)
-
-    # Deduplicate exact (text, label) pairs across batch attempt runs
-    seen_hashes = set()
-    dedup_texts: List[str] = []
-    dedup_labels: List[int] = []
-    dedup_scenarios: List[str] = []
-
-    for t, l, s in zip(texts, labels, scenario_ids):
-        item_hash = hashlib.sha256(f"{t}||{l}".encode("utf-8")).hexdigest()
-        if item_hash not in seen_hashes:
-            seen_hashes.add(item_hash)
-            dedup_texts.append(t)
-            dedup_labels.append(l)
-            dedup_scenarios.append(s)
-
-    removed_cnt = len(texts) - len(dedup_texts)
-    if removed_cnt > 0:
-        logger.info("Deduplicated dataset: removed %d exact duplicate attempt records across runs.", removed_cnt)
-
-    texts, labels, scenario_ids = dedup_texts, dedup_labels, dedup_scenarios
-
-    logger.info("Final extracted dataset: %d unique attempt samples (%d accepted, %d rejected across %d scenarios).",
-                len(texts), sum(labels), len(labels) - sum(labels), len(set(scenario_ids)))
-
-    if len(texts) < 4:
-        logger.warning("Extracted sample count (%d) is below minimum (4). Appending synthetic samples.", len(texts))
-        for text, label, cve in SYNTHETIC_DATA:
-            texts.append(text)
-            labels.append(label)
-            scenario_ids.append(cve)
-
-    return texts, labels, scenario_ids
 
 
 def collapse_near_duplicate_samples(
