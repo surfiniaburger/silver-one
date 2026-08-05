@@ -1,9 +1,10 @@
 # Review Feedback Patterns
 
 This document records recurring feedback patterns from Gemini Code Assist,
-Farley, SonarQube, and our own PR iterations. The goal is not to obey every
-automated suggestion. The goal is to identify review signals that repeatedly
-point to real workflow risks, then turn them into engineering habits.
+Farley, SonarQube, Observability Engineering (2nd Edition, Ch. 2), and our own PR
+iterations. The goal is not to obey every automated suggestion. The goal is to
+identify review signals that repeatedly point to real workflow risks, then turn
+them into engineering habits.
 
 Use this document as a checklist when changing evaluator, cassette, report, and
 structured-output code.
@@ -481,6 +482,37 @@ Preferred pattern:
 - Refactor test files to extract shared mock-data structures into compact builder helper functions (e.g., `_make_validation_field`) or pytest fixtures.
 - Keep test cases under the 50-line limit to maintain high comprehensibility.
 
+## Atomic Persistence and Manifest Validation
+
+As established in *Observability Engineering (Ch. 2)*, persistence problems (corrupted datasets, invalid model weights, broken checkpoints) are permanent. Application logic errors can be fixed in post or rolled back, but writing partial or corrupted bits out to disk destroys pipeline integrity.
+
+Preferred pattern:
+
+- **Atomic File Replacement:** Write serialized artifacts to a PID-tagged temporary file (e.g., `target.tmp.[pid]`) and perform an atomic `os.replace` to swap the file into place.
+- **Explicit Disk Flushing:** Flush file buffers (`f.flush()`) and invoke `os.fsync(f.fileno())` when appending to line-delimited files (like `.jsonl` attempt logs) to prevent truncated line writes upon unexpected process exit.
+- **Artifact Manifest Checksums:** Generate a companion `model_manifest.json` recording SHA-256 digests, file sizes, feature dimensions, and timestamps for persisted binaries. Validate these checksums before loading model weights into memory.
+
+Example:
+
+```python
+def _save_artifact_atomic(obj: Any, target_path: Path) -> None:
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = target_path.with_name(f"{target_path.name}.tmp.{os.getpid()}")
+    try:
+        if joblib is not None:
+            joblib.dump(obj, tmp_path)
+        else:
+            with tmp_path.open("wb") as f:
+                pickle.dump(obj, f)
+        os.replace(tmp_path, target_path)
+    finally:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+```
+
 ## When Not To Apply Feedback
 
 Some automated comments are useful but generic. Others are simply wrong for the
@@ -522,4 +554,6 @@ Before merging evaluator, report, or structured-output changes, ask:
 - Are CI package managers configured with `--no-build` and `--locked` (or `--no-sync`) to prevent execution of unverified setup scripts?
 - Are sequential conditional blocks ("bumpy roads") refactored into flat helper functions?
 - Are test suite functions kept under 50 lines by extracting helper mock-data builders?
+- Are persistent artifacts (model weights, JSONL corpora, manifests) written atomically using PID-tagged temporary files (`.tmp.[pid]` -> `os.replace`) and validated against SHA-256 manifest checksums before loading?
+
 

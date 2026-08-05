@@ -145,11 +145,20 @@ class BatchContext:
 
 
 def _append_attempt_record(attempts_path: str, record: dict) -> None:
+    if not isinstance(record, dict) or not record:
+        return
     dirname = os.path.dirname(attempts_path)
     if dirname:
         os.makedirs(dirname, exist_ok=True)
+    line_data = json.dumps(record, ensure_ascii=False) + "\n"
     with open(attempts_path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(record) + "\n")
+        f.write(line_data)
+        f.flush()
+        try:
+            os.fsync(f.fileno())
+        except OSError:
+            pass
+
 
 
 async def _handle_pre_filter_rejection(

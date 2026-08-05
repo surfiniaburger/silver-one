@@ -1,10 +1,12 @@
 # AI Reviewer Engineering Principles
 
-This document distills two reference ideas that are useful for Silver-One:
+This document distills three reference ideas that are useful for Silver-One:
 
 - Linus Torvalds' recent comments on AI-assisted maintenance and patch review.
 - Dave Farley's coupling guidance from Continuous Delivery / Modern Software
   Engineering.
+- *Observability Engineering (2nd Edition, Chapter 2)* on production quality as a
+  function of dependability, critical path identification, and persistence layer paranoia.
 
 The goal is not to copy either source directly. The goal is to turn them into
 engineering constraints for building a local-LLM code reviewer that is useful in
@@ -70,7 +72,24 @@ contract:
 
 Those boundaries must be explicit, validated, and measured.
 
-## 3. How This Maps To Silver-One
+## 3. What The Observability Engineering Guidance Is Really About
+
+Chapter 2 of *Observability Engineering (2nd Edition)* frames software quality
+as a function of dependability. Production code accrues commitments and user
+expectations, requiring a higher quality bar proportional to risk.
+
+Key concepts:
+
+- **Identifying the Critical Path:** Not all code must be equally polished. Frequency,
+  criticality, visibility, and blast radius act as a compass to identify critical path software.
+- **The 3 Quality Tiers:**
+  - *Scaffolding / Disposable:* Rare or invisible execution with minimal business impact. Loose quality standards acceptable.
+  - *Post Office Code:* Core functional services (security, payroll, cron jobs). Solid, functional, and dependable without unnecessary complexity.
+  - *Cathedral Code:* High-visibility, constantly running core business engines. Demands peak craftsmanship, low latency, and continuous reliability.
+- **Blast Radius & Accidental Load-Bearing Code:** Any script or utility capable of taking down critical code is critical code. Throwaway scaffolding can accidentally become load-bearing over time.
+- **Persistence Layer Paranoia:** The closer code gets to writing bits to disk (databases, filesystems, model weights), the more paranoid changes must be. Application logic errors can be fixed in post or rolled back, but persistence errors (corrupted tables, invalid schema migrations, bad binary weights) are permanent.
+
+## 4. How This Maps To Silver-One
 
 Silver-One is not merely "a model that reviews code." The product is the
 harness around the model:
@@ -92,7 +111,21 @@ model. The model should not be trusted to remember every contract rule. The
 system should make valid output easier, malformed output recoverable, and
 failure modes observable.
 
-## 4. Design Principles For The Reviewer
+## 5. Design Principles For The Reviewer
+
+### Triage By Critical Path & Blast Radius
+
+Focus engineering rigor proportional to risk, frequency, and blast radius:
+- **Cathedral (Core Engines):** Live debater/judge harnesses, batch runners, pre-filters (`adk_debate_judge.py`, `run_batch.py`, `pre_filter.py`). Require defensive fallbacks, high performance, and zero-uncaught-exception policies.
+- **Post Office (Durable Services):** Seed loaders, model trainers, checkpoint managers (`train_pre_filter.py`, `cve_seed_loader.py`). Require atomic file operations, schema manifests, and deterministic execution.
+- **Scaffolding (Helper Utilities):** One-off analysis scripts, exploratory notebooks, inspection tools. Lower quality threshold acceptable; low blast radius.
+
+### Enforce Persistence Layer Paranoia
+
+The closer code gets to writing bits to disk (model weights, JSONL corpora, manifests, checkpoints):
+- Write artifacts atomically (`.tmp.[pid]` -> `os.replace`).
+- Enforce schema validation and SHA-256 checksum manifests before consuming persisted binaries.
+- Flush disk buffers explicitly (`f.flush()`, `os.fsync()`) to prevent partial line writes on process termination.
 
 ### Explain Before Suggesting
 

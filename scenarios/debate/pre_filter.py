@@ -227,7 +227,8 @@ class BarredPreFilter:
             setfit_dir = str(base_dir / "setfit_model")
 
         from pathlib import Path
-        scaler_path = str(Path(vectorizer_path).parent / "domain_scaler.joblib")
+        model_dir_path = Path(vectorizer_path).parent
+        scaler_path = str(model_dir_path / "domain_scaler.joblib")
 
         self.vectorizer_path = vectorizer_path
         self.xgb_path = xgb_path
@@ -236,10 +237,51 @@ class BarredPreFilter:
         self.xgb_low_threshold = xgb_low_threshold
         self.setfit_threshold = setfit_threshold
 
-        self.vectorizer: Any = self._load_joblib(vectorizer_path)
-        self.domain_scaler: Any = self._load_joblib(scaler_path)
-        self.xgb: Any = self._load_joblib(xgb_path)
-        self.setfit: Any = self._load_setfit(setfit_dir)
+        manifest_valid = self._verify_manifest(model_dir_path)
+
+        if manifest_valid:
+            self.vectorizer: Any = self._load_joblib(vectorizer_path)
+            self.domain_scaler: Any = self._load_joblib(scaler_path)
+            self.xgb: Any = self._load_joblib(xgb_path)
+            self.setfit: Any = self._load_setfit(setfit_dir)
+        else:
+            logger.error("Skipping Stage B/C model weights due to manifest verification failure.")
+            self.vectorizer = None
+            self.domain_scaler = None
+            self.xgb = None
+            self.setfit = None
+
+    def _verify_manifest(self, model_dir: Path) -> bool:
+        """Validate model artifact checksums against model_manifest.json if present."""
+        manifest_path = model_dir / "model_manifest.json"
+        if not manifest_path.exists():
+            return True
+        try:
+            import json
+            import hashlib
+            with manifest_path.open("r", encoding="utf-8") as f:
+                manifest_data = json.load(f)
+            artifacts = manifest_data.get("artifacts", {})
+            for filename, info in artifacts.items():
+                filepath = model_dir / filename
+                if filepath.exists():
+                    with filepath.open("rb") as f:
+                        content = f.read()
+                    actual_sha = hashlib.sha256(content).hexdigest()
+                    expected_sha = info.get("sha256")
+                    if expected_sha and actual_sha != expected_sha:
+                        logger.error(
+                            "Manifest checksum mismatch for '%s': expected %s, got %s. Artifact corrupted.",
+                            filename,
+                            expected_sha,
+                            actual_sha,
+                        )
+                        return False
+            return True
+        except Exception as err:
+            logger.warning("Manifest validation encountered exception for '%s': %s", manifest_path, err)
+            return True
+
 
         if not self.vectorizer or not self.xgb:
             logger.warning(
