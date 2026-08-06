@@ -289,9 +289,11 @@ class BarredPreFilter:
             logger.error("Declared manifest artifact file '%s' is missing on disk.", filepath)
             return False
 
+        hasher = hashlib.sha256()
         with filepath.open("rb") as f:
-            content = f.read()
-        actual_sha = hashlib.sha256(content).hexdigest()
+            while chunk := f.read(65536):
+                hasher.update(chunk)
+        actual_sha = hasher.hexdigest()
         if actual_sha != expected_sha:
             logger.error(
                 "Manifest checksum mismatch for '%s': expected %s, got %s. Artifact corrupted.",
