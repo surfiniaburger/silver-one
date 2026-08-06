@@ -35,6 +35,7 @@ if os.getcwd() not in sys.path:
 
 import scenarios.debate._thread_limits  # noqa: F401 (Enforce OpenMP thread limits on import)
 
+from agentbeats.clock import RunClock
 from agentbeats.tracing import trace_span
 from scenarios.debate.pre_filter import (
     CODE_DELIMITER,
@@ -470,14 +471,76 @@ def partition_dataset_by_scenario_stratified(
 
 
 def _save_artifact(obj: Any, target_path: Path) -> None:
-    """Save model object using joblib or pickle with path validation."""
+    """Save model object using joblib or pickle atomically with path validation."""
     safe_path = _validate_safe_path(target_path)
     safe_path.parent.mkdir(parents=True, exist_ok=True)
-    if joblib is not None:
-        joblib.dump(obj, safe_path)
-    else:
-        with safe_path.open("wb") as f:
-            pickle.dump(obj, f)
+
+    tmp_path = safe_path.with_name(f"{safe_path.name}.tmp.{os.getpid()}")
+    try:
+        if joblib is not None:
+            joblib.dump(obj, tmp_path)
+        else:
+            with tmp_path.open("wb") as f:
+                pickle.dump(obj, f)
+        os.replace(tmp_path, safe_path)
+    finally:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+
+
+def _write_model_manifest(
+    output_dir: Path,
+    sample_count: int,
+    positive_count: int,
+    feature_dim: int,
+) -> None:
+    """Generate and write a schema-validated model_manifest.json atomically."""
+    safe_dir = _validate_safe_path(output_dir)
+    manifest_path = safe_dir / "model_manifest.json"
+
+    artifacts_info: Dict[str, Any] = {}
+    for filename in ["xgb.joblib", "vectorizer.joblib", "domain_scaler.joblib"]:
+        filepath = safe_dir / filename
+        if filepath.exists():
+            with filepath.open("rb") as f:
+                content = f.read()
+            artifacts_info[filename] = {
+                "sha256": hashlib.sha256(content).hexdigest(),
+                "size_bytes": len(content),
+            }
+
+    setfit_dir = safe_dir / "setfit_model"
+    if setfit_dir.exists() and setfit_dir.is_dir():
+        for file_path in sorted(setfit_dir.rglob("*")):
+            if file_path.is_file() and not file_path.name.startswith(".tmp"):
+                rel_path = str(file_path.relative_to(safe_dir))
+                with file_path.open("rb") as f:
+                    content = f.read()
+                artifacts_info[rel_path] = {
+                    "sha256": hashlib.sha256(content).hexdigest(),
+                    "size_bytes": len(content),
+                }
+
+
+    manifest_data = {
+        "schema_version": 1,
+        "artifacts": artifacts_info,
+        "feature_dimension": feature_dim,
+        "sample_count": sample_count,
+        "positive_count": positive_count,
+        "negative_count": max(0, sample_count - positive_count),
+        "trained_at": RunClock.from_env().now_iso(),
+    }
+
+    tmp_path = manifest_path.with_name(f"{manifest_path.name}.tmp.{os.getpid()}")
+    with tmp_path.open("w", encoding="utf-8") as f:
+        json.dump(manifest_data, f, indent=2)
+    os.replace(tmp_path, manifest_path)
+
+
 
 
 def _train_stage_b_vectorizer(
@@ -882,6 +945,16 @@ def _train_final_production_models(
 
     if train_setfit:
         _train_stage_c_setfit(texts, labels, output_dir=output_dir, train_setfit=True)
+
+    pos_cnt = int(np.sum(y_full == 1))
+    feat_dim = int(x_full.shape[1]) if len(x_full.shape) > 1 else 0
+    _write_model_manifest(
+        output_dir=output_dir,
+        sample_count=len(texts),
+        positive_count=pos_cnt,
+        feature_dim=feat_dim,
+    )
+
 
 
 def _print_cv_summary_report(

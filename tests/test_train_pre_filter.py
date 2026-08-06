@@ -117,9 +117,9 @@ def test_train_pre_filter_and_artifact_persistence(tmp_path):
     assert 0.0 <= probs[0][1] <= 1.0
 
 
-def test_pre_filter_integration_with_trained_models(tmp_path):
+def _setup_attempts_and_train(tmp_path: Path) -> tuple[Path, Path]:
     attempts_dir = tmp_path / "attempts"
-    attempts_dir.mkdir()
+    attempts_dir.mkdir(exist_ok=True)
 
     log_file = attempts_dir / "sample.jsonl"
     records = [
@@ -134,6 +134,11 @@ def test_pre_filter_integration_with_trained_models(tmp_path):
 
     models_dir = tmp_path / "models"
     train_pre_filter(attempts_dir, models_dir, train_setfit=False)
+    return attempts_dir, models_dir
+
+
+def test_pre_filter_integration_with_trained_models(tmp_path):
+    _, models_dir = _setup_attempts_and_train(tmp_path)
 
     # Initialize BarredPreFilter pointing to trained binaries
     pre_filter = BarredPreFilter(
@@ -170,3 +175,35 @@ def test_extract_domain_features_dimensions():
     scaled = scaler.fit_transform(batch_feat)
     assert scaled.shape == (2, 60)
     assert not np.isnan(scaled).any()
+
+
+def test_model_manifest_generation_and_validation(tmp_path):
+    _, models_dir = _setup_attempts_and_train(tmp_path)
+
+    manifest_path = models_dir / "model_manifest.json"
+    assert manifest_path.exists()
+
+    with manifest_path.open("r", encoding="utf-8") as f:
+        manifest_data = json.load(f)
+
+    assert manifest_data["schema_version"] == 1
+    assert "xgb.joblib" in manifest_data["artifacts"]
+    assert "vectorizer.joblib" in manifest_data["artifacts"]
+    assert "domain_scaler.joblib" in manifest_data["artifacts"]
+    assert manifest_data["sample_count"] >= 4
+
+    # Test manifest checksum validation pass
+    filter_valid = BarredPreFilter(model_dir=models_dir)
+    assert filter_valid.vectorizer is not None
+    assert filter_valid.xgb is not None
+
+    # Test tampering with artifact content triggers manifest checksum rejection
+    xgb_path = models_dir / "xgb.joblib"
+    with xgb_path.open("ab") as f:
+        f.write(b"\n# corrupted extra bytes")
+
+    filter_tampered = BarredPreFilter(model_dir=models_dir)
+    assert filter_tampered.vectorizer is None
+    assert filter_tampered.xgb is None
+
+

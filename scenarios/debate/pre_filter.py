@@ -227,7 +227,8 @@ class BarredPreFilter:
             setfit_dir = str(base_dir / "setfit_model")
 
         from pathlib import Path
-        scaler_path = str(Path(vectorizer_path).parent / "domain_scaler.joblib")
+        model_dir_path = Path(vectorizer_path).parent
+        scaler_path = str(model_dir_path / "domain_scaler.joblib")
 
         self.vectorizer_path = vectorizer_path
         self.xgb_path = xgb_path
@@ -236,10 +237,19 @@ class BarredPreFilter:
         self.xgb_low_threshold = xgb_low_threshold
         self.setfit_threshold = setfit_threshold
 
-        self.vectorizer: Any = self._load_joblib(vectorizer_path)
-        self.domain_scaler: Any = self._load_joblib(scaler_path)
-        self.xgb: Any = self._load_joblib(xgb_path)
-        self.setfit: Any = self._load_setfit(setfit_dir)
+        manifest_valid = self._verify_manifest(model_dir_path)
+
+        if manifest_valid:
+            self.vectorizer: Any = self._load_joblib(vectorizer_path)
+            self.domain_scaler: Any = self._load_joblib(scaler_path)
+            self.xgb: Any = self._load_joblib(xgb_path)
+            self.setfit: Any = self._load_setfit(setfit_dir)
+        else:
+            logger.error("Skipping Stage B/C model weights due to manifest verification failure.")
+            self.vectorizer = None
+            self.domain_scaler = None
+            self.xgb = None
+            self.setfit = None
 
         if not self.vectorizer or not self.xgb:
             logger.warning(
@@ -255,6 +265,79 @@ class BarredPreFilter:
                 "Stage C will be skipped.",
                 setfit_dir,
             )
+
+    def _validate_single_artifact(self, model_dir: Path, resolved_model_dir: Path, rel_path: str, info: Any) -> bool:
+        """Validate a single artifact entry against expected hash and file presence."""
+        import hashlib
+        if not isinstance(info, dict):
+            logger.error("Manifest artifact entry '%s' is invalid.", rel_path)
+            return False
+
+        expected_sha = info.get("sha256")
+        if not expected_sha or not isinstance(expected_sha, str):
+            logger.error("Manifest artifact entry '%s' missing valid sha256 checksum.", rel_path)
+            return False
+
+        filepath = (model_dir / rel_path).resolve()
+        try:
+            filepath.relative_to(resolved_model_dir)
+        except ValueError:
+            logger.error("Manifest artifact entry '%s' escapes model directory. Rejected.", rel_path)
+            return False
+
+        if not filepath.exists() or not filepath.is_file():
+            logger.error("Declared manifest artifact file '%s' is missing on disk.", filepath)
+            return False
+
+        hasher = hashlib.sha256()
+        with filepath.open("rb") as f:
+            while chunk := f.read(65536):
+                hasher.update(chunk)
+        actual_sha = hasher.hexdigest()
+        if actual_sha != expected_sha:
+            logger.error(
+                "Manifest checksum mismatch for '%s': expected %s, got %s. Artifact corrupted.",
+                rel_path,
+                expected_sha,
+                actual_sha,
+            )
+            return False
+        return True
+
+    def _verify_manifest(self, model_dir: Path) -> bool:
+        """Validate model artifact checksums against model_manifest.json if present.
+
+        Fails closed (returns False) for any present but malformed, incomplete, or corrupted manifest.
+        Returns True only when model_manifest.json is absent (legacy path).
+        """
+        manifest_path = model_dir / "model_manifest.json"
+        if not manifest_path.exists():
+            return True
+        try:
+            import json
+
+            resolved_model_dir = model_dir.resolve()
+            with manifest_path.open("r", encoding="utf-8") as f:
+                manifest_data = json.load(f)
+
+            if not isinstance(manifest_data, dict):
+                logger.error("Manifest at '%s' is not a valid JSON object.", manifest_path)
+                return False
+
+            artifacts = manifest_data.get("artifacts")
+            if not isinstance(artifacts, dict) or not artifacts:
+                logger.error("Manifest at '%s' missing valid non-empty 'artifacts' mapping.", manifest_path)
+                return False
+
+            return all(
+                self._validate_single_artifact(model_dir, resolved_model_dir, rel_path, info)
+                for rel_path, info in artifacts.items()
+            )
+        except Exception as err:
+            logger.exception("Manifest validation encountered exception for '%s': %s", manifest_path, err)
+            return False
+
+
 
     def _load_joblib(self, path: str) -> Any:
         if os.path.exists(path):
