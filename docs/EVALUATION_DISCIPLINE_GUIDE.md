@@ -72,7 +72,7 @@ To declare **true statistical significance** when comparing candidate configurat
    - **Non-Parametric CI**: Hodges-Lehmann median difference estimator or 95% percentile bootstrap CI for non-normal deltas.
    - **Decision Rule**: A candidate strategy is declared **statistically significant** if and only if:
      - Two-tailed $p$-value satisfies $p < \alpha_{\text{adjusted}}$.
-     - Family-wise error rate is controlled across all $m$ evaluated metrics using Bonferroni-Holm correction ($\alpha_{\text{adjusted}} = \alpha / m$).
+     - Family-wise error rate is controlled across all $m$ evaluated metrics using **Bonferroni correction** ($\alpha_{\text{adjusted}} = \alpha / m$) or the **Holm step-down procedure** ($p_{(k)} < \alpha / (m - k + 1)$ for ordered $p$-values).
      - The 95% Confidence Interval for token reduction strictly excludes zero ($0.0$).
 
 ---
