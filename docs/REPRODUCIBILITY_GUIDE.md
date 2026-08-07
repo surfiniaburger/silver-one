@@ -169,21 +169,22 @@ This generates a stability report detailing **Mean ± StdDev** for:
 
 ---
 
-## 5. Formal Statistical Significance Standard (NeurIPS / ICLR Guidelines)
+## 5. BARRED Swarm Project Evaluation Standard (Silver-One Protocol)
 
-To establish **true statistical significance** (beyond run-to-run variation), LLM agent swarm benchmarks must comply with NeurIPS / ICLR statistical evaluation guidelines:
+To establish **true statistical significance** (beyond run-to-run variation), benchmarks comply with the project-standard evaluation protocol specified in [EVALUATION_DISCIPLINE_GUIDE.md](EVALUATION_DISCIPLINE_GUIDE.md):
 
-### A. Two-Sample Welch's t-Test & Non-Parametric Mann-Whitney U Test
-When comparing a candidate pre-filter configuration against an un-adapted baseline across $N \ge 5$ runs per condition:
-- **Welch's Two-Sample t-Test**: Used for continuous token usage metrics where variances between baseline and candidate runs may differ ($s_1^2 \ne s_2^2$).
-- **Mann-Whitney U Test**: Non-parametric rank-sum test applied to non-normal LLM token spend distributions.
+### A. Paired Seed Comparison & Test Selection
+- **Paired Seed Protocol**: Baseline and candidate runs are paired by PRNG seed ($i \in \{1 \dots N\}$), evaluating per-seed metric deltas $\Delta_i = x_{\text{candidate}, i} - x_{\text{baseline}, i}$.
+- **Paired Student's t-Test (`ttest_rel`)**: Selected when per-seed deltas $\Delta_i$ pass Shapiro-Wilk normality tests ($p > 0.05$).
+- **Wilcoxon Signed-Rank Test (`wilcoxon`)**: Selected as non-parametric test when per-seed deltas exhibit non-normal skewness.
 
-### B. 95% Confidence Intervals & Significance Decision Rule
-- **95% Confidence Interval (CI)**: Reported alongside mean deltas:
-  $$\text{Mean Delta} \pm t_{0.025, \text{df}} \times \text{SE}$$
-- **Decision Rule**: A performance gain is declared **statistically significant** if and only if:
-  1. The two-tailed $p$-value satisfies $p < 0.05$ ($\alpha = 0.05$).
-  2. The 95% Confidence Interval for token reduction strictly excludes zero ($0.0$).
+### B. 95% Confidence Intervals & Multiplicity Decision Rule
+- **Parametric CI**: $\bar{\Delta} \pm t_{0.025, N-1} \times \frac{s_{\Delta}}{\sqrt{N}}$ for normal deltas.
+- **Non-Parametric CI**: Hodges-Lehmann median difference estimator or 95% percentile bootstrap CI for non-normal deltas.
+- **Decision Rule**: A candidate strategy is declared **statistically significant** if and only if:
+  1. Two-tailed $p$-value satisfies $p < \alpha_{\text{adjusted}}$.
+  2. Family-wise error rate is controlled across all $m$ evaluated metrics using Bonferroni-Holm correction ($\alpha_{\text{adjusted}} = \alpha / m$).
+  3. The 95% Confidence Interval for token reduction strictly excludes zero ($0.0$).
 
 ---
 

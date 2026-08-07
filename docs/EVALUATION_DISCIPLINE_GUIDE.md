@@ -63,15 +63,16 @@ Reporting point estimates (Mean $\pm$ StdDev) across small runs ($N = 3$) quanti
 
 To declare **true statistical significance** when comparing candidate configurations against baselines ($N \ge 5$ runs per condition):
 
-1. **Paired Seed Comparison**: Baseline and candidate runs are paired by PRNG seed (`--seed 42, 1337, 2026`).
-2. **Statistical Test Selection**:
-   - **Welch's Two-Sample t-Test**: Selected when token performance data passes Shapiro-Wilk normality tests ($p > 0.05$).
-   - **Mann-Whitney U Rank-Sum Test**: Selected when token distributions exhibit non-normal skewness.
-3. **95% Confidence Intervals & Decision Rule**:
-   - Calculated as $\text{Mean Delta} \pm 1.96 \times \text{SE}$.
-   - A candidate strategy is declared **statistically significant** if and only if:
-     - Two-tailed $p$-value satisfies $p < 0.05$ ($\alpha = 0.05$).
-     - Bonferroni correction is applied when evaluating across $k$ metric dimensions ($\alpha_{\text{adjusted}} = \alpha / k$).
+1. **Paired Seed Comparison**: Baseline and candidate runs are paired by PRNG seed ($i \in \{1 \dots N\}$), evaluating per-seed metric deltas $\Delta_i = x_{\text{candidate}, i} - x_{\text{baseline}, i}$.
+2. **Normality & Paired Statistical Test Selection**:
+   - **Paired Student's t-Test (`ttest_rel`)**: Selected when per-seed deltas $\Delta_i$ pass the Shapiro-Wilk normality test ($p > 0.05$).
+   - **Wilcoxon Signed-Rank Test (`wilcoxon`)**: Selected as non-parametric test when per-seed deltas exhibit non-normal skewness.
+3. **95% Confidence Interval & Multiplicity Decision Rule**:
+   - **Parametric CI**: $\bar{\Delta} \pm t_{0.025, N-1} \times \frac{s_{\Delta}}{\sqrt{N}}$ for normal deltas.
+   - **Non-Parametric CI**: Hodges-Lehmann median difference estimator or 95% percentile bootstrap CI for non-normal deltas.
+   - **Decision Rule**: A candidate strategy is declared **statistically significant** if and only if:
+     - Two-tailed $p$-value satisfies $p < \alpha_{\text{adjusted}}$.
+     - Family-wise error rate is controlled across all $m$ evaluated metrics using Bonferroni-Holm correction ($\alpha_{\text{adjusted}} = \alpha / m$).
      - The 95% Confidence Interval for token reduction strictly excludes zero ($0.0$).
 
 ---
