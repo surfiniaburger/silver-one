@@ -429,6 +429,8 @@ See `AGENT.md` for repository-specific coding and review instructions.
 
  - **GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning** — Lakshya A. Agrawal*, Shangyin Tan*, Dilara Soylu*, Noah Ziems*, et al., ICLR 2026 / arXiv:2507.19457. Role: reflective execution-trace prompt adaptation paradigm that replaces scalar-reward RL and naive retries with full natural language failure diagnosis and Pareto frontier prompt selection. (*equal contribution)
 
+ - **[Evaluation Discipline & Anti-Gaming Guardrails Guide](docs/EVALUATION_DISCIPLINE_GUIDE.md)** — Comprehensive specification of the 4 Anti-Gaming Invariants, zero logic error guarantees, leak-proof dataset partitioning, and statistical hypothesis decision rules ($p < 0.05$, $95\%$ CI).
+
 ## License
 
 MIT License. See `LICENSE`.
