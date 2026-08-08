@@ -470,6 +470,15 @@ def _eval_attempt_b2_strict(attempt: Dict[str, Any], m: AttemptMetrics) -> None:
             m.attempts_mechanism_evidence_failed += 1
 
 
+REQUIRED_CORPUS_FIELDS = [
+    OUTPUT_PREDICATE_FIELD,
+    OUTPUT_ANCHORS_FIELD,
+    OUTPUT_COUNTERFACTUAL_FIELD,
+    OUTPUT_VERIFIER_REPORT_FIELD,
+    OUTPUT_SUPPORT_LEVEL_FIELD,
+]
+
+
 def _process_single_attempt_item(attempt: Dict[str, Any], m: AttemptMetrics) -> None:
     m.attempts_total += 1
     lvl = attempt.get("support_level")
@@ -500,22 +509,33 @@ def _process_single_attempt_item(attempt: Dict[str, Any], m: AttemptMetrics) -> 
         m.generation_config_missing_attempts += mgc
 
 
-def _process_input_corpus_verifier_logic_errors(input_path: str, m: AttemptMetrics) -> None:
+def _process_input_corpus_verifier_logic_errors(
+    input_path: str, m: AttemptMetrics, config: Optional[BGateConfig] = None
+) -> None:
+    bg_config = config or BGateConfig()
     for _, row in _iter_jsonl(input_path):
-        out = _get(row, "output")
-        if isinstance(out, dict):
-            if out.get("verifier_report") == "not_applicable":
-                m.accepted_with_not_applicable += 1
-            logic_error = _logic_error_from_row(row)
-            if _nonempty_logic_error(logic_error):
-                m.accepted_corpus_logic_error_count += 1
+        output_obj = _get(row, "output")
+        if not isinstance(output_obj, dict):
+            continue
+        missing_fields = _check_row_missing_fields(row, REQUIRED_CORPUS_FIELDS, bg_config)
+        if missing_fields:
+            continue
+        if output_obj.get("verifier_report") == "not_applicable":
+            m.accepted_with_not_applicable += 1
+        logic_error = _logic_error_from_row(row)
+        if _nonempty_logic_error(logic_error):
+            m.accepted_corpus_logic_error_count += 1
 
 
-def _process_attempts_data(attempts_path: str, input_path: str) -> AttemptMetrics:
+def _process_attempts_data(
+    attempts_path: str, input_path: str, config: Optional[BGateConfig] = None
+) -> AttemptMetrics:
     m = AttemptMetrics()
     for _, attempt in _iter_jsonl(attempts_path):
+        if not isinstance(attempt, dict):
+            continue
         _process_single_attempt_item(attempt, m)
-    _process_input_corpus_verifier_logic_errors(input_path, m)
+    _process_input_corpus_verifier_logic_errors(input_path, m, config)
     return m
 
 
@@ -719,7 +739,7 @@ def compute_b_metrics(
     ) = _process_input_corpus(input_path, config)
 
     accepted_samples = max(accepted, 1)
-    m = _process_attempts_data(attempts_path, input_path) if attempts_path else None
+    m = _process_attempts_data(attempts_path, input_path, config) if attempts_path else None
 
     metrics: Dict[str, Any] = {
         "input_path": input_path,
@@ -740,7 +760,16 @@ def compute_b_metrics(
         checks, thresholds_dict = _evaluate_threshold_checks(metrics, config.thresholds, attempts_path)
         metrics["thresholds"] = thresholds_dict
         metrics["checks"] = checks
-        metrics["pass"] = all(checks.values()) and len(failures) == 0
+
+        is_anti_gaming_valid, anti_gaming_violations = check_anti_gaming_invariants(
+            metrics,
+            min_anchor_match_rate=config.thresholds.min_anchor_match_rate,
+            min_verifier_parse_ok_rate=config.thresholds.min_verifier_parse_ok_rate,
+            max_accepted_logic_error_rate=config.thresholds.max_accepted_logic_error_rate,
+        )
+        metrics["anti_gaming_valid"] = is_anti_gaming_valid
+        metrics["anti_gaming_violations"] = anti_gaming_violations
+        metrics["pass"] = all(checks.values()) and len(failures) == 0 and is_anti_gaming_valid
     else:
         metrics["pass"] = len(failures) == 0
 
