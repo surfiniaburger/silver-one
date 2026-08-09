@@ -109,7 +109,9 @@ def test_ab_comparison_with_paired_seed_telemetry():
     stat_tests = ab_res.get("statistical_tests", [])
     assert len(stat_tests) == 3
     for st in stat_tests:
-        assert st["is_significant"] is True
+        assert st["sample_size"] == 4
+        assert st["test_type"] in {"paired_t_test", "wilcoxon_signed_rank"}
+        assert st["is_significant_holm"] is True
 
 
 def test_hypothesis_test_zero_delta_identical():
@@ -150,4 +152,10 @@ def test_ab_comparison_defensive_seed_metrics_handling():
     ab_res = compute_ab_benchmark_comparison(baseline, candidate)
     stat_tests = ab_res.get("statistical_tests", [])
     assert len(stat_tests) == 3
+    for st in stat_tests:
+        # Invalid/missing seed entries dropped -> sample_size = 0 or 1 (< 3)
+        assert st["sample_size"] < 3
+        assert st["test_type"] == "insufficient_sample_size"
+        assert st["is_significant"] is False
+        assert st["is_significant_holm"] is False
 

@@ -18,12 +18,11 @@ from pathlib import Path
 from statistics import mean, median
 from typing import Any, Dict, List, Optional, Tuple
 
-from scripts.telemetry_utils import coerce_float
-
 # Enable relative imports from parent directory
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from scripts.path_utils import validate_input_path, validate_output_path
+from scripts.telemetry_utils import coerce_float
 
 logger = logging.getLogger(__name__)
 
@@ -466,8 +465,8 @@ def compute_statistical_hypothesis_test(
     """
     n = min(len(baseline_values), len(candidate_values))
     if n < 3:
-        mean_b = float(mean(baseline_values)) if baseline_values else 0.0
-        mean_c = float(mean(candidate_values)) if candidate_values else 0.0
+        mean_b = float(mean(baseline_values[:n])) if n else 0.0
+        mean_c = float(mean(candidate_values[:n])) if n else 0.0
         delta = mean_c - mean_b
         return {
             "metric_name": metric_name,
@@ -546,13 +545,17 @@ def compute_statistical_hypothesis_test(
 
 def _extract_stage_deltas(baseline: Dict[str, Any], candidate: Dict[str, Any]) -> Dict[str, Any]:
     stage_deltas = {}
-    cand_stages = candidate.get("stage_breakdown", {})
-    base_stages = baseline.get("stage_breakdown", {})
+    cand_stages = candidate.get("stage_breakdown")
+    base_stages = baseline.get("stage_breakdown")
+    cand_stages = cand_stages if isinstance(cand_stages, dict) else {}
+    base_stages = base_stages if isinstance(base_stages, dict) else {}
     all_stages = set(cand_stages.keys()).union(base_stages.keys())
 
     for stage in sorted(all_stages):
-        base_avg = base_stages.get(stage, {}).get("avg_duration_ms", 0.0)
-        cand_avg = cand_stages.get(stage, {}).get("avg_duration_ms", 0.0)
+        base_entry = base_stages.get(stage)
+        cand_entry = cand_stages.get(stage)
+        base_avg = coerce_float(base_entry.get("avg_duration_ms")) if isinstance(base_entry, dict) else 0.0
+        cand_avg = coerce_float(cand_entry.get("avg_duration_ms")) if isinstance(cand_entry, dict) else 0.0
         dur_diff = cand_avg - base_avg
         dur_pct = _safe_div(dur_diff * 100.0, base_avg)
         stage_deltas[stage] = {
@@ -564,13 +567,31 @@ def _extract_stage_deltas(baseline: Dict[str, Any], candidate: Dict[str, Any]) -
     return stage_deltas
 
 
-def _extract_seed_metric_values(seed_metrics: Dict[str, Any], seeds: List[str], metric: str) -> List[float]:
-    return [
-        coerce_float(seed_metrics[s].get(metric))
-        if isinstance(seed_metrics[s], dict)
-        else 0.0
-        for s in seeds
-    ]
+def _extract_seed_metric_pairs(
+    base_seed_metrics: Dict[str, Any],
+    cand_seed_metrics: Dict[str, Any],
+    seeds: List[str],
+    metric: str,
+) -> Tuple[List[float], List[float]]:
+    b_vals = []
+    c_vals = []
+    for s in seeds:
+        b_entry = base_seed_metrics.get(s)
+        c_entry = cand_seed_metrics.get(s)
+        if isinstance(b_entry, dict) and isinstance(c_entry, dict):
+            b_raw = b_entry.get(metric)
+            c_raw = c_entry.get(metric)
+            if b_raw is not None and c_raw is not None:
+                b_num = coerce_float(b_raw)
+                c_num = coerce_float(c_raw)
+                # Check for uncoercible non-numeric string/object
+                if b_raw != 0 and b_num == 0.0 and not isinstance(b_raw, (int, float)):
+                    continue
+                if c_raw != 0 and c_num == 0.0 and not isinstance(c_raw, (int, float)):
+                    continue
+                b_vals.append(b_num)
+                c_vals.append(c_num)
+    return b_vals, c_vals
 
 
 def _run_paired_seed_tests(baseline: Dict[str, Any], candidate: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -584,13 +605,11 @@ def _run_paired_seed_tests(baseline: Dict[str, Any], candidate: Dict[str, Any]) 
         return []
 
     eval_metrics = ["tokens_per_accepted_row", "total_tokens", "total_wall_clock_ms"]
-    num_m = len(eval_metrics)
     stat_tests = []
     raw_p_values = []
     for metric in eval_metrics:
-        b_vals = _extract_seed_metric_values(base_seed_metrics, common_seeds, metric)
-        c_vals = _extract_seed_metric_values(cand_seed_metrics, common_seeds, metric)
-        test_res = compute_statistical_hypothesis_test(b_vals, c_vals, metric, num_metrics=num_m)
+        b_vals, c_vals = _extract_seed_metric_pairs(base_seed_metrics, cand_seed_metrics, common_seeds, metric)
+        test_res = compute_statistical_hypothesis_test(b_vals, c_vals, metric, num_metrics=1)
         stat_tests.append(test_res)
         raw_p_values.append(test_res["p_value"])
 
@@ -728,8 +747,12 @@ def _format_ab_stage_table(c_stages: Dict[str, Any]) -> List[str]:
 def _format_stat_test_row(st: Dict[str, Any]) -> str:
     m_name = st.get("metric_name", "")
     t_type = st.get("test_type", "")
-    pval = f"{coerce_float(st.get('p_value', 1.0)):.4f}"
-    holm_p = f"{coerce_float(st.get('holm_adjusted_p', st.get('p_value', 1.0))):.4f}"
+    raw_p = st.get("p_value")
+    raw_p = 1.0 if raw_p is None else raw_p
+    raw_holm = st.get("holm_adjusted_p")
+    raw_holm = raw_p if raw_holm is None else raw_holm
+    pval = f"{coerce_float(raw_p):.4f}"
+    holm_p = f"{coerce_float(raw_holm):.4f}"
     ci = st.get("ci_95", [0, 0])
     ci_low = coerce_float(ci[0]) if isinstance(ci, (list, tuple)) and len(ci) > 0 else 0.0
     ci_high = coerce_float(ci[1]) if isinstance(ci, (list, tuple)) and len(ci) > 1 else 0.0
