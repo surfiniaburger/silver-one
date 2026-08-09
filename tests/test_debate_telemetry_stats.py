@@ -5,12 +5,25 @@ Unit tests for statistical hypothesis testing functions in debate_telemetry.py.
 import math
 import pytest
 from scripts.debate_telemetry import (
+    _coerce_finite_metric,
     apply_holm_step_down,
     compute_ab_benchmark_comparison,
     compute_hodges_lehmann,
     compute_statistical_hypothesis_test,
     compute_t_interval,
 )
+
+
+def test_coerce_finite_metric():
+    assert _coerce_finite_metric("0") == 0.0
+    assert _coerce_finite_metric(0.0) == 0.0
+    assert _coerce_finite_metric("42.5") == 42.5
+    assert _coerce_finite_metric(True) is None
+    assert _coerce_finite_metric(False) is None
+    assert _coerce_finite_metric(None) is None
+    assert _coerce_finite_metric("invalid") is None
+    assert _coerce_finite_metric(float("nan")) is None
+    assert _coerce_finite_metric(float("inf")) is None
 
 
 def test_compute_t_interval_normal_deltas():

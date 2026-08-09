@@ -535,12 +535,23 @@ def compute_statistical_hypothesis_test(
         "is_normal": is_normal,
         "test_type": test_type,
         "statistic": round(stat_val, 4),
-        "p_value": round(p_val, 4),
+        "p_value": float(p_val),
         "alpha_adjusted": round(alpha_adj, 5),
         "is_significant": is_sig,
         "ci_95": [round(ci_low, 4), round(ci_high, 4)],
         "ci_method": ci_method,
     }
+
+
+def _coerce_finite_metric(value: Any) -> Optional[float]:
+    """Parse numeric metric value, rejecting booleans, non-numeric objects, and non-finite values (NaN/Inf)."""
+    if isinstance(value, bool):
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return numeric if math.isfinite(numeric) else None
 
 
 def _extract_stage_deltas(baseline: Dict[str, Any], candidate: Dict[str, Any]) -> Dict[str, Any]:
@@ -578,19 +589,14 @@ def _extract_seed_metric_pairs(
     for s in seeds:
         b_entry = base_seed_metrics.get(s)
         c_entry = cand_seed_metrics.get(s)
-        if isinstance(b_entry, dict) and isinstance(c_entry, dict):
-            b_raw = b_entry.get(metric)
-            c_raw = c_entry.get(metric)
-            if b_raw is not None and c_raw is not None:
-                b_num = coerce_float(b_raw)
-                c_num = coerce_float(c_raw)
-                # Check for uncoercible non-numeric string/object
-                if b_raw != 0 and b_num == 0.0 and not isinstance(b_raw, (int, float)):
-                    continue
-                if c_raw != 0 and c_num == 0.0 and not isinstance(c_raw, (int, float)):
-                    continue
-                b_vals.append(b_num)
-                c_vals.append(c_num)
+        if not isinstance(b_entry, dict) or not isinstance(c_entry, dict):
+            continue
+        b_num = _coerce_finite_metric(b_entry.get(metric))
+        c_num = _coerce_finite_metric(c_entry.get(metric))
+        if b_num is None or c_num is None:
+            continue
+        b_vals.append(b_num)
+        c_vals.append(c_num)
     return b_vals, c_vals
 
 
