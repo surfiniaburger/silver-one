@@ -1046,6 +1046,538 @@
       }
     },
     {
+      "id": "tests/test_debate_telemetry_stats.py::test_coerce_finite_metric",
+      "file_path": "tests/test_debate_telemetry_stats.py",
+      "test_name": "test_coerce_finite_metric",
+      "class_name": null,
+      "farley_index": 8.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly demonstrates the business rule for coercing finite metrics: valid inputs (numbers/strings) return values or `None`, while invalid types (`True`, `False`, `None`, NaN, Infinity) result in `None`. The intent is unambiguous.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "The test relies entirely on the internal function `_coerce_finite_metric` without hardcoding specific data types or edge cases. It isolates logic to a single contract (input type -> output value), making it robust against future changes in how inputs are validated.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 10,
+          "rationale": "The test is fully self-contained. It uses only built-in Python types and standard library functions (`float`, `bool`). No external databases, network calls, file I/O, or timing dependencies are involved.",
+          "suggestions": []
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "Each assertion verifies a distinct behavior. If any single line fails (e.g., `True` returns non-None), the cause is immediately obvious as that specific input type violating the rule.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 7,
+          "rationale": "While not duplicating other tests mentioned in a larger suite (assuming context exists elsewhere), this test covers edge cases for `None`, booleans, and special floats. It is necessary but could be combined with existing 'valid input' tests to reduce duplication.",
+          "suggestions": [
+            "Consider merging these assertions into one broader rule: `_coerce_finite_metric` should return a value if the type matches expectations; otherwise `None`. This reduces test count and potential for missing edge cases."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The test isolates specific input types (`float`, `bool`) against a clear output contract. It does not mix unrelated behaviors (like type conversion vs value validation) into one assertion.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 10,
+          "rationale": "The test executes instantly with no artificial delays or heavy setup code. All assertions are direct comparisons of return values against expected constants.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "This is a classic Arrange-Act-Assert pattern: the function `_coerce_finite_metric` (Arrange) is called with specific inputs to verify its behavior (Act), and assertions confirm the expected outcomes. The separation of concerns is clear.",
+          "suggestions": []
+        },
+        "summary": "The test demonstrates strong adherence to TDD principles: it's fast, repeatable, atomic, and follows a clean Arrange-Act-Assert structure. It effectively isolates edge cases without bloating the suite."
+      }
+    },
+    {
+      "id": "tests/test_debate_telemetry_stats.py::test_compute_t_interval_normal_deltas",
+      "file_path": "tests/test_debate_telemetry_stats.py",
+      "test_name": "test_compute_t_interval_normal_deltas",
+      "class_name": null,
+      "farley_index": 7.875,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the input data (`deltas`), the function call (`compute_t_interval`), and the expected mathematical outcome (mean value). The business rule is explicit: calculate a t-interval for normal deltas. However, it lacks context about *why* this interval matters in the broader system.",
+          "suggestions": [
+            "Add comments or docstring explaining what 't_interval' represents in the domain of telemetry stats to ensure maintainability and clarity."
+          ]
+        },
+        "maintainable": {
+          "score": 7,
+          "rationale": "The test is self-contained but relies on `compute_t_interval` being a stable function. If that internal implementation changes (e.g., algorithm update), this specific assertion might break unless the logic inside `compute_t_interval` remains constant.",
+          "suggestions": [
+            "Ensure `compute_t_interval` follows TDD principles and is unit-tested itself to guarantee stability across refactors."
+          ]
+        },
+        "repeatable": {
+          "score": 9,
+          "rationale": "The test is fully deterministic. It uses a fixed list of deltas, no external state (DB/network/filesystem), and relies only on the function's internal logic which should be reproducible.",
+          "suggestions": [
+            "Verify that `compute_t_interval` has its own unit tests to ensure it produces identical results every time without relying on system timing or shared mutable state."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: the calculation of `mean_val`. If this assertion fails (e.g., due to a bug in `compute_t_interval`), the cause is instantly obvious and isolated.",
+          "suggestions": [
+            "Ensure no side effects occur within `test_compute_t_interval_normal_deltas`; if any, move them outside or use fixtures."
+          ]
+        },
+        "necessary": {
+          "score": 6,
+          "rationale": "This test covers the calculation of a t-interval for normal deltas. However, it does not cover edge cases (e.g., zero variance), boundary conditions, or failure modes that might occur in production.",
+          "suggestions": [
+            "Add tests covering `alpha=0` scenarios and extreme delta values to ensure robustness across the full range of possible inputs."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "The test isolates a specific mathematical operation (mean calculation) within its context. It is precise enough that if it fails, one can immediately see which part of the logic went wrong.",
+          "suggestions": [
+            "Consider adding assertions for `ci_low` and `ci_high` bounds to ensure they are correctly calculated relative to the mean."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes immediately without artificial delays or heavy I/O. It relies on pure arithmetic operations.",
+          "suggestions": [
+            "Ensure `compute_t_interval` is optimized and does not perform unnecessary floating-point conversions that could slow down execution."
+          ]
+        },
+        "first_tdd": {
+          "score": 7,
+          "rationale": "The test follows the Arrange-Act-Assert pattern: data (`deltas`) is prepared (Arrange), a function call occurs (Act), and assertions are made (Assert). However, it lacks an explicit 'specification' of what `compute_t_interval` should do before running this specific test.",
+          "suggestions": [
+            "Write the unit tests for `compute_t_interval` first to establish its behavior. Then write integration tests like this one that verify high-level interactions with those functions."
+          ]
+        },
+        "summary": "The test is well-structured and follows TDD principles but lacks domain context (understandable) and comprehensive coverage of edge cases (necessary). It should be paired with unit tests for the internal function to ensure maintainability and speed."
+      }
+    },
+    {
+      "id": "tests/test_debate_telemetry_stats.py::test_compute_hodges_lehmann",
+      "file_path": "tests/test_debate_telemetry_stats.py",
+      "test_name": "test_compute_hodges_lehmann",
+      "class_name": null,
+      "farley_index": 6.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the input data and expected output logic. However, it lacks a clear 'business rule' description (e.g., what does this function actually do? Why are these specific deltas chosen?). It reads like an implementation detail rather than a specification.",
+          "suggestions": [
+            "Add a docstring explaining the business purpose of `compute_hodges_lehmann` and why these delta values were selected for testing."
+          ]
+        },
+        "maintainable": {
+          "score": 6,
+          "rationale": "The test is self-contained but relies on an external function (`compute_hodges_lehmann`) which may be brittle if the implementation changes. It also lacks a clear assertion of 'what' (the mathematical property) versus 'how'.",
+          "suggestions": [
+            "Explicitly state in the docstring or comments that this test verifies the Hodges-Lehmann theorem for small sample sizes, not just numerical coincidence."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The function call is deterministic and self-contained. However, it relies on `compute_hodges_lehmann` which might depend on external state or timing if the implementation isn't pure Python/NumPy without side effects.",
+          "suggestions": [
+            "Ensure `compute_hodges_lehmann` has no dependencies on shared mutable state (e.g., global variables) and is fully deterministic."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: the median calculation. The assertion chain (`assert math.isclose...`, `assert ci_low <= hl_med <= ci_high`) isolates this single rule clearly without mixing unrelated logic.",
+          "suggestions": [
+            "Consider adding a specific check for edge cases (e.g., empty list, zero length) to ensure atomicity of the 'median' behavior itself."
+          ]
+        },
+        "necessary": {
+          "score": 5,
+          "rationale": "This test likely duplicates coverage already provided by other tests in `test_debate_telemetry_stats.py` (e.g., testing median calculation for various inputs). It does not add unique value unless it specifically targets the Hodges-Lehmann theorem's specific conditions.",
+          "suggestions": [
+            "Review existing tests to confirm this test is necessary. If redundant, refactor or remove."
+          ]
+        },
+        "granular": {
+          "score": 4,
+          "rationale": "The assertion `assert ci_low <= hl_med <= ci_high` checks a derived property rather than the core behavior (the median). It's less granular about what 'correct' means for this specific function.",
+          "suggestions": [
+            "Refine assertions to directly verify mathematical properties: e.g., check if `(hl_med - delta) / n >= alpha/2`. This isolates the statistical property more precisely."
+          ]
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The test executes immediately without artificial delays or heavy I/O. It is a pure function call with minimal overhead.",
+          "suggestions": [
+            "Ensure `compute_hodges_lehmann` itself has no hidden setup time; if it uses external libraries that have startup costs, consider mocking them."
+          ]
+        },
+        "first_tdd": {
+          "score": 6,
+          "rationale": "The test follows a basic Arrange-Act-Assert pattern but lacks the 'specification' aspect of TDD. It assumes `compute_hodges_lehmann` is correct without verifying its design properties first.",
+          "suggestions": [
+            "Before writing this test, verify that `compute_hodges_lehmann` has been designed to meet specific statistical requirements (e.g., unbiased estimator). Document these assumptions in the code or comments."
+          ]
+        },
+        "summary": "The test is mostly functional but lacks business context and verification of design properties. It risks being brittle if dependencies change, potentially redundant with existing tests, and could be more granular about its mathematical assertions."
+      }
+    },
+    {
+      "id": "tests/test_debate_telemetry_stats.py::test_apply_holm_step_down_sorting_and_thresholds",
+      "file_path": "tests/test_debate_telemetry_stats.py",
+      "test_name": "test_apply_holm_step_down_sorting_and_thresholds",
+      "class_name": null,
+      "farley_index": 7.875,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 9,
+          "rationale": "The test clearly defines the input data (`p_values`), the function call context, and the expected output structure. The logic for ranking (comparing p-values against cumulative thresholds) is explicit enough to be understood without deep domain knowledge.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 8,
+          "rationale": "The test relies on a single external function `apply_holm_step_down` and basic list indexing. It does not depend on the internal implementation of that helper (e.g., how it handles ties or edge cases), making it robust against refactoring as long as the API contract remains stable.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic and self-contained. However, if `apply_holm_step_down` itself relies on external state (like a shared random seed or database), this specific test would not be fully repeatable in isolation.",
+          "suggestions": [
+            "Ensure the underlying function uses only local variables for randomness."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior: that `apply_holm_step_down` correctly processes a list of p-values and returns an array with specific properties. There is no ambiguity about what the code should do.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "This test covers the core logic for ranking significance based on cumulative thresholds (Holm-Bonferroni method). It does not duplicate coverage of other tests that might handle different edge cases or alternative algorithms.",
+          "suggestions": [
+            "Ensure no other tests cover this specific threshold calculation to avoid redundancy."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The test is somewhat granular in asserting the final array structure and individual boolean flags. However, it could be more precise by explicitly checking that `results[2]` stops at p=0.04 rather than just returning False.",
+          "suggestions": [
+            "Add assertions like: assert results[2]['p_value'] == 0.04."
+          ]
+        },
+        "fast": {
+          "score": 6,
+          "rationale": "The test is fast in execution time and avoids artificial delays or heavy I/O. However, if `apply_holm_step_down` performs a slow network call to fetch data for each p-value before computing the result, this specific test would be artificially slowed down.",
+          "suggestions": [
+            "Verify that no external API calls are made inside `apply_holm_step_down`."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The code follows a clean Arrange-Act-Assert pattern. The 'Arrange' section sets up the inputs and function call; the 'Act' is the invocation (implicit in assertions); the 'Assert' validates specific properties of the output.",
+          "suggestions": []
+        },
+        "summary": "{\"understandable\": 9, \"maintainable\": 8, \"repeatable\": 7, \"atomic\": 9, \"necessary\": 8, \"granular\": 7, \"fast\": 6, \"first_tdd\": 9}"
+      }
+    },
+    {
+      "id": "tests/test_debate_telemetry_stats.py::test_hypothesis_test_insufficient_sample_size",
+      "file_path": "tests/test_debate_telemetry_stats.py",
+      "test_name": "test_hypothesis_test_insufficient_sample_size",
+      "class_name": null,
+      "farley_index": 9.0,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the input data and expected outputs for a statistical hypothesis test with insufficient sample size.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "The logic is self-contained; it does not rely on external state or system implementation details that could change during refactoring.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 10,
+          "rationale": "This test has no dependencies on shared mutable state (like a database), network calls, file I/O, or timing. It is fully deterministic and self-contained.",
+          "suggestions": []
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The assertion `assert res['is_significant'] == False` directly verifies the specific business rule: that with insufficient sample size, significance should be false. The cause of failure (if any) is immediately obvious.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "This test covers a specific edge case regarding statistical power and p-values for small samples. It does not duplicate coverage from other tests that likely handle normal or large-sample scenarios.",
+          "suggestions": [
+            "Ensure there is no existing test covering the 'insufficient_sample_size' logic to avoid redundancy."
+          ]
+        },
+        "granular": {
+          "score": 9,
+          "rationale": "The test isolates a specific behavior: calculating and reporting statistical metrics for an insufficient sample size scenario. It does not mix unrelated behaviors.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 10,
+          "rationale": "There are no artificial sleeps, heavy setups, or unneeded slow I/O operations in this test function definition itself (assuming `compute_statistical_hypothesis_test` is efficient).",
+          "suggestions": [
+            "Ensure the underlying implementation of `compute_statistical_hypothesis_test` does not introduce unnecessary overhead."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The code follows a clean Arrange-Act-Assert structure. It specifies inputs (b_vals, c_vals), performs an action (`res = compute...`), and asserts the resulting behavior.",
+          "suggestions": []
+        },
+        "summary": "{\"understandable\":8,\"maintainable\":9,\"repeatable\":10,\"atomic\":9,\"necessary\":8,\"granular\":9,\"fast\":10,\"first_tdd\":9}"
+      }
+    },
+    {
+      "id": "tests/test_debate_telemetry_stats.py::test_hypothesis_test_normal_paired_deltas",
+      "file_path": "tests/test_debate_telemetry_stats.py",
+      "test_name": "test_hypothesis_test_normal_paired_deltas",
+      "class_name": null,
+      "farley_index": 8.875,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the input data (b_vals and c_vals) as a 'large consistent shift' scenario. The intent is to verify that `compute_statistical_hypothesis_test` correctly identifies this specific pattern.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "The test relies entirely on hardcoded numeric arrays and explicit assertions for the output structure (`res`). It does not depend on external state or system implementation details (like a database), making it highly maintainable even if `compute_statistical_hypothesis_test` is refactored.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 10,
+          "rationale": "The test is fully self-contained. It uses no external shared state, network calls, filesystem operations, or timing-dependent logic (no sleeps). The inputs are deterministic and the outputs are strictly defined by assertions.",
+          "suggestions": []
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "Each assertion verifies a single distinct behavior: sample size calculation, hypothesis classification (`is_normal`), test type identification, p-value thresholding, significance flagging, and confidence interval bounds. If any fail, the cause is immediately obvious.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 8,
+          "rationale": "The tests cover specific edge cases (large consistent shift) for a specific metric (`tokens`). However, it lacks coverage for other scenarios like small shifts or non-normal distributions to ensure comprehensive test suite design per TDD principles.",
+          "suggestions": []
+        },
+        "granular": {
+          "score": 9,
+          "rationale": "The assertions are precise and targeted. They isolate the exact conditions under which `is_normal` returns True (large consistent shift) rather than vague generalizations about statistical correctness.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 10,
+          "rationale": "There is no artificial delay (`sleep()`), heavy setup code, or unneeded I/O operations. The test executes purely on the CPU with immediate return values from `compute_statistical_hypothesis_test`.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 8,
+          "rationale": "The structure follows Arrange-Act-Assert: inputs are defined first (Arrange), then a function call is made to compute the result (Act), and finally assertions verify specific properties of that output. However, it could be more explicit about separating 'what' from 'how' in comments or docstrings.",
+          "suggestions": []
+        },
+        "summary": "The test demonstrates strong adherence to TDD principles with high scores on maintainability, repeatability, atomicity, granularity, and speed. It effectively isolates a specific hypothesis check without external dependencies."
+      }
+    },
+    {
+      "id": "tests/test_debate_telemetry_stats.py::test_ab_comparison_with_paired_seed_telemetry",
+      "file_path": "tests/test_debate_telemetry_stats.py",
+      "test_name": "test_ab_comparison_with_paired_seed_telemetry",
+      "class_name": null,
+      "farley_index": 7.375,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the business context (comparing baseline vs candidate telemetry) and uses domain-specific terminology ('run_id', 'summary'). However, it lacks a clear narrative flow or explicit goal statement at the top.",
+          "suggestions": [
+            "Add an `@pytest.mark.parametrize` block with descriptive parameters to immediately state what is being compared."
+          ]
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "The test logic is decoupled from system implementation details. It relies on a hypothetical function `compute_ab_benchmark_comparison`, which isolates the statistical testing logic.",
+          "suggestions": [
+            "Ensure that if `ab_res` changes its internal structure (e.g., moves stats to top level), this specific assertion remains valid without requiring code refactoring."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The test is deterministic in execution order and inputs. However, it relies on the hypothetical function's output being consistent across runs.",
+          "suggestions": [
+            "Explicitly mock or stub `compute_ab_benchmark_comparison` to ensure identical results regardless of external dependencies."
+          ]
+        },
+        "atomic": {
+          "score": 6,
+          "rationale": "The test verifies multiple assertions (run IDs and statistical tests). If the hypothesis is wrong about significant differences, it's hard to pinpoint exactly which assertion failed.",
+          "suggestions": [
+            "Structure this as a single `assert` statement or use an intermediate variable that aggregates all checks for clearer failure reporting."
+          ]
+        },
+        "necessary": {
+          "score": 5,
+          "rationale": "This test likely duplicates coverage already provided by the statistical tests themselves. It doesn't add unique value beyond verifying the existence of significant differences.",
+          "suggestions": [
+            "Remove this specific assertion if it is redundant with existing `stat_tests` assertions or merge its logic into a single comprehensive check."
+          ]
+        },
+        "granular": {
+          "score": 7,
+          "rationale": "The test isolates 'paired t-test' and 'Wilcoxon signed-rank' checks. However, the granularity of checking only significance (`is_significant_holm`) is limited.",
+          "suggestions": [
+            "Add assertions for effect size (e.g., Cohen's d) or confidence intervals to provide a more complete picture of statistical significance."
+          ]
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "The test avoids sleeps and heavy I/O. It only performs dictionary lookups and function calls.",
+          "suggestions": [
+            "Ensure the `compute_ab_benchmark_comparison` function is mocked or stubbed to prevent any potential network latency if it were real."
+          ]
+        },
+        "first_tdd": {
+          "score": 9,
+          "rationale": "The test follows a clean Arrange-Act-Assert pattern. It defines inputs (baseline/candidate), performs an action (`compute_ab_benchmark_comparison`), and asserts specific properties.",
+          "suggestions": [
+            "Explicitly document the 'Arrange' phase in comments to ensure future maintainers understand how `ab_res` is constructed."
+          ]
+        },
+        "summary": "The test demonstrates strong TDD principles with clear separation of concerns (8/10) but risks redundancy if statistical tests already cover these checks. It should be streamlined for maximum coverage efficiency while maintaining clarity on the 'what' vs 'how'."
+      }
+    },
+    {
+      "id": "tests/test_debate_telemetry_stats.py::test_hypothesis_test_zero_delta_identical",
+      "file_path": "tests/test_debate_telemetry_stats.py",
+      "test_name": "test_hypothesis_test_zero_delta_identical",
+      "class_name": null,
+      "farley_index": 8.5,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the input data (identical values) and expected output metrics for a 'zero_delta_identical' hypothesis. The intent is unambiguous.",
+          "suggestions": []
+        },
+        "maintainable": {
+          "score": 9,
+          "rationale": "This test relies entirely on pure Python lists and basic arithmetic logic (`compute_statistical_hypothesis_test`). It has no dependencies on external state (DB, network), making it trivial to refactor the underlying `compute` function without breaking this specific assertion.",
+          "suggestions": []
+        },
+        "repeatable": {
+          "score": 10,
+          "rationale": "The test is fully self-contained. No database calls, file I/O, or timing-dependent operations are present. The result will be identical every time it runs on the same machine and Python version.",
+          "suggestions": []
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "It verifies exactly one behavior: that when inputs are equal, specific metrics (mean_delta=0, p_value=1) hold true. The failure mode is clear if any metric deviates from these exact values.",
+          "suggestions": []
+        },
+        "necessary": {
+          "score": 7,
+          "rationale": "While useful for regression, this test might be redundant if the `compute_statistical_hypothesis_test` function already includes a unit test covering identical inputs. It doesn't add unique coverage to other tests unless it's part of an integration suite.",
+          "suggestions": [
+            "Review existing statistical hypothesis tests in the codebase to ensure no duplicate logic is covered here."
+          ]
+        },
+        "granular": {
+          "score": 8,
+          "rationale": "It isolates a specific edge case (zero delta) and verifies precise numerical properties. It does not test general performance or broad coverage.",
+          "suggestions": []
+        },
+        "fast": {
+          "score": 9,
+          "rationale": "The code is pure Python with no artificial sleeps, heavy I/O, or network calls. Execution speed will be negligible compared to database operations.",
+          "suggestions": []
+        },
+        "first_tdd": {
+          "score": 8,
+          "rationale": "It follows the Arrange-Act-Assert pattern implicitly: inputs are arranged (defined), action is performed (`compute`), and assertions verify behavior. However, it lacks explicit `setup`, `given/when`, or `then` markers which would make its TDD nature more obvious.",
+          "suggestions": [
+            "Explicitly structure this test with a setup phase to define the 'zero delta' scenario before calling compute."
+          ]
+        },
+        "summary": "The test is highly maintainable and repeatable, demonstrating clear intent. It effectively isolates an edge case but lacks explicit structural markers for first-TDD clarity. Minor redundancy in coverage compared to other statistical tests exists."
+      }
+    },
+    {
+      "id": "tests/test_debate_telemetry_stats.py::test_ab_comparison_defensive_seed_metrics_handling",
+      "file_path": "tests/test_debate_telemetry_stats.py",
+      "test_name": "test_ab_comparison_defensive_seed_metrics_handling",
+      "class_name": null,
+      "farley_index": 6.75,
+      "farley_breakdown": {
+        "understandable": {
+          "score": 8,
+          "rationale": "The test clearly defines the input data structures and expected output behavior. However, it lacks a clear 'business rule' explanation; instead of stating *why* we are testing this (e.g., validating robustness against malformed seed metrics), it merely asserts that specific fields exist or behave in certain ways.",
+          "suggestions": [
+            "Add an explicit comment block at the top defining the business goal: e.g., 'Verify that defensive handling of missing/malformed metric data does not crash and produces valid statistical tests.'"
+          ]
+        },
+        "maintainable": {
+          "score": 6,
+          "rationale": "The test is brittle to changes in `compute_ab_benchmark_comparison`. If the function signature or internal logic regarding how it handles 'None' values for seed metrics changes (e.g., raising an exception vs. returning a default), this specific assertion will break without modification.",
+          "suggestions": [
+            "Move assertions about sample size and significance into helper functions that encapsulate the statistical test generation logic, ensuring they only run if `stat_tests` is populated."
+          ]
+        },
+        "repeatable": {
+          "score": 7,
+          "rationale": "The code relies on external state (`ab_res.get(",
+          "suggestions": [
+            "Remove reliance on `compute_ab_benchmark_comparison`. Instead of calling this function and asserting its return value structure (like the length of a list), assert directly within the test that specific conditions are met. For example: 'assert len(compute_ab_benchmark_comparison(baseline, candidate).get(\"statistical_tests\", [])) == 3'."
+          ]
+        },
+        "atomic": {
+          "score": 9,
+          "rationale": "The test verifies exactly one behavior (the existence and properties of the statistical tests list) rather than multiple unrelated behaviors. If `compute_ab_benchmark_comparison` returns a different structure or raises an exception for malformed inputs in other scenarios, this specific assertion remains valid.",
+          "suggestions": [
+            "Ensure that if any seed metric is missing, the function either filters them out gracefully (as implied by 'sample_size < 3') and produces exactly one test case per unique non-null entry, rather than failing entirely."
+          ]
+        },
+        "necessary": {
+          "score": 5,
+          "rationale": "The current assertion only checks that `is_significant` is False. It does not verify the actual statistical logic (e.g., p-values, confidence intervals) or ensure no spurious tests were generated due to data issues.",
+          "suggestions": [
+            "Add assertions for specific test properties: 'assert st[\"p_value\"] > 0.5' and 'assert len(st.test_cases) == 1'. This ensures the statistical validity is actually checked."
+          ]
+        },
+        "granular": {
+          "score": 4,
+          "rationale": "The assertion `st['test_type'] == \"insufficient_sample_size\"` assumes a specific internal representation of test types that may not exist or be named correctly in the actual implementation. It also lacks granularity on *which* seed metrics caused this failure.",
+          "suggestions": [
+            "Refactor to check for missing keys directly: 'assert baseline[\"per_seed_metrics\"][\"seed_1\"] is None'. This makes the intent explicit and independent of internal test naming conventions."
+          ]
+        },
+        "fast": {
+          "score": 8,
+          "rationale": "The code contains no artificial sleeps or heavy I/O operations. The logic flow is purely sequential Python execution.",
+          "suggestions": [
+            "Ensure `compute_ab_benchmark_comparison` does not perform expensive network calls during the benchmarking phase."
+          ]
+        },
+        "first_tdd": {
+          "score": 7,
+          "rationale": "The test follows a basic Arrange-Act-Assert pattern: it sets up data structures (`baseline`, `candidate`), acts by calling the function and checking results. However, it lacks explicit separation of concerns; mixing setup logic with statistical assertions makes it harder to read as 'specifying behavior' first.",
+          "suggestions": [
+            "Move all fixture definitions (data creation) into a dedicated class or module called `test_setup`. Move all assertion logic for statistics generation into another function."
+          ]
+        },
+        "summary": "The test is functional but lacks the depth required by TDD principles. It verifies implementation details rather than business rules, relies on external functions that may change behavior unexpectedly, and misses critical statistical validations (p-values). To reach a score of 10, it must explicitly define *why* these tests exist, isolate logic into dedicated helper methods, and verify the actual mathematical properties of the output."
+      }
+    },
+    {
       "id": "tests/test_evaluator_robustness.py::test_build_test_id",
       "file_path": "tests/test_evaluator_robustness.py",
       "test_name": "test_build_test_id",
@@ -11300,44 +11832,44 @@
     "farley_usage_summary": {
       "run_id": "main-baseline",
       "model": "ollama/qwen3.5:2b",
-      "reviewed_test_cases": 175,
+      "reviewed_test_cases": 184,
       "cassette": "artifacts/cassettes/farley_score-main-latest.json",
       "usage": {
         "totals": {
-          "calls": 218,
-          "prompt_tokens": 185362,
-          "completion_tokens": 175702,
-          "total_tokens": 361064,
+          "calls": 227,
+          "prompt_tokens": 191145,
+          "completion_tokens": 182274,
+          "total_tokens": 373419,
           "cost_usd": 0.0,
           "missing_usage_calls": 0,
-          "total_duration_ms": 291646.91,
-          "avg_duration_ms": 1337.83,
-          "max_duration_ms": 82823.46,
-          "min_duration_ms": 6.331,
-          "p95_duration_ms": 112.297
+          "total_duration_ms": 617316.918,
+          "avg_duration_ms": 2719.458,
+          "max_duration_ms": 90518.553,
+          "min_duration_ms": 5.878,
+          "p95_duration_ms": 88.191
         },
         "by_stage": {
           "farley_evaluation": {
-            "calls": 218,
-            "prompt_tokens": 185362,
-            "completion_tokens": 175702,
-            "total_tokens": 361064,
+            "calls": 227,
+            "prompt_tokens": 191145,
+            "completion_tokens": 182274,
+            "total_tokens": 373419,
             "cost_usd": 0.0,
-            "total_duration_ms": 291646.91,
-            "max_duration_ms": 82823.46,
-            "avg_duration_ms": 1337.83
+            "total_duration_ms": 617316.918,
+            "max_duration_ms": 90518.553,
+            "avg_duration_ms": 2719.458
           }
         },
         "by_model": {
           "ollama/qwen3.5:2b": {
-            "calls": 218,
-            "prompt_tokens": 185362,
-            "completion_tokens": 175702,
-            "total_tokens": 361064,
+            "calls": 227,
+            "prompt_tokens": 191145,
+            "completion_tokens": 182274,
+            "total_tokens": 373419,
             "cost_usd": 0.0,
-            "total_duration_ms": 291646.91,
-            "max_duration_ms": 82823.46,
-            "avg_duration_ms": 1337.83
+            "total_duration_ms": 617316.918,
+            "max_duration_ms": 90518.553,
+            "avg_duration_ms": 2719.458
           }
         },
         "events": [
@@ -11345,7 +11877,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.872,
+            "duration_ms": 6.519,
             "generation_params": {},
             "prompt_tokens": 458,
             "completion_tokens": 602,
@@ -11358,7 +11890,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.142,
+            "duration_ms": 7.084,
             "generation_params": {},
             "prompt_tokens": 530,
             "completion_tokens": 621,
@@ -11371,7 +11903,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 10.122,
+            "duration_ms": 6.645,
             "generation_params": {},
             "prompt_tokens": 532,
             "completion_tokens": 821,
@@ -11384,7 +11916,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.947,
+            "duration_ms": 6.053,
             "generation_params": {},
             "prompt_tokens": 1100,
             "completion_tokens": 936,
@@ -11396,8 +11928,8 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
-            "duration_ms": 82823.46,
+            "source": "cache",
+            "duration_ms": 6.887,
             "generation_params": {},
             "prompt_tokens": 489,
             "completion_tokens": 820,
@@ -11409,8 +11941,8 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
-            "duration_ms": 81443.247,
+            "source": "cache",
+            "duration_ms": 5.878,
             "generation_params": {},
             "prompt_tokens": 534,
             "completion_tokens": 884,
@@ -11422,8 +11954,8 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
-            "duration_ms": 59737.166,
+            "source": "cache",
+            "duration_ms": 6.56,
             "generation_params": {},
             "prompt_tokens": 537,
             "completion_tokens": 616,
@@ -11435,8 +11967,8 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
-            "source": "provider",
-            "duration_ms": 64813.029,
+            "source": "cache",
+            "duration_ms": 5.931,
             "generation_params": {},
             "prompt_tokens": 538,
             "completion_tokens": 661,
@@ -11448,8 +11980,125 @@
           {
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 66704.469,
+            "generation_params": {},
+            "prompt_tokens": 528,
+            "completion_tokens": 704,
+            "total_tokens": 1232,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 77838.869,
+            "generation_params": {},
+            "prompt_tokens": 476,
+            "completion_tokens": 912,
+            "total_tokens": 1388,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 76847.202,
+            "generation_params": {},
+            "prompt_tokens": 483,
+            "completion_tokens": 884,
+            "total_tokens": 1367,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 65762.637,
+            "generation_params": {},
+            "prompt_tokens": 573,
+            "completion_tokens": 696,
+            "total_tokens": 1269,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 50174.093,
+            "generation_params": {},
+            "prompt_tokens": 503,
+            "completion_tokens": 532,
+            "total_tokens": 1035,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 57851.563,
+            "generation_params": {},
+            "prompt_tokens": 670,
+            "completion_tokens": 602,
+            "total_tokens": 1272,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 74311.847,
+            "generation_params": {},
+            "prompt_tokens": 1127,
+            "completion_tokens": 682,
+            "total_tokens": 1809,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 54985.64,
+            "generation_params": {},
+            "prompt_tokens": 560,
+            "completion_tokens": 600,
+            "total_tokens": 1160,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
+            "source": "provider",
+            "duration_ms": 90518.553,
+            "generation_params": {},
+            "prompt_tokens": 863,
+            "completion_tokens": 960,
+            "total_tokens": 1823,
+            "has_usage": true,
+            "usage_source": "provider",
+            "cost_usd": 0.0
+          },
+          {
+            "stage": "farley_evaluation",
+            "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.951,
+            "duration_ms": 10.941,
             "generation_params": {},
             "prompt_tokens": 478,
             "completion_tokens": 801,
@@ -11462,7 +12111,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.159,
+            "duration_ms": 89.37,
             "generation_params": {},
             "prompt_tokens": 616,
             "completion_tokens": 671,
@@ -11475,7 +12124,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.376,
+            "duration_ms": 9.43,
             "generation_params": {},
             "prompt_tokens": 496,
             "completion_tokens": 651,
@@ -11488,7 +12137,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.035,
+            "duration_ms": 6.947,
             "generation_params": {},
             "prompt_tokens": 644,
             "completion_tokens": 592,
@@ -11501,7 +12150,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.349,
+            "duration_ms": 6.205,
             "generation_params": {},
             "prompt_tokens": 503,
             "completion_tokens": 835,
@@ -11514,7 +12163,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.355,
+            "duration_ms": 6.343,
             "generation_params": {},
             "prompt_tokens": 571,
             "completion_tokens": 597,
@@ -11527,7 +12176,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.221,
+            "duration_ms": 6.781,
             "generation_params": {},
             "prompt_tokens": 811,
             "completion_tokens": 624,
@@ -11540,7 +12189,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.75,
+            "duration_ms": 6.112,
             "generation_params": {},
             "prompt_tokens": 667,
             "completion_tokens": 671,
@@ -11553,7 +12202,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.923,
+            "duration_ms": 6.461,
             "generation_params": {},
             "prompt_tokens": 573,
             "completion_tokens": 962,
@@ -11566,7 +12215,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.63,
+            "duration_ms": 6.066,
             "generation_params": {},
             "prompt_tokens": 555,
             "completion_tokens": 505,
@@ -11579,7 +12228,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.802,
+            "duration_ms": 6.455,
             "generation_params": {},
             "prompt_tokens": 579,
             "completion_tokens": 701,
@@ -11592,7 +12241,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.42,
+            "duration_ms": 6.599,
             "generation_params": {},
             "prompt_tokens": 587,
             "completion_tokens": 534,
@@ -11605,7 +12254,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.493,
+            "duration_ms": 6.072,
             "generation_params": {},
             "prompt_tokens": 756,
             "completion_tokens": 1024,
@@ -11618,7 +12267,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.296,
+            "duration_ms": 6.559,
             "generation_params": {},
             "prompt_tokens": 1924,
             "completion_tokens": 979,
@@ -11631,7 +12280,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.315,
+            "duration_ms": 6.158,
             "generation_params": {},
             "prompt_tokens": 499,
             "completion_tokens": 614,
@@ -11644,7 +12293,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.548,
+            "duration_ms": 6.586,
             "generation_params": {},
             "prompt_tokens": 584,
             "completion_tokens": 664,
@@ -11657,7 +12306,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.225,
+            "duration_ms": 6.121,
             "generation_params": {},
             "prompt_tokens": 1038,
             "completion_tokens": 603,
@@ -11670,7 +12319,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.207,
+            "duration_ms": 6.339,
             "generation_params": {},
             "prompt_tokens": 455,
             "completion_tokens": 591,
@@ -11683,7 +12332,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 114.245,
+            "duration_ms": 6.676,
             "generation_params": {},
             "prompt_tokens": 526,
             "completion_tokens": 716,
@@ -11696,7 +12345,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.628,
+            "duration_ms": 6.094,
             "generation_params": {},
             "prompt_tokens": 602,
             "completion_tokens": 609,
@@ -11709,7 +12358,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.398,
+            "duration_ms": 85.453,
             "generation_params": {},
             "prompt_tokens": 523,
             "completion_tokens": 641,
@@ -11722,7 +12371,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.446,
+            "duration_ms": 7.131,
             "generation_params": {},
             "prompt_tokens": 614,
             "completion_tokens": 571,
@@ -11735,7 +12384,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.942,
+            "duration_ms": 6.731,
             "generation_params": {},
             "prompt_tokens": 413,
             "completion_tokens": 799,
@@ -11748,7 +12397,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.098,
+            "duration_ms": 6.094,
             "generation_params": {},
             "prompt_tokens": 492,
             "completion_tokens": 705,
@@ -11761,7 +12410,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.17,
+            "duration_ms": 6.3,
             "generation_params": {},
             "prompt_tokens": 537,
             "completion_tokens": 776,
@@ -11774,7 +12423,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.283,
+            "duration_ms": 6.481,
             "generation_params": {},
             "prompt_tokens": 422,
             "completion_tokens": 867,
@@ -11787,7 +12436,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.036,
+            "duration_ms": 6.129,
             "generation_params": {},
             "prompt_tokens": 474,
             "completion_tokens": 941,
@@ -11800,7 +12449,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.351,
+            "duration_ms": 6.516,
             "generation_params": {},
             "prompt_tokens": 658,
             "completion_tokens": 820,
@@ -11813,7 +12462,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.269,
+            "duration_ms": 6.117,
             "generation_params": {},
             "prompt_tokens": 505,
             "completion_tokens": 665,
@@ -11826,7 +12475,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.205,
+            "duration_ms": 6.422,
             "generation_params": {},
             "prompt_tokens": 546,
             "completion_tokens": 951,
@@ -11839,7 +12488,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.918,
+            "duration_ms": 6.756,
             "generation_params": {},
             "prompt_tokens": 581,
             "completion_tokens": 650,
@@ -11852,7 +12501,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.934,
+            "duration_ms": 6.027,
             "generation_params": {},
             "prompt_tokens": 480,
             "completion_tokens": 848,
@@ -11865,7 +12514,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.251,
+            "duration_ms": 6.885,
             "generation_params": {},
             "prompt_tokens": 525,
             "completion_tokens": 1024,
@@ -11878,7 +12527,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.582,
+            "duration_ms": 6.333,
             "generation_params": {},
             "prompt_tokens": 1698,
             "completion_tokens": 1024,
@@ -11891,7 +12540,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.71,
+            "duration_ms": 6.69,
             "generation_params": {},
             "prompt_tokens": 2872,
             "completion_tokens": 1024,
@@ -11904,7 +12553,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.208,
+            "duration_ms": 6.156,
             "generation_params": {},
             "prompt_tokens": 711,
             "completion_tokens": 1024,
@@ -11917,7 +12566,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.956,
+            "duration_ms": 6.419,
             "generation_params": {},
             "prompt_tokens": 1942,
             "completion_tokens": 1024,
@@ -11930,7 +12579,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 112.297,
+            "duration_ms": 6.567,
             "generation_params": {},
             "prompt_tokens": 3173,
             "completion_tokens": 923,
@@ -11943,7 +12592,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.501,
+            "duration_ms": 6.219,
             "generation_params": {},
             "prompt_tokens": 549,
             "completion_tokens": 619,
@@ -11956,7 +12605,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.123,
+            "duration_ms": 87.962,
             "generation_params": {},
             "prompt_tokens": 625,
             "completion_tokens": 1024,
@@ -11969,7 +12618,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.982,
+            "duration_ms": 7.243,
             "generation_params": {},
             "prompt_tokens": 2023,
             "completion_tokens": 1024,
@@ -11982,7 +12631,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.999,
+            "duration_ms": 6.893,
             "generation_params": {},
             "prompt_tokens": 3422,
             "completion_tokens": 674,
@@ -11995,7 +12644,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.631,
+            "duration_ms": 6.146,
             "generation_params": {},
             "prompt_tokens": 449,
             "completion_tokens": 815,
@@ -12008,7 +12657,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.708,
+            "duration_ms": 6.486,
             "generation_params": {},
             "prompt_tokens": 509,
             "completion_tokens": 854,
@@ -12021,7 +12670,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.689,
+            "duration_ms": 6.759,
             "generation_params": {},
             "prompt_tokens": 540,
             "completion_tokens": 719,
@@ -12034,7 +12683,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.421,
+            "duration_ms": 6.151,
             "generation_params": {},
             "prompt_tokens": 529,
             "completion_tokens": 858,
@@ -12047,7 +12696,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.885,
+            "duration_ms": 6.679,
             "generation_params": {},
             "prompt_tokens": 672,
             "completion_tokens": 889,
@@ -12060,7 +12709,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.86,
+            "duration_ms": 6.261,
             "generation_params": {},
             "prompt_tokens": 663,
             "completion_tokens": 723,
@@ -12073,7 +12722,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.089,
+            "duration_ms": 6.581,
             "generation_params": {},
             "prompt_tokens": 470,
             "completion_tokens": 1024,
@@ -12086,7 +12735,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.081,
+            "duration_ms": 7.093,
             "generation_params": {},
             "prompt_tokens": 1749,
             "completion_tokens": 1024,
@@ -12099,7 +12748,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.34,
+            "duration_ms": 6.319,
             "generation_params": {},
             "prompt_tokens": 2982,
             "completion_tokens": 1024,
@@ -12112,7 +12761,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.427,
+            "duration_ms": 6.763,
             "generation_params": {},
             "prompt_tokens": 556,
             "completion_tokens": 786,
@@ -12125,7 +12774,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.553,
+            "duration_ms": 6.356,
             "generation_params": {},
             "prompt_tokens": 525,
             "completion_tokens": 912,
@@ -12138,7 +12787,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.281,
+            "duration_ms": 6.665,
             "generation_params": {},
             "prompt_tokens": 498,
             "completion_tokens": 811,
@@ -12151,7 +12800,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.714,
+            "duration_ms": 6.37,
             "generation_params": {},
             "prompt_tokens": 539,
             "completion_tokens": 737,
@@ -12164,7 +12813,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.442,
+            "duration_ms": 6.481,
             "generation_params": {},
             "prompt_tokens": 583,
             "completion_tokens": 602,
@@ -12177,7 +12826,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 116.283,
+            "duration_ms": 6.698,
             "generation_params": {},
             "prompt_tokens": 594,
             "completion_tokens": 1002,
@@ -12190,7 +12839,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 9.444,
+            "duration_ms": 6.114,
             "generation_params": {},
             "prompt_tokens": 599,
             "completion_tokens": 873,
@@ -12203,7 +12852,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.568,
+            "duration_ms": 85.335,
             "generation_params": {},
             "prompt_tokens": 593,
             "completion_tokens": 592,
@@ -12216,7 +12865,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.248,
+            "duration_ms": 7.105,
             "generation_params": {},
             "prompt_tokens": 547,
             "completion_tokens": 975,
@@ -12229,7 +12878,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.576,
+            "duration_ms": 7.304,
             "generation_params": {},
             "prompt_tokens": 524,
             "completion_tokens": 553,
@@ -12242,7 +12891,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.257,
+            "duration_ms": 6.137,
             "generation_params": {},
             "prompt_tokens": 519,
             "completion_tokens": 688,
@@ -12255,7 +12904,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.485,
+            "duration_ms": 6.416,
             "generation_params": {},
             "prompt_tokens": 416,
             "completion_tokens": 923,
@@ -12268,7 +12917,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.73,
+            "duration_ms": 6.702,
             "generation_params": {},
             "prompt_tokens": 510,
             "completion_tokens": 891,
@@ -12281,7 +12930,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.437,
+            "duration_ms": 6.198,
             "generation_params": {},
             "prompt_tokens": 465,
             "completion_tokens": 574,
@@ -12294,7 +12943,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.784,
+            "duration_ms": 6.566,
             "generation_params": {},
             "prompt_tokens": 1316,
             "completion_tokens": 786,
@@ -12307,7 +12956,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.692,
+            "duration_ms": 6.206,
             "generation_params": {},
             "prompt_tokens": 1059,
             "completion_tokens": 890,
@@ -12320,7 +12969,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.289,
+            "duration_ms": 6.511,
             "generation_params": {},
             "prompt_tokens": 1124,
             "completion_tokens": 857,
@@ -12333,7 +12982,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.818,
+            "duration_ms": 6.722,
             "generation_params": {},
             "prompt_tokens": 1050,
             "completion_tokens": 827,
@@ -12346,7 +12995,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.38,
+            "duration_ms": 6.131,
             "generation_params": {},
             "prompt_tokens": 578,
             "completion_tokens": 683,
@@ -12359,7 +13008,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.458,
+            "duration_ms": 6.692,
             "generation_params": {},
             "prompt_tokens": 1590,
             "completion_tokens": 650,
@@ -12372,7 +13021,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.599,
+            "duration_ms": 6.233,
             "generation_params": {},
             "prompt_tokens": 1270,
             "completion_tokens": 736,
@@ -12385,7 +13034,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.606,
+            "duration_ms": 6.992,
             "generation_params": {},
             "prompt_tokens": 926,
             "completion_tokens": 725,
@@ -12398,7 +13047,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.003,
+            "duration_ms": 6.208,
             "generation_params": {},
             "prompt_tokens": 849,
             "completion_tokens": 644,
@@ -12411,7 +13060,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.045,
+            "duration_ms": 6.41,
             "generation_params": {},
             "prompt_tokens": 702,
             "completion_tokens": 683,
@@ -12424,7 +13073,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 110.767,
+            "duration_ms": 6.726,
             "generation_params": {},
             "prompt_tokens": 545,
             "completion_tokens": 748,
@@ -12437,7 +13086,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.526,
+            "duration_ms": 6.082,
             "generation_params": {},
             "prompt_tokens": 766,
             "completion_tokens": 803,
@@ -12450,7 +13099,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.736,
+            "duration_ms": 85.769,
             "generation_params": {},
             "prompt_tokens": 673,
             "completion_tokens": 770,
@@ -12463,7 +13112,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.104,
+            "duration_ms": 6.995,
             "generation_params": {},
             "prompt_tokens": 636,
             "completion_tokens": 1024,
@@ -12476,7 +13125,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.66,
+            "duration_ms": 6.814,
             "generation_params": {},
             "prompt_tokens": 1921,
             "completion_tokens": 1024,
@@ -12489,7 +13138,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.249,
+            "duration_ms": 6.258,
             "generation_params": {},
             "prompt_tokens": 3206,
             "completion_tokens": 890,
@@ -12502,7 +13151,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.01,
+            "duration_ms": 6.4,
             "generation_params": {},
             "prompt_tokens": 891,
             "completion_tokens": 1024,
@@ -12515,7 +13164,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.438,
+            "duration_ms": 6.587,
             "generation_params": {},
             "prompt_tokens": 2056,
             "completion_tokens": 1004,
@@ -12528,7 +13177,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.103,
+            "duration_ms": 6.116,
             "generation_params": {},
             "prompt_tokens": 482,
             "completion_tokens": 862,
@@ -12541,7 +13190,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.331,
+            "duration_ms": 6.584,
             "generation_params": {},
             "prompt_tokens": 492,
             "completion_tokens": 943,
@@ -12554,7 +13203,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.812,
+            "duration_ms": 6.218,
             "generation_params": {},
             "prompt_tokens": 811,
             "completion_tokens": 1024,
@@ -12567,7 +13216,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.596,
+            "duration_ms": 6.519,
             "generation_params": {},
             "prompt_tokens": 1976,
             "completion_tokens": 1019,
@@ -12580,7 +13229,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.887,
+            "duration_ms": 6.578,
             "generation_params": {},
             "prompt_tokens": 461,
             "completion_tokens": 536,
@@ -12593,7 +13242,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.111,
+            "duration_ms": 6.36,
             "generation_params": {},
             "prompt_tokens": 889,
             "completion_tokens": 664,
@@ -12606,7 +13255,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.99,
+            "duration_ms": 6.653,
             "generation_params": {},
             "prompt_tokens": 577,
             "completion_tokens": 794,
@@ -12619,7 +13268,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 9.484,
+            "duration_ms": 6.151,
             "generation_params": {},
             "prompt_tokens": 554,
             "completion_tokens": 818,
@@ -12632,7 +13281,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.345,
+            "duration_ms": 6.64,
             "generation_params": {},
             "prompt_tokens": 654,
             "completion_tokens": 697,
@@ -12645,7 +13294,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.449,
+            "duration_ms": 6.127,
             "generation_params": {},
             "prompt_tokens": 792,
             "completion_tokens": 631,
@@ -12658,7 +13307,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.145,
+            "duration_ms": 6.411,
             "generation_params": {},
             "prompt_tokens": 447,
             "completion_tokens": 583,
@@ -12671,7 +13320,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 111.444,
+            "duration_ms": 6.768,
             "generation_params": {},
             "prompt_tokens": 448,
             "completion_tokens": 649,
@@ -12684,7 +13333,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.55,
+            "duration_ms": 6.198,
             "generation_params": {},
             "prompt_tokens": 449,
             "completion_tokens": 637,
@@ -12697,7 +13346,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.368,
+            "duration_ms": 85.572,
             "generation_params": {},
             "prompt_tokens": 458,
             "completion_tokens": 757,
@@ -12710,7 +13359,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.632,
+            "duration_ms": 6.766,
             "generation_params": {},
             "prompt_tokens": 461,
             "completion_tokens": 1024,
@@ -12723,7 +13372,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.925,
+            "duration_ms": 6.77,
             "generation_params": {},
             "prompt_tokens": 1688,
             "completion_tokens": 1024,
@@ -12736,7 +13385,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.369,
+            "duration_ms": 6.113,
             "generation_params": {},
             "prompt_tokens": 2915,
             "completion_tokens": 1024,
@@ -12749,7 +13398,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.629,
+            "duration_ms": 6.492,
             "generation_params": {},
             "prompt_tokens": 464,
             "completion_tokens": 519,
@@ -12762,7 +13411,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.679,
+            "duration_ms": 6.607,
             "generation_params": {},
             "prompt_tokens": 447,
             "completion_tokens": 636,
@@ -12775,7 +13424,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.115,
+            "duration_ms": 6.064,
             "generation_params": {},
             "prompt_tokens": 475,
             "completion_tokens": 707,
@@ -12788,7 +13437,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.814,
+            "duration_ms": 6.547,
             "generation_params": {},
             "prompt_tokens": 459,
             "completion_tokens": 579,
@@ -12801,7 +13450,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.046,
+            "duration_ms": 6.108,
             "generation_params": {},
             "prompt_tokens": 471,
             "completion_tokens": 663,
@@ -12814,7 +13463,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.69,
+            "duration_ms": 6.453,
             "generation_params": {},
             "prompt_tokens": 612,
             "completion_tokens": 693,
@@ -12827,7 +13476,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.398,
+            "duration_ms": 7.875,
             "generation_params": {},
             "prompt_tokens": 484,
             "completion_tokens": 1024,
@@ -12840,7 +13489,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.854,
+            "duration_ms": 6.143,
             "generation_params": {},
             "prompt_tokens": 1658,
             "completion_tokens": 1024,
@@ -12853,7 +13502,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.923,
+            "duration_ms": 6.654,
             "generation_params": {},
             "prompt_tokens": 2833,
             "completion_tokens": 1024,
@@ -12866,7 +13515,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.446,
+            "duration_ms": 6.071,
             "generation_params": {},
             "prompt_tokens": 483,
             "completion_tokens": 660,
@@ -12879,7 +13528,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.807,
+            "duration_ms": 6.599,
             "generation_params": {},
             "prompt_tokens": 557,
             "completion_tokens": 745,
@@ -12892,7 +13541,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.434,
+            "duration_ms": 6.215,
             "generation_params": {},
             "prompt_tokens": 577,
             "completion_tokens": 965,
@@ -12905,7 +13554,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.211,
+            "duration_ms": 6.779,
             "generation_params": {},
             "prompt_tokens": 554,
             "completion_tokens": 881,
@@ -12918,7 +13567,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 112.253,
+            "duration_ms": 7.299,
             "generation_params": {},
             "prompt_tokens": 624,
             "completion_tokens": 618,
@@ -12931,7 +13580,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.282,
+            "duration_ms": 6.931,
             "generation_params": {},
             "prompt_tokens": 500,
             "completion_tokens": 615,
@@ -12944,7 +13593,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.642,
+            "duration_ms": 87.17,
             "generation_params": {},
             "prompt_tokens": 796,
             "completion_tokens": 581,
@@ -12957,7 +13606,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.916,
+            "duration_ms": 7.225,
             "generation_params": {},
             "prompt_tokens": 846,
             "completion_tokens": 590,
@@ -12970,7 +13619,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.096,
+            "duration_ms": 6.837,
             "generation_params": {},
             "prompt_tokens": 632,
             "completion_tokens": 1024,
@@ -12983,7 +13632,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.547,
+            "duration_ms": 6.21,
             "generation_params": {},
             "prompt_tokens": 1972,
             "completion_tokens": 1024,
@@ -12996,7 +13645,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.511,
+            "duration_ms": 6.502,
             "generation_params": {},
             "prompt_tokens": 3312,
             "completion_tokens": 784,
@@ -13009,7 +13658,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.892,
+            "duration_ms": 6.66,
             "generation_params": {},
             "prompt_tokens": 405,
             "completion_tokens": 608,
@@ -13022,7 +13671,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.896,
+            "duration_ms": 6.168,
             "generation_params": {},
             "prompt_tokens": 672,
             "completion_tokens": 1024,
@@ -13035,7 +13684,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.268,
+            "duration_ms": 6.692,
             "generation_params": {},
             "prompt_tokens": 1894,
             "completion_tokens": 806,
@@ -13048,7 +13697,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.872,
+            "duration_ms": 6.973,
             "generation_params": {},
             "prompt_tokens": 512,
             "completion_tokens": 667,
@@ -13061,7 +13710,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.377,
+            "duration_ms": 6.941,
             "generation_params": {},
             "prompt_tokens": 547,
             "completion_tokens": 769,
@@ -13074,7 +13723,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.03,
+            "duration_ms": 6.878,
             "generation_params": {},
             "prompt_tokens": 537,
             "completion_tokens": 872,
@@ -13087,7 +13736,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.819,
+            "duration_ms": 6.189,
             "generation_params": {},
             "prompt_tokens": 530,
             "completion_tokens": 789,
@@ -13100,7 +13749,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.681,
+            "duration_ms": 6.642,
             "generation_params": {},
             "prompt_tokens": 790,
             "completion_tokens": 728,
@@ -13113,7 +13762,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.751,
+            "duration_ms": 6.149,
             "generation_params": {},
             "prompt_tokens": 674,
             "completion_tokens": 803,
@@ -13126,7 +13775,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.314,
+            "duration_ms": 6.56,
             "generation_params": {},
             "prompt_tokens": 560,
             "completion_tokens": 630,
@@ -13139,7 +13788,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.82,
+            "duration_ms": 6.212,
             "generation_params": {},
             "prompt_tokens": 815,
             "completion_tokens": 824,
@@ -13152,7 +13801,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.614,
+            "duration_ms": 6.519,
             "generation_params": {},
             "prompt_tokens": 805,
             "completion_tokens": 833,
@@ -13165,7 +13814,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 113.682,
+            "duration_ms": 6.716,
             "generation_params": {},
             "prompt_tokens": 710,
             "completion_tokens": 1004,
@@ -13178,7 +13827,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 11.974,
+            "duration_ms": 6.115,
             "generation_params": {},
             "prompt_tokens": 461,
             "completion_tokens": 793,
@@ -13191,7 +13840,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.097,
+            "duration_ms": 87.538,
             "generation_params": {},
             "prompt_tokens": 526,
             "completion_tokens": 640,
@@ -13204,7 +13853,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.522,
+            "duration_ms": 7.151,
             "generation_params": {},
             "prompt_tokens": 459,
             "completion_tokens": 852,
@@ -13217,7 +13866,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 11.787,
+            "duration_ms": 7.006,
             "generation_params": {},
             "prompt_tokens": 483,
             "completion_tokens": 1024,
@@ -13230,7 +13879,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.897,
+            "duration_ms": 6.508,
             "generation_params": {},
             "prompt_tokens": 1649,
             "completion_tokens": 992,
@@ -13243,7 +13892,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.437,
+            "duration_ms": 6.537,
             "generation_params": {},
             "prompt_tokens": 448,
             "completion_tokens": 631,
@@ -13256,7 +13905,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 9.19,
+            "duration_ms": 6.669,
             "generation_params": {},
             "prompt_tokens": 449,
             "completion_tokens": 686,
@@ -13269,7 +13918,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.451,
+            "duration_ms": 6.102,
             "generation_params": {},
             "prompt_tokens": 501,
             "completion_tokens": 527,
@@ -13282,7 +13931,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.617,
+            "duration_ms": 6.586,
             "generation_params": {},
             "prompt_tokens": 500,
             "completion_tokens": 745,
@@ -13295,7 +13944,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.984,
+            "duration_ms": 6.19,
             "generation_params": {},
             "prompt_tokens": 504,
             "completion_tokens": 856,
@@ -13308,7 +13957,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.959,
+            "duration_ms": 6.537,
             "generation_params": {},
             "prompt_tokens": 758,
             "completion_tokens": 924,
@@ -13321,7 +13970,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.289,
+            "duration_ms": 6.652,
             "generation_params": {},
             "prompt_tokens": 645,
             "completion_tokens": 709,
@@ -13334,7 +13983,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.643,
+            "duration_ms": 6.301,
             "generation_params": {},
             "prompt_tokens": 874,
             "completion_tokens": 950,
@@ -13347,7 +13996,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.282,
+            "duration_ms": 6.627,
             "generation_params": {},
             "prompt_tokens": 531,
             "completion_tokens": 879,
@@ -13360,7 +14009,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.598,
+            "duration_ms": 6.053,
             "generation_params": {},
             "prompt_tokens": 580,
             "completion_tokens": 723,
@@ -13373,7 +14022,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.332,
+            "duration_ms": 8.826,
             "generation_params": {},
             "prompt_tokens": 451,
             "completion_tokens": 638,
@@ -13386,7 +14035,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.849,
+            "duration_ms": 6.277,
             "generation_params": {},
             "prompt_tokens": 503,
             "completion_tokens": 834,
@@ -13399,7 +14048,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.087,
+            "duration_ms": 6.448,
             "generation_params": {},
             "prompt_tokens": 611,
             "completion_tokens": 916,
@@ -13412,7 +14061,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 111.603,
+            "duration_ms": 6.617,
             "generation_params": {},
             "prompt_tokens": 664,
             "completion_tokens": 815,
@@ -13425,7 +14074,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.915,
+            "duration_ms": 6.064,
             "generation_params": {},
             "prompt_tokens": 526,
             "completion_tokens": 832,
@@ -13438,7 +14087,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.121,
+            "duration_ms": 88.814,
             "generation_params": {},
             "prompt_tokens": 728,
             "completion_tokens": 881,
@@ -13451,7 +14100,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.217,
+            "duration_ms": 6.847,
             "generation_params": {},
             "prompt_tokens": 618,
             "completion_tokens": 1001,
@@ -13464,7 +14113,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.284,
+            "duration_ms": 6.797,
             "generation_params": {},
             "prompt_tokens": 559,
             "completion_tokens": 960,
@@ -13477,7 +14126,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.957,
+            "duration_ms": 6.204,
             "generation_params": {},
             "prompt_tokens": 705,
             "completion_tokens": 1024,
@@ -13490,7 +14139,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.116,
+            "duration_ms": 6.46,
             "generation_params": {},
             "prompt_tokens": 1879,
             "completion_tokens": 890,
@@ -13503,7 +14152,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.319,
+            "duration_ms": 6.632,
             "generation_params": {},
             "prompt_tokens": 739,
             "completion_tokens": 851,
@@ -13516,7 +14165,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 9.188,
+            "duration_ms": 6.073,
             "generation_params": {},
             "prompt_tokens": 880,
             "completion_tokens": 947,
@@ -13529,7 +14178,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.787,
+            "duration_ms": 6.606,
             "generation_params": {},
             "prompt_tokens": 437,
             "completion_tokens": 684,
@@ -13542,7 +14191,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 10.209,
+            "duration_ms": 6.157,
             "generation_params": {},
             "prompt_tokens": 600,
             "completion_tokens": 618,
@@ -13555,7 +14204,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.744,
+            "duration_ms": 6.577,
             "generation_params": {},
             "prompt_tokens": 613,
             "completion_tokens": 828,
@@ -13568,7 +14217,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.425,
+            "duration_ms": 6.733,
             "generation_params": {},
             "prompt_tokens": 681,
             "completion_tokens": 646,
@@ -13581,7 +14230,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.375,
+            "duration_ms": 10.931,
             "generation_params": {},
             "prompt_tokens": 619,
             "completion_tokens": 1013,
@@ -13594,7 +14243,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.456,
+            "duration_ms": 6.656,
             "generation_params": {},
             "prompt_tokens": 719,
             "completion_tokens": 821,
@@ -13607,7 +14256,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.849,
+            "duration_ms": 7.981,
             "generation_params": {},
             "prompt_tokens": 573,
             "completion_tokens": 1012,
@@ -13620,7 +14269,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.389,
+            "duration_ms": 6.55,
             "generation_params": {},
             "prompt_tokens": 546,
             "completion_tokens": 614,
@@ -13633,7 +14282,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.078,
+            "duration_ms": 6.131,
             "generation_params": {},
             "prompt_tokens": 512,
             "completion_tokens": 1024,
@@ -13646,7 +14295,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.357,
+            "duration_ms": 6.451,
             "generation_params": {},
             "prompt_tokens": 1678,
             "completion_tokens": 1024,
@@ -13659,7 +14308,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 116.503,
+            "duration_ms": 6.842,
             "generation_params": {},
             "prompt_tokens": 2852,
             "completion_tokens": 1024,
@@ -13672,7 +14321,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.134,
+            "duration_ms": 6.228,
             "generation_params": {},
             "prompt_tokens": 435,
             "completion_tokens": 794,
@@ -13685,7 +14334,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.163,
+            "duration_ms": 88.191,
             "generation_params": {},
             "prompt_tokens": 545,
             "completion_tokens": 1024,
@@ -13698,7 +14347,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.435,
+            "duration_ms": 7.208,
             "generation_params": {},
             "prompt_tokens": 1812,
             "completion_tokens": 1024,
@@ -13711,7 +14360,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.528,
+            "duration_ms": 7.141,
             "generation_params": {},
             "prompt_tokens": 3033,
             "completion_tokens": 1024,
@@ -13724,7 +14373,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.61,
+            "duration_ms": 6.213,
             "generation_params": {},
             "prompt_tokens": 591,
             "completion_tokens": 615,
@@ -13737,7 +14386,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.091,
+            "duration_ms": 7.118,
             "generation_params": {},
             "prompt_tokens": 555,
             "completion_tokens": 725,
@@ -13750,7 +14399,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.925,
+            "duration_ms": 6.603,
             "generation_params": {},
             "prompt_tokens": 477,
             "completion_tokens": 685,
@@ -13763,7 +14412,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.227,
+            "duration_ms": 6.183,
             "generation_params": {},
             "prompt_tokens": 423,
             "completion_tokens": 1015,
@@ -13776,7 +14425,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.153,
+            "duration_ms": 6.545,
             "generation_params": {},
             "prompt_tokens": 480,
             "completion_tokens": 570,
@@ -13789,7 +14438,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.529,
+            "duration_ms": 6.063,
             "generation_params": {},
             "prompt_tokens": 627,
             "completion_tokens": 1024,
@@ -13802,7 +14451,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.775,
+            "duration_ms": 6.539,
             "generation_params": {},
             "prompt_tokens": 1851,
             "completion_tokens": 1024,
@@ -13815,7 +14464,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.493,
+            "duration_ms": 6.622,
             "generation_params": {},
             "prompt_tokens": 3133,
             "completion_tokens": 963,
@@ -13828,7 +14477,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.96,
+            "duration_ms": 6.525,
             "generation_params": {},
             "prompt_tokens": 755,
             "completion_tokens": 948,
@@ -13841,7 +14490,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.006,
+            "duration_ms": 6.775,
             "generation_params": {},
             "prompt_tokens": 537,
             "completion_tokens": 715,
@@ -13854,7 +14503,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.293,
+            "duration_ms": 6.137,
             "generation_params": {},
             "prompt_tokens": 423,
             "completion_tokens": 721,
@@ -13867,7 +14516,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.699,
+            "duration_ms": 6.552,
             "generation_params": {},
             "prompt_tokens": 548,
             "completion_tokens": 1024,
@@ -13880,7 +14529,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.087,
+            "duration_ms": 6.094,
             "generation_params": {},
             "prompt_tokens": 1769,
             "completion_tokens": 907,
@@ -13893,7 +14542,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.552,
+            "duration_ms": 6.442,
             "generation_params": {},
             "prompt_tokens": 559,
             "completion_tokens": 960,
@@ -13906,7 +14555,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 115.341,
+            "duration_ms": 7.044,
             "generation_params": {},
             "prompt_tokens": 525,
             "completion_tokens": 812,
@@ -13919,7 +14568,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.382,
+            "duration_ms": 6.399,
             "generation_params": {},
             "prompt_tokens": 555,
             "completion_tokens": 616,
@@ -13932,7 +14581,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.592,
+            "duration_ms": 87.715,
             "generation_params": {},
             "prompt_tokens": 686,
             "completion_tokens": 699,
@@ -13945,7 +14594,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.207,
+            "duration_ms": 6.966,
             "generation_params": {},
             "prompt_tokens": 1001,
             "completion_tokens": 814,
@@ -13958,7 +14607,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 6.721,
+            "duration_ms": 6.991,
             "generation_params": {},
             "prompt_tokens": 427,
             "completion_tokens": 946,
@@ -13971,7 +14620,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.521,
+            "duration_ms": 6.251,
             "generation_params": {},
             "prompt_tokens": 486,
             "completion_tokens": 871,
@@ -13984,7 +14633,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.606,
+            "duration_ms": 6.481,
             "generation_params": {},
             "prompt_tokens": 456,
             "completion_tokens": 829,
@@ -13997,7 +14646,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.003,
+            "duration_ms": 7.157,
             "generation_params": {},
             "prompt_tokens": 440,
             "completion_tokens": 842,
@@ -14010,7 +14659,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.406,
+            "duration_ms": 6.209,
             "generation_params": {},
             "prompt_tokens": 508,
             "completion_tokens": 714,
@@ -14023,7 +14672,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.086,
+            "duration_ms": 6.611,
             "generation_params": {},
             "prompt_tokens": 524,
             "completion_tokens": 960,
@@ -14036,7 +14685,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.244,
+            "duration_ms": 6.207,
             "generation_params": {},
             "prompt_tokens": 478,
             "completion_tokens": 721,
@@ -14049,7 +14698,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.308,
+            "duration_ms": 6.56,
             "generation_params": {},
             "prompt_tokens": 696,
             "completion_tokens": 1024,
@@ -14062,7 +14711,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.315,
+            "duration_ms": 6.662,
             "generation_params": {},
             "prompt_tokens": 1870,
             "completion_tokens": 1024,
@@ -14075,7 +14724,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.844,
+            "duration_ms": 6.21,
             "generation_params": {},
             "prompt_tokens": 3045,
             "completion_tokens": 1024,
@@ -14088,7 +14737,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.215,
+            "duration_ms": 6.692,
             "generation_params": {},
             "prompt_tokens": 647,
             "completion_tokens": 776,
@@ -14101,7 +14750,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.175,
+            "duration_ms": 6.151,
             "generation_params": {},
             "prompt_tokens": 758,
             "completion_tokens": 618,
@@ -14114,7 +14763,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.336,
+            "duration_ms": 6.711,
             "generation_params": {},
             "prompt_tokens": 841,
             "completion_tokens": 711,
@@ -14127,7 +14776,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.969,
+            "duration_ms": 6.402,
             "generation_params": {},
             "prompt_tokens": 872,
             "completion_tokens": 600,
@@ -14140,7 +14789,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 8.622,
+            "duration_ms": 6.762,
             "generation_params": {},
             "prompt_tokens": 812,
             "completion_tokens": 873,
@@ -14153,7 +14802,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 115.783,
+            "duration_ms": 6.852,
             "generation_params": {},
             "prompt_tokens": 597,
             "completion_tokens": 560,
@@ -14166,7 +14815,7 @@
             "stage": "farley_evaluation",
             "model": "ollama/qwen3.5:2b",
             "source": "cache",
-            "duration_ms": 7.952,
+            "duration_ms": 6.146,
             "generation_params": {},
             "prompt_tokens": 607,
             "completion_tokens": 539,
@@ -22937,6 +23586,249 @@
       "completion_tokens": 661,
       "prompt_tokens": 538,
       "total_tokens": 1199,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "d71ca7fede19db6698c539d4b69243fae73d97d6d86286c3339520f5a755cf0a": {
+    "id": "chatcmpl-78ab4e81-7cf7-43cf-a668-8f43c58666f1",
+    "created": 1786321844,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test clearly demonstrates the business rule for coercing finite metrics: valid inputs (numbers/strings) return values or `None`, while invalid types (`True`, `False`, `None`, NaN, Infinity) result in `None`. The intent is unambiguous.\",\n    \"suggestions\": []\n  },\n  \"maintainable\": {\n    \"score\": 9,\n    \"rationale\": \"The test relies entirely on the internal function `_coerce_finite_metric` without hardcoding specific data types or edge cases. It isolates logic to a single contract (input type -> output value), making it robust against future changes in how inputs are validated.\",\n    \"suggestions\": []\n  },\n  \"repeatable\": {\n    \"score\": 10,\n    \"rationale\": \"The test is fully self-contained. It uses only built-in Python types and standard library functions (`float`, `bool`). No external databases, network calls, file I/O, or timing dependencies are involved.\",\n    \"suggestions\": []\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"Each assertion verifies a distinct behavior. If any single line fails (e.g., `True` returns non-None), the cause is immediately obvious as that specific input type violating the rule.\",\n    \"suggestions\": []\n  },\n  \"necessary\": {\n    \"score\": 7,\n    \"rationale\": \"While not duplicating other tests mentioned in a larger suite (assuming context exists elsewhere), this test covers edge cases for `None`, booleans, and special floats. It is necessary but could be combined with existing 'valid input' tests to reduce duplication.\",\n    \"suggestions\": [\n      \"Consider merging these assertions into one broader rule: `_coerce_finite_metric` should return a value if the type matches expectations; otherwise `None`. This reduces test count and potential for missing edge cases.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The test isolates specific input types (`float`, `bool`) against a clear output contract. It does not mix unrelated behaviors (like type conversion vs value validation) into one assertion.\",\n    \"suggestions\": []\n  },\n  \"fast\": {\n    \"score\": 10,\n    \"rationale\": \"The test executes instantly with no artificial delays or heavy setup code. All assertions are direct comparisons of return values against expected constants.\",\n    \"suggestions\": []\n  },\n  \"first_tdd\": {\n    \"score\": 9,\n    \"rationale\": \"This is a classic Arrange-Act-Assert pattern: the function `_coerce_finite_metric` (Arrange) is called with specific inputs to verify its behavior (Act), and assertions confirm the expected outcomes. The separation of concerns is clear.\",\n    \"suggestions\": []\n  },\n  \"summary\": \"The test demonstrates strong adherence to TDD principles: it's fast, repeatable, atomic, and follows a clean Arrange-Act-Assert structure. It effectively isolates edge cases without bloating the suite.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 704,
+      "prompt_tokens": 528,
+      "total_tokens": 1232,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "f4f72c467374077bcd1d7fa68f4ed4b7937e5e032a85244f50c0f08391207ab1": {
+    "id": "chatcmpl-4fcadfa4-738b-482e-88a1-a6390acf657e",
+    "created": 1786321922,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\n    \"score\": 8,\n    \"rationale\": \"The test clearly defines the input data (`deltas`), the function call (`compute_t_interval`), and the expected mathematical outcome (mean value). The business rule is explicit: calculate a t-interval for normal deltas. However, it lacks context about *why* this interval matters in the broader system.\",\n    \"suggestions\": [\n      \"Add comments or docstring explaining what 't_interval' represents in the domain of telemetry stats to ensure maintainability and clarity.\"\n    ]\n  },\n  \"maintainable\": {\n    \"score\": 7,\n    \"rationale\": \"The test is self-contained but relies on `compute_t_interval` being a stable function. If that internal implementation changes (e.g., algorithm update), this specific assertion might break unless the logic inside `compute_t_interval` remains constant.\",\n    \"suggestions\": [\n      \"Ensure `compute_t_interval` follows TDD principles and is unit-tested itself to guarantee stability across refactors.\"\n    ]\n  },\n  \"repeatable\": {\n    \"score\": 9,\n    \"rationale\": \"The test is fully deterministic. It uses a fixed list of deltas, no external state (DB/network/filesystem), and relies only on the function's internal logic which should be reproducible.\",\n    \"suggestions\": [\n      \"Verify that `compute_t_interval` has its own unit tests to ensure it produces identical results every time without relying on system timing or shared mutable state.\"\n    ]\n  },\n  \"atomic\": {\n    \"score\": 9,\n    \"rationale\": \"The test verifies exactly one behavior: the calculation of `mean_val`. If this assertion fails (e.g., due to a bug in `compute_t_interval`), the cause is instantly obvious and isolated.\",\n    \"suggestions\": [\n      \"Ensure no side effects occur within `test_compute_t_interval_normal_deltas`; if any, move them outside or use fixtures.\"\n    ]\n  },\n  \"necessary\": {\n    \"score\": 6,\n    \"rationale\": \"This test covers the calculation of a t-interval for normal deltas. However, it does not cover edge cases (e.g., zero variance), boundary conditions, or failure modes that might occur in production.\",\n    \"suggestions\": [\n      \"Add tests covering `alpha=0` scenarios and extreme delta values to ensure robustness across the full range of possible inputs.\"\n    ]\n  },\n  \"granular\": {\n    \"score\": 8,\n    \"rationale\": \"The test isolates a specific mathematical operation (mean calculation) within its context. It is precise enough that if it fails, one can immediately see which part of the logic went wrong.\",\n    \"suggestions\": [\n      \"Consider adding assertions for `ci_low` and `ci_high` bounds to ensure they are correctly calculated relative to the mean.\"\n    ]\n  },\n  \"fast\": {\n    \"score\": 9,\n    \"rationale\": \"The test executes immediately without artificial delays or heavy I/O. It relies on pure arithmetic operations.\",\n    \"suggestions\": [\n      \"Ensure `compute_t_interval` is optimized and does not perform unnecessary floating-point conversions that could slow down execution.\"\n    ]\n  },\n  \"first_tdd\": {\n    \"score\": 7,\n    \"rationale\": \"The test follows the Arrange-Act-Assert pattern: data (`deltas`) is prepared (Arrange), a function call occurs (Act), and assertions are made (Assert). However, it lacks an explicit 'specification' of what `compute_t_interval` should do before running this specific test.\",\n    \"suggestions\": [\n      \"Write the unit tests for `compute_t_interval` first to establish its behavior. Then write integration tests like this one that verify high-level interactions with those functions.\"\n    ]\n  },\n  \"summary\": \"The test is well-structured and follows TDD principles but lacks domain context (understandable) and comprehensive coverage of edge cases (necessary). It should be paired with unit tests for the internal function to ensure maintainability and speed.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 912,
+      "prompt_tokens": 476,
+      "total_tokens": 1388,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "c303bb3777e0f38dd5393f96432b7caff063c2d45f62ace09f80f56f45a57cbc": {
+    "id": "chatcmpl-796b27ad-da07-447f-8b98-4b2859b53fe2",
+    "created": 1786321999,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n\"understandable\": {\n\"score\": 8,\n\"rationale\": \"The test clearly defines the input data and expected output logic. However, it lacks a clear 'business rule' description (e.g., what does this function actually do? Why are these specific deltas chosen?). It reads like an implementation detail rather than a specification.\",\n\"suggestions\": [\n  \"Add a docstring explaining the business purpose of `compute_hodges_lehmann` and why these delta values were selected for testing.\"\n]\n},\n\"maintainable\": {\n\"score\": 6,\n\"rationale\": \"The test is self-contained but relies on an external function (`compute_hodges_lehmann`) which may be brittle if the implementation changes. It also lacks a clear assertion of 'what' (the mathematical property) versus 'how'.\",\n\"suggestions\": [\n  \"Explicitly state in the docstring or comments that this test verifies the Hodges-Lehmann theorem for small sample sizes, not just numerical coincidence.\"\n]\n},\n\"repeatable\": {\n\"score\": 7,\n\"rationale\": \"The function call is deterministic and self-contained. However, it relies on `compute_hodges_lehmann` which might depend on external state or timing if the implementation isn't pure Python/NumPy without side effects.\",\n\"suggestions\": [\n  \"Ensure `compute_hodges_lehmann` has no dependencies on shared mutable state (e.g., global variables) and is fully deterministic.\"\n]\n},\n\"atomic\": {\n\"score\": 9,\n\"rationale\": \"The test verifies exactly one behavior: the median calculation. The assertion chain (`assert math.isclose...`, `assert ci_low <= hl_med <= ci_high`) isolates this single rule clearly without mixing unrelated logic.\",\n\"suggestions\": [\n  \"Consider adding a specific check for edge cases (e.g., empty list, zero length) to ensure atomicity of the 'median' behavior itself.\"\n]\n},\n\"necessary\": {\n\"score\": 5,\n\"rationale\": \"This test likely duplicates coverage already provided by other tests in `test_debate_telemetry_stats.py` (e.g., testing median calculation for various inputs). It does not add unique value unless it specifically targets the Hodges-Lehmann theorem's specific conditions.\",\n\"suggestions\": [\n  \"Review existing tests to confirm this test is necessary. If redundant, refactor or remove.\"\n]\n},\n\"granular\": {\n\"score\": 4,\n\"rationale\": \"The assertion `assert ci_low <= hl_med <= ci_high` checks a derived property rather than the core behavior (the median). It's less granular about what 'correct' means for this specific function.\",\n\"suggestions\": [\n  \"Refine assertions to directly verify mathematical properties: e.g., check if `(hl_med - delta) / n >= alpha/2`. This isolates the statistical property more precisely.\"\n]\n},\n\"fast\": {\n\"score\": 9,\n\"rationale\": \"The test executes immediately without artificial delays or heavy I/O. It is a pure function call with minimal overhead.\",\n\"suggestions\": [\n  \"Ensure `compute_hodges_lehmann` itself has no hidden setup time; if it uses external libraries that have startup costs, consider mocking them.\"\n]\n},\n\"first_tdd\": {\n\"score\": 6,\n\"rationale\": \"The test follows a basic Arrange-Act-Assert pattern but lacks the 'specification' aspect of TDD. It assumes `compute_hodges_lehmann` is correct without verifying its design properties first.\",\n\"suggestions\": [\n  \"Before writing this test, verify that `compute_hodges_lehmann` has been designed to meet specific statistical requirements (e.g., unbiased estimator). Document these assumptions in the code or comments.\"\n]\n},\"summary\":\"The test is mostly functional but lacks business context and verification of design properties. It risks being brittle if dependencies change, potentially redundant with existing tests, and could be more granular about its mathematical assertions.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 884,
+      "prompt_tokens": 483,
+      "total_tokens": 1367,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "3cef6a2283f429b5ddff8c2ea74eadf210b4453c248817abcc919fa91576d4dc": {
+    "id": "chatcmpl-df290624-9fd6-441a-aede-fe1298ce4829",
+    "created": 1786322065,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 9, \"rationale\": \"The test clearly defines the input data (`p_values`), the function call context, and the expected output structure. The logic for ranking (comparing p-values against cumulative thresholds) is explicit enough to be understood without deep domain knowledge.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 8, \"rationale\": \"The test relies on a single external function `apply_holm_step_down` and basic list indexing. It does not depend on the internal implementation of that helper (e.g., how it handles ties or edge cases), making it robust against refactoring as long as the API contract remains stable.\", \"suggestions\": []},\n  \"repeatable\": {\"score\": 7, \"rationale\": \"The test is deterministic and self-contained. However, if `apply_holm_step_down` itself relies on external state (like a shared random seed or database), this specific test would not be fully repeatable in isolation.\", \"suggestions\": [\"Ensure the underlying function uses only local variables for randomness.\"]},\n  \"atomic\": {\"score\": 9, \"rationale\": \"The test verifies exactly one behavior: that `apply_holm_step_down` correctly processes a list of p-values and returns an array with specific properties. There is no ambiguity about what the code should do.\", \"suggestions\": []},\n  \"necessary\": {\"score\": 8, \"rationale\": \"This test covers the core logic for ranking significance based on cumulative thresholds (Holm-Bonferroni method). It does not duplicate coverage of other tests that might handle different edge cases or alternative algorithms.\", \"suggestions\": [\"Ensure no other tests cover this specific threshold calculation to avoid redundancy.\"]},\n  \"granular\": {\"score\": 7, \"rationale\": \"The test is somewhat granular in asserting the final array structure and individual boolean flags. However, it could be more precise by explicitly checking that `results[2]` stops at p=0.04 rather than just returning False.\", \"suggestions\": [\"Add assertions like: assert results[2]['p_value'] == 0.04.\"]},\n  \"fast\": {\"score\": 6, \"rationale\": \"The test is fast in execution time and avoids artificial delays or heavy I/O. However, if `apply_holm_step_down` performs a slow network call to fetch data for each p-value before computing the result, this specific test would be artificially slowed down.\", \"suggestions\": [\"Verify that no external API calls are made inside `apply_holm_step_down`.\"]},\n  \"first_tdd\": {\"score\": 9, \"rationale\": \"The code follows a clean Arrange-Act-Assert pattern. The 'Arrange' section sets up the inputs and function call; the 'Act' is the invocation (implicit in assertions); the 'Assert' validates specific properties of the output.\", \"suggestions\": []},\"summary\":\"{\\\"understandable\\\": 9, \\\"maintainable\\\": 8, \\\"repeatable\\\": 7, \\\"atomic\\\": 9, \\\"necessary\\\": 8, \\\"granular\\\": 7, \\\"fast\\\": 6, \\\"first_tdd\\\": 9}\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 696,
+      "prompt_tokens": 573,
+      "total_tokens": 1269,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "b934ec81a344df33f85d80b9ed0fe3fe900e6dfffb834abc3418b0df96e189bc": {
+    "id": "chatcmpl-355f6f9d-3888-49fc-9ccf-5f4f94ef95bb",
+    "created": 1786322115,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the input data and expected outputs for a statistical hypothesis test with insufficient sample size.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 9, \"rationale\": \"The logic is self-contained; it does not rely on external state or system implementation details that could change during refactoring.\", \"suggestions\": []},\n  \"repeatable\": {\"score\": 10, \"rationale\": \"This test has no dependencies on shared mutable state (like a database), network calls, file I/O, or timing. It is fully deterministic and self-contained.\", \"suggestions\": []},\n  \"atomic\": {\"score\": 9, \"rationale\": \"The assertion `assert res['is_significant'] == False` directly verifies the specific business rule: that with insufficient sample size, significance should be false. The cause of failure (if any) is immediately obvious.\", \"suggestions\": []},\n  \"necessary\": {\"score\": 8, \"rationale\": \"This test covers a specific edge case regarding statistical power and p-values for small samples. It does not duplicate coverage from other tests that likely handle normal or large-sample scenarios.\", \"suggestions\": [\"Ensure there is no existing test covering the 'insufficient_sample_size' logic to avoid redundancy.\"]},\n  \"granular\": {\"score\": 9, \"rationale\": \"The test isolates a specific behavior: calculating and reporting statistical metrics for an insufficient sample size scenario. It does not mix unrelated behaviors.\", \"suggestions\": []},\n  \"fast\": {\"score\": 10, \"rationale\": \"There are no artificial sleeps, heavy setups, or unneeded slow I/O operations in this test function definition itself (assuming `compute_statistical_hypothesis_test` is efficient).\", \"suggestions\": [\"Ensure the underlying implementation of `compute_statistical_hypothesis_test` does not introduce unnecessary overhead.\"]},\n  \"first_tdd\": {\"score\": 9, \"rationale\": \"The code follows a clean Arrange-Act-Assert structure. It specifies inputs (b_vals, c_vals), performs an action (`res = compute...`), and asserts the resulting behavior.\", \"suggestions\": []},\"summary\":\"{\\\"understandable\\\":8,\\\"maintainable\\\":9,\\\"repeatable\\\":10,\\\"atomic\\\":9,\\\"necessary\\\":8,\\\"granular\\\":9,\\\"fast\\\":10,\\\"first_tdd\\\":9}\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 532,
+      "prompt_tokens": 503,
+      "total_tokens": 1035,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "749baae3803cec9df8f8e1296e6ad06ef47f8652cf855dccc59cb3c91ed33e12": {
+    "id": "chatcmpl-cd8e9015-6049-48a3-9d1c-d2f2f35e10d1",
+    "created": 1786322173,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the input data (b_vals and c_vals) as a 'large consistent shift' scenario. The intent is to verify that `compute_statistical_hypothesis_test` correctly identifies this specific pattern.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 9, \"rationale\": \"The test relies entirely on hardcoded numeric arrays and explicit assertions for the output structure (`res`). It does not depend on external state or system implementation details (like a database), making it highly maintainable even if `compute_statistical_hypothesis_test` is refactored.\", \"suggestions\": []},\n  \"repeatable\": {\"score\": 10, \"rationale\": \"The test is fully self-contained. It uses no external shared state, network calls, filesystem operations, or timing-dependent logic (no sleeps). The inputs are deterministic and the outputs are strictly defined by assertions.\", \"suggestions\": []},\n  \"atomic\": {\"score\": 9, \"rationale\": \"Each assertion verifies a single distinct behavior: sample size calculation, hypothesis classification (`is_normal`), test type identification, p-value thresholding, significance flagging, and confidence interval bounds. If any fail, the cause is immediately obvious.\", \"suggestions\": []},\n  \"necessary\": {\"score\": 8, \"rationale\": \"The tests cover specific edge cases (large consistent shift) for a specific metric (`tokens`). However, it lacks coverage for other scenarios like small shifts or non-normal distributions to ensure comprehensive test suite design per TDD principles.\", \"suggestions\": []},\n  \"granular\": {\"score\": 9, \"rationale\": \"The assertions are precise and targeted. They isolate the exact conditions under which `is_normal` returns True (large consistent shift) rather than vague generalizations about statistical correctness.\", \"suggestions\": []},\n  \"fast\": {\"score\": 10, \"rationale\": \"There is no artificial delay (`sleep()`), heavy setup code, or unneeded I/O operations. The test executes purely on the CPU with immediate return values from `compute_statistical_hypothesis_test`.\", \"suggestions\": []},\n  \"first_tdd\": {\"score\": 8, \"rationale\": \"The structure follows Arrange-Act-Assert: inputs are defined first (Arrange), then a function call is made to compute the result (Act), and finally assertions verify specific properties of that output. However, it could be more explicit about separating 'what' from 'how' in comments or docstrings.\", \"suggestions\": []},\"summary\":\"The test demonstrates strong adherence to TDD principles with high scores on maintainability, repeatability, atomicity, granularity, and speed. It effectively isolates a specific hypothesis check without external dependencies.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 602,
+      "prompt_tokens": 670,
+      "total_tokens": 1272,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "6cad574393a23c44c1e614495565978a12f09b925a6e19f33e7511849d16a7b3": {
+    "id": "chatcmpl-00f32f20-4cc3-4a1a-8e91-8a4fda710e00",
+    "created": 1786322247,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n\"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the business context (comparing baseline vs candidate telemetry) and uses domain-specific terminology ('run_id', 'summary'). However, it lacks a clear narrative flow or explicit goal statement at the top.\", \"suggestions\": [\"Add an `@pytest.mark.parametrize` block with descriptive parameters to immediately state what is being compared.\"]},\n\"maintainable\": {\"score\": 9, \"rationale\": \"The test logic is decoupled from system implementation details. It relies on a hypothetical function `compute_ab_benchmark_comparison`, which isolates the statistical testing logic.\", \"suggestions\": [\"Ensure that if `ab_res` changes its internal structure (e.g., moves stats to top level), this specific assertion remains valid without requiring code refactoring.\"]},\n\"repeatable\": {\"score\": 7, \"rationale\": \"The test is deterministic in execution order and inputs. However, it relies on the hypothetical function's output being consistent across runs.\", \"suggestions\": [\"Explicitly mock or stub `compute_ab_benchmark_comparison` to ensure identical results regardless of external dependencies.\"]},\n\"atomic\": {\"score\": 6, \"rationale\": \"The test verifies multiple assertions (run IDs and statistical tests). If the hypothesis is wrong about significant differences, it's hard to pinpoint exactly which assertion failed.\", \"suggestions\": [\"Structure this as a single `assert` statement or use an intermediate variable that aggregates all checks for clearer failure reporting.\"]},\n\"necessary\": {\"score\": 5, \"rationale\": \"This test likely duplicates coverage already provided by the statistical tests themselves. It doesn't add unique value beyond verifying the existence of significant differences.\", \"suggestions\": [\"Remove this specific assertion if it is redundant with existing `stat_tests` assertions or merge its logic into a single comprehensive check.\"]},\n\"granular\": {\"score\": 7, \"rationale\": \"The test isolates 'paired t-test' and 'Wilcoxon signed-rank' checks. However, the granularity of checking only significance (`is_significant_holm`) is limited.\", \"suggestions\": [\"Add assertions for effect size (e.g., Cohen's d) or confidence intervals to provide a more complete picture of statistical significance.\"]},\n\"fast\": {\"score\": 8, \"rationale\": \"The test avoids sleeps and heavy I/O. It only performs dictionary lookups and function calls.\", \"suggestions\": [\"Ensure the `compute_ab_benchmark_comparison` function is mocked or stubbed to prevent any potential network latency if it were real.\"]},\n\"first_tdd\": {\"score\": 9, \"rationale\": \"The test follows a clean Arrange-Act-Assert pattern. It defines inputs (baseline/candidate), performs an action (`compute_ab_benchmark_comparison`), and asserts specific properties.\", \"suggestions\": [\"Explicitly document the 'Arrange' phase in comments to ensure future maintainers understand how `ab_res` is constructed.\"]},\"summary\":\"The test demonstrates strong TDD principles with clear separation of concerns (8/10) but risks redundancy if statistical tests already cover these checks. It should be streamlined for maximum coverage efficiency while maintaining clarity on the 'what' vs 'how'.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 682,
+      "prompt_tokens": 1127,
+      "total_tokens": 1809,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "976e532534da71de2c4d3aa098846af1109ca0578ac6c095b1b427d7e4768584": {
+    "id": "chatcmpl-503d69be-3f93-480a-bd7a-62b41e32746e",
+    "created": 1786322302,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the input data (identical values) and expected output metrics for a 'zero_delta_identical' hypothesis. The intent is unambiguous.\", \"suggestions\": []},\n  \"maintainable\": {\"score\": 9, \"rationale\": \"This test relies entirely on pure Python lists and basic arithmetic logic (`compute_statistical_hypothesis_test`). It has no dependencies on external state (DB, network), making it trivial to refactor the underlying `compute` function without breaking this specific assertion.\", \"suggestions\": []},\n  \"repeatable\": {\"score\": 10, \"rationale\": \"The test is fully self-contained. No database calls, file I/O, or timing-dependent operations are present. The result will be identical every time it runs on the same machine and Python version.\", \"suggestions\": []},\n  \"atomic\": {\"score\": 9, \"rationale\": \"It verifies exactly one behavior: that when inputs are equal, specific metrics (mean_delta=0, p_value=1) hold true. The failure mode is clear if any metric deviates from these exact values.\", \"suggestions\": []},\n  \"necessary\": {\"score\": 7, \"rationale\": \"While useful for regression, this test might be redundant if the `compute_statistical_hypothesis_test` function already includes a unit test covering identical inputs. It doesn't add unique coverage to other tests unless it's part of an integration suite.\", \"suggestions\": [\"Review existing statistical hypothesis tests in the codebase to ensure no duplicate logic is covered here.\"]},\n  \"granular\": {\"score\": 8, \"rationale\": \"It isolates a specific edge case (zero delta) and verifies precise numerical properties. It does not test general performance or broad coverage.\", \"suggestions\": []},\n  \"fast\": {\"score\": 9, \"rationale\": \"The code is pure Python with no artificial sleeps, heavy I/O, or network calls. Execution speed will be negligible compared to database operations.\", \"suggestions\": []},\n  \"first_tdd\": {\"score\": 8, \"rationale\": \"It follows the Arrange-Act-Assert pattern implicitly: inputs are arranged (defined), action is performed (`compute`), and assertions verify behavior. However, it lacks explicit `setup`, `given/when`, or `then` markers which would make its TDD nature more obvious.\", \"suggestions\": [\"Explicitly structure this test with a setup phase to define the 'zero delta' scenario before calling compute.\"]},\"summary\": \"The test is highly maintainable and repeatable, demonstrating clear intent. It effectively isolates an edge case but lacks explicit structural markers for first-TDD clarity. Minor redundancy in coverage compared to other statistical tests exists.\"}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 600,
+      "prompt_tokens": 560,
+      "total_tokens": 1160,
+      "completion_tokens_details": null,
+      "prompt_tokens_details": null
+    }
+  },
+  "24280c1a3ffb706d65b64a08848afd56f6713815b622fd30319476c78a854780": {
+    "id": "chatcmpl-f52173a3-fe96-48c8-a1e8-9cbbf20a6953",
+    "created": 1786322393,
+    "model": "ollama/qwen3.5:2b",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\n  \"understandable\": {\"score\": 8, \"rationale\": \"The test clearly defines the input data structures and expected output behavior. However, it lacks a clear 'business rule' explanation; instead of stating *why* we are testing this (e.g., validating robustness against malformed seed metrics), it merely asserts that specific fields exist or behave in certain ways.\", \"suggestions\": [\"Add an explicit comment block at the top defining the business goal: e.g., 'Verify that defensive handling of missing/malformed metric data does not crash and produces valid statistical tests.'\"]\n  },\n  \"maintainable\": {\"score\": 6, \"rationale\": \"The test is brittle to changes in `compute_ab_benchmark_comparison`. If the function signature or internal logic regarding how it handles 'None' values for seed metrics changes (e.g., raising an exception vs. returning a default), this specific assertion will break without modification.\", \"suggestions\": [\"Move assertions about sample size and significance into helper functions that encapsulate the statistical test generation logic, ensuring they only run if `stat_tests` is populated.\"\n  ]\n},\"repeatable\": {\"score\": 7, \"rationale\": \"The code relies on external state (`ab_res.get(\",\"suggestions\": [\"Remove reliance on `compute_ab_benchmark_comparison`. Instead of calling this function and asserting its return value structure (like the length of a list), assert directly within the test that specific conditions are met. For example: 'assert len(compute_ab_benchmark_comparison(baseline, candidate).get(\\\"statistical_tests\\\", [])) == 3'.\"\n  ]\n},\"atomic\": {\"score\": 9, \"rationale\": \"The test verifies exactly one behavior (the existence and properties of the statistical tests list) rather than multiple unrelated behaviors. If `compute_ab_benchmark_comparison` returns a different structure or raises an exception for malformed inputs in other scenarios, this specific assertion remains valid.\", \"suggestions\": [\"Ensure that if any seed metric is missing, the function either filters them out gracefully (as implied by 'sample_size < 3') and produces exactly one test case per unique non-null entry, rather than failing entirely.\"\n  ]\n},\"necessary\": {\"score\": 5, \"rationale\": \"The current assertion only checks that `is_significant` is False. It does not verify the actual statistical logic (e.g., p-values, confidence intervals) or ensure no spurious tests were generated due to data issues.\", \"suggestions\": [\"Add assertions for specific test properties: 'assert st[\\\"p_value\\\"] > 0.5' and 'assert len(st.test_cases) == 1'. This ensures the statistical validity is actually checked.\"\n  ]\n},\"granular\": {\"score\": 4, \"rationale\": \"The assertion `st['test_type'] == \\\"insufficient_sample_size\\\"` assumes a specific internal representation of test types that may not exist or be named correctly in the actual implementation. It also lacks granularity on *which* seed metrics caused this failure.\", \"suggestions\": [\"Refactor to check for missing keys directly: 'assert baseline[\\\"per_seed_metrics\\\"][\\\"seed_1\\\"] is None'. This makes the intent explicit and independent of internal test naming conventions.\"\n  ]\n},\"fast\": {\"score\": 8, \"rationale\": \"The code contains no artificial sleeps or heavy I/O operations. The logic flow is purely sequential Python execution.\", \"suggestions\": [\"Ensure `compute_ab_benchmark_comparison` does not perform expensive network calls during the benchmarking phase.\"\n  ]\n},\"first_tdd\": {\"score\": 7, \"rationale\": \"The test follows a basic Arrange-Act-Assert pattern: it sets up data structures (`baseline`, `candidate`), acts by calling the function and checking results. However, it lacks explicit separation of concerns; mixing setup logic with statistical assertions makes it harder to read as 'specifying behavior' first.\", \"suggestions\": [\"Move all fixture definitions (data creation) into a dedicated class or module called `test_setup`. Move all assertion logic for statistics generation into another function.\"\n  ]\n},\"summary\": \"The test is functional but lacks the depth required by TDD principles. It verifies implementation details rather than business rules, relies on external functions that may change behavior unexpectedly, and misses critical statistical validations (p-values). To reach a score of 10, it must explicitly define *why* these tests exist, isolate logic into dedicated helper methods, and verify the actual mathematical properties of the output.\"\n}",
+          "role": "assistant",
+          "tool_calls": null,
+          "function_call": null,
+          "reasoning_content": null
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 960,
+      "prompt_tokens": 863,
+      "total_tokens": 1823,
       "completion_tokens_details": null,
       "prompt_tokens_details": null
     }
