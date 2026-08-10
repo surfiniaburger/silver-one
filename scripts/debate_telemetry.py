@@ -15,13 +15,14 @@ import math
 import os
 import sys
 from pathlib import Path
-from statistics import mean
-from typing import Any, Dict, List, Optional
+from statistics import mean, median
+from typing import Any, Dict, List, Optional, Tuple
 
 # Enable relative imports from parent directory
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from scripts.path_utils import validate_input_path, validate_output_path
+from scripts.telemetry_utils import coerce_float
 
 logger = logging.getLogger(__name__)
 
@@ -336,6 +337,296 @@ def compute_debate_benchmark_metrics(
     }
 
 
+def compute_hodges_lehmann(deltas: List[float], alpha: float = 0.05) -> Tuple[float, float, float]:
+    """Compute Hodges-Lehmann median difference and rank-based confidence interval."""
+    n = len(deltas)
+    if n == 0:
+        return 0.0, 0.0, 0.0
+    walsh_averages = []
+    for i in range(n):
+        for j in range(i, n):
+            walsh_averages.append((deltas[i] + deltas[j]) / 2.0)
+
+    walsh_averages.sort()
+    hl_median = float(median(walsh_averages))
+
+    num_walsh = len(walsh_averages)
+    try:
+        from scipy import stats
+        z = stats.norm.ppf(1 - alpha / 2)
+        std_w = math.sqrt(n * (n + 1) * (2 * n + 1) / 24.0)
+        k = max(1, int(round((num_walsh / 2.0) - z * std_w)))
+        ci_lower = float(walsh_averages[k - 1])
+        ci_upper = float(walsh_averages[num_walsh - k])
+    except Exception:
+        ci_lower = float(walsh_averages[0])
+        ci_upper = float(walsh_averages[-1])
+
+    return hl_median, ci_lower, ci_upper
+
+
+def compute_t_interval(deltas: List[float], alpha: float = 0.05) -> Tuple[float, float, float]:
+    """Compute parametric mean delta and 95% t-distribution confidence interval."""
+    n = len(deltas)
+    if n == 0:
+        return 0.0, 0.0, 0.0
+    mean_val = float(mean(deltas))
+    if n < 2:
+        return mean_val, mean_val, mean_val
+    try:
+        from scipy import stats
+        std_err = float(stats.sem(deltas))
+        t_crit = stats.t.ppf(1 - alpha / 2, df=n - 1)
+        margin = t_crit * std_err
+        return mean_val, float(mean_val - margin), float(mean_val + margin)
+    except Exception:
+        variance = sum((x - mean_val) ** 2 for x in deltas) / (n - 1)
+        std_err = math.sqrt(variance / n)
+        margin = 1.96 * std_err
+        return mean_val, float(mean_val - margin), float(mean_val + margin)
+
+
+def apply_holm_step_down(p_values: List[float], alpha: float = 0.05) -> List[Dict[str, Any]]:
+    """Apply Holm step-down procedure across m evaluated metric dimensions."""
+    m = len(p_values)
+    if m == 0:
+        return []
+
+    indexed_p = sorted(enumerate(p_values), key=lambda x: x[1])
+    results: List[Optional[Dict[str, Any]]] = [None] * m
+    stopped = False
+    max_adj_p = 0.0
+
+    for rank, (orig_idx, p_val) in enumerate(indexed_p, start=1):
+        k_denom = m - rank + 1
+        alpha_k = alpha / k_denom
+        raw_adj = float(p_val * k_denom)
+        adjusted_p = min(1.0, max(max_adj_p, raw_adj))
+        max_adj_p = adjusted_p
+
+        if stopped or p_val >= alpha_k:
+            stopped = True
+            is_sig = False
+        else:
+            is_sig = True
+
+        results[orig_idx] = {
+            "rank": rank,
+            "original_p": float(p_val),
+            "alpha_k": float(round(alpha_k, 5)),
+            "adjusted_p": float(round(adjusted_p, 5)),
+            "is_significant": is_sig,
+        }
+    return [r for r in results if r is not None]
+
+
+def _execute_scipy_hypothesis_test(
+    baseline_values: List[float],
+    candidate_values: List[float],
+    deltas: List[float],
+    n: int,
+    alpha: float,
+) -> Tuple[Optional[float], bool, str, float, float, float, float, str]:
+    from scipy import stats
+
+    shapiro_res = stats.shapiro(deltas)
+    shapiro_p = float(shapiro_res.pvalue)
+    is_normal = shapiro_p > 0.05
+
+    if is_normal:
+        t_res = stats.ttest_rel(candidate_values[:n], baseline_values[:n])
+        stat_val = float(t_res.statistic)
+        p_val = float(t_res.pvalue)
+        test_type = "paired_t_test"
+        _, ci_low, ci_high = compute_t_interval(deltas, alpha)
+        ci_method = "parametric_t_interval"
+    else:
+        w_res = stats.wilcoxon(deltas)
+        stat_val = float(w_res.statistic)
+        p_val = float(w_res.pvalue)
+        test_type = "wilcoxon_signed_rank"
+        _, ci_low, ci_high = compute_hodges_lehmann(deltas, alpha)
+        ci_method = "hodges_lehmann_median_difference"
+
+    return shapiro_p, is_normal, test_type, stat_val, p_val, ci_low, ci_high, ci_method
+
+
+def compute_statistical_hypothesis_test(
+    baseline_values: List[float],
+    candidate_values: List[float],
+    metric_name: str,
+    alpha: float = 0.05,
+    num_metrics: int = 1,
+) -> Dict[str, Any]:
+    """
+    Perform paired seed hypothesis test between baseline and candidate values.
+    Uses Shapiro-Wilk for normality testing, paired t-test for normal deltas,
+    Wilcoxon signed-rank test for non-normal deltas, and computes 95% CIs.
+    """
+    n = min(len(baseline_values), len(candidate_values))
+    if n < 3:
+        mean_b = float(mean(baseline_values[:n])) if n else 0.0
+        mean_c = float(mean(candidate_values[:n])) if n else 0.0
+        delta = mean_c - mean_b
+        return {
+            "metric_name": metric_name,
+            "sample_size": n,
+            "mean_baseline": round(mean_b, 4),
+            "mean_candidate": round(mean_c, 4),
+            "mean_delta": round(delta, 4),
+            "shapiro_p_value": None,
+            "is_normal": True,
+            "test_type": "insufficient_sample_size",
+            "statistic": 0.0,
+            "p_value": 1.0,
+            "alpha_adjusted": round(alpha / max(num_metrics, 1), 5),
+            "is_significant": False,
+            "ci_95": [round(delta, 4), round(delta, 4)],
+            "ci_method": "none",
+        }
+
+    deltas = [candidate_values[i] - baseline_values[i] for i in range(n)]
+    mean_b = float(mean(baseline_values[:n]))
+    mean_c = float(mean(candidate_values[:n]))
+    mean_delta = float(mean(deltas))
+    alpha_adj = alpha / max(num_metrics, 1)
+
+    if all(math.isclose(d, 0.0, abs_tol=1e-9) for d in deltas):
+        return {
+            "metric_name": metric_name,
+            "sample_size": n,
+            "mean_baseline": round(mean_b, 4),
+            "mean_candidate": round(mean_c, 4),
+            "mean_delta": 0.0,
+            "shapiro_p_value": 1.0,
+            "is_normal": True,
+            "test_type": "zero_delta_identical",
+            "statistic": 0.0,
+            "p_value": 1.0,
+            "alpha_adjusted": round(alpha_adj, 5),
+            "is_significant": False,
+            "ci_95": [0.0, 0.0],
+            "ci_method": "exact_zero_difference",
+        }
+
+    try:
+        shapiro_p, is_normal, test_type, stat_val, p_val, ci_low, ci_high, ci_method = _execute_scipy_hypothesis_test(
+            baseline_values, candidate_values, deltas, n, alpha
+        )
+    except Exception as exc:
+        logger.warning("[debate-telemetry] scipy.stats hypothesis test fallback for %s: %s", metric_name, exc)
+        shapiro_p = None
+        is_normal = True
+        test_type = "fallback_mean_delta"
+        stat_val = 0.0
+        p_val = 1.0
+        _, ci_low, ci_high = compute_t_interval(deltas, alpha)
+        ci_method = "fallback_standard_error"
+
+    is_sig = p_val < alpha_adj
+
+    return {
+        "metric_name": metric_name,
+        "sample_size": n,
+        "mean_baseline": round(mean_b, 4),
+        "mean_candidate": round(mean_c, 4),
+        "mean_delta": round(mean_delta, 4),
+        "shapiro_p_value": round(shapiro_p, 4) if shapiro_p is not None else None,
+        "is_normal": is_normal,
+        "test_type": test_type,
+        "statistic": round(stat_val, 4),
+        "p_value": float(p_val),
+        "alpha_adjusted": round(alpha_adj, 5),
+        "is_significant": is_sig,
+        "ci_95": [round(ci_low, 4), round(ci_high, 4)],
+        "ci_method": ci_method,
+    }
+
+
+def _coerce_finite_metric(value: Any) -> Optional[float]:
+    """Parse numeric metric value, rejecting booleans, non-numeric objects, and non-finite values (NaN/Inf)."""
+    if isinstance(value, bool):
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return numeric if math.isfinite(numeric) else None
+
+
+def _extract_stage_deltas(baseline: Dict[str, Any], candidate: Dict[str, Any]) -> Dict[str, Any]:
+    stage_deltas = {}
+    cand_stages = candidate.get("stage_breakdown")
+    base_stages = baseline.get("stage_breakdown")
+    cand_stages = cand_stages if isinstance(cand_stages, dict) else {}
+    base_stages = base_stages if isinstance(base_stages, dict) else {}
+    all_stages = set(cand_stages.keys()).union(base_stages.keys())
+
+    for stage in sorted(all_stages):
+        base_entry = base_stages.get(stage)
+        cand_entry = cand_stages.get(stage)
+        base_avg = coerce_float(base_entry.get("avg_duration_ms")) if isinstance(base_entry, dict) else 0.0
+        cand_avg = coerce_float(cand_entry.get("avg_duration_ms")) if isinstance(cand_entry, dict) else 0.0
+        dur_diff = cand_avg - base_avg
+        dur_pct = _safe_div(dur_diff * 100.0, base_avg)
+        stage_deltas[stage] = {
+            "baseline_avg_ms": base_avg,
+            "candidate_avg_ms": cand_avg,
+            "diff_ms": round(dur_diff, 2),
+            "speedup_pct": round(-dur_pct, 2),
+        }
+    return stage_deltas
+
+
+def _extract_seed_metric_pairs(
+    base_seed_metrics: Dict[str, Any],
+    cand_seed_metrics: Dict[str, Any],
+    seeds: List[str],
+    metric: str,
+) -> Tuple[List[float], List[float]]:
+    b_vals = []
+    c_vals = []
+    for s in seeds:
+        b_entry = base_seed_metrics.get(s)
+        c_entry = cand_seed_metrics.get(s)
+        if not isinstance(b_entry, dict) or not isinstance(c_entry, dict):
+            continue
+        b_num = _coerce_finite_metric(b_entry.get(metric))
+        c_num = _coerce_finite_metric(c_entry.get(metric))
+        if b_num is None or c_num is None:
+            continue
+        b_vals.append(b_num)
+        c_vals.append(c_num)
+    return b_vals, c_vals
+
+
+def _run_paired_seed_tests(baseline: Dict[str, Any], candidate: Dict[str, Any]) -> List[Dict[str, Any]]:
+    base_seed_metrics = baseline.get("per_seed_metrics") or baseline.get("seed_metrics") or {}
+    cand_seed_metrics = candidate.get("per_seed_metrics") or candidate.get("seed_metrics") or {}
+    if not (isinstance(base_seed_metrics, dict) and isinstance(cand_seed_metrics, dict)):
+        return []
+
+    common_seeds = sorted(set(base_seed_metrics.keys()).intersection(cand_seed_metrics.keys()))
+    if not common_seeds:
+        return []
+
+    eval_metrics = ["tokens_per_accepted_row", "total_tokens", "total_wall_clock_ms"]
+    stat_tests = []
+    raw_p_values = []
+    for metric in eval_metrics:
+        b_vals, c_vals = _extract_seed_metric_pairs(base_seed_metrics, cand_seed_metrics, common_seeds, metric)
+        test_res = compute_statistical_hypothesis_test(b_vals, c_vals, metric, num_metrics=1)
+        stat_tests.append(test_res)
+        raw_p_values.append(test_res["p_value"])
+
+    holm_res = apply_holm_step_down(raw_p_values)
+    for idx, h in enumerate(holm_res):
+        stat_tests[idx]["holm_adjusted_p"] = h["adjusted_p"]
+        stat_tests[idx]["is_significant_holm"] = h["is_significant"]
+
+    return stat_tests
+
+
 def compute_ab_benchmark_comparison(
     baseline: Dict[str, Any],
     candidate: Dict[str, Any],
@@ -365,22 +656,8 @@ def compute_ab_benchmark_comparison(
     cand_hit = candidate["cache_performance"]["cache_hit_rate_pct"]
     hit_diff = cand_hit - base_hit
 
-    stage_deltas = {}
-    cand_stages = candidate.get("stage_breakdown", {})
-    base_stages = baseline.get("stage_breakdown", {})
-    all_stages = set(cand_stages.keys()).union(base_stages.keys())
-
-    for stage in sorted(all_stages):
-        base_avg = base_stages.get(stage, {}).get("avg_duration_ms", 0.0)
-        cand_avg = cand_stages.get(stage, {}).get("avg_duration_ms", 0.0)
-        dur_diff = cand_avg - base_avg
-        dur_pct = _safe_div(dur_diff * 100.0, base_avg)
-        stage_deltas[stage] = {
-            "baseline_avg_ms": base_avg,
-            "candidate_avg_ms": cand_avg,
-            "diff_ms": round(dur_diff, 2),
-            "speedup_pct": round(-dur_pct, 2),  # positive means candidate is faster
-        }
+    stage_deltas = _extract_stage_deltas(baseline, candidate)
+    stat_tests = _run_paired_seed_tests(baseline, candidate)
 
     return {
         "baseline_run_id": baseline["run_id"],
@@ -411,6 +688,7 @@ def compute_ab_benchmark_comparison(
             "cache_hit_rate_diff_pct": round(hit_diff, 2),
         },
         "stage_deltas": stage_deltas,
+        "statistical_tests": stat_tests,
     }
 
 
@@ -440,43 +718,104 @@ def _format_summary_section(run_id: str, summary: Dict[str, Any], tok: Dict[str,
     return lines
 
 
+def _fmt_metric_val(metrics: Dict[str, Any], key: str, fmt_spec: str = "{:,}") -> str:
+    if not isinstance(metrics, dict) or key not in metrics or metrics[key] is None:
+        return "—"
+    val = metrics[key]
+    if isinstance(val, (int, float)):
+        return fmt_spec.format(val)
+    return str(val)
+
+
+def _fmt_wall_clock(wall_ms: Any) -> str:
+    val = coerce_float(wall_ms)
+    return f"{val / 1000.0:.1f}s" if val > 0 else "n/a"
+
+
+def _format_ab_stage_table(c_stages: Dict[str, Any]) -> List[str]:
+    lines = [
+        "### Stage Latency Speedups",
+        "",
+        "| Stage | Baseline Avg (ms) | Candidate Avg (ms) | Speedup (%) |",
+        "| :--- | :--- | :--- | :--- |",
+    ]
+    if isinstance(c_stages, dict):
+        for s_name, s_data in c_stages.items():
+            s_dict = s_data if isinstance(s_data, dict) else {}
+            base_avg = coerce_float(s_dict.get("baseline_avg_ms"))
+            cand_avg = coerce_float(s_dict.get("candidate_avg_ms"))
+            speedup = coerce_float(s_dict.get("speedup_pct"))
+            lines.append(f"| `{s_name}` | {base_avg:.1f}ms | {cand_avg:.1f}ms | `{speedup:+.2f}%` |")
+    lines.append("")
+    return lines
+
+
+def _format_stat_test_row(st: Dict[str, Any]) -> str:
+    m_name = st.get("metric_name", "")
+    t_type = st.get("test_type", "")
+    raw_p = st.get("p_value")
+    raw_p = 1.0 if raw_p is None else raw_p
+    raw_holm = st.get("holm_adjusted_p")
+    raw_holm = raw_p if raw_holm is None else raw_holm
+    pval = f"{coerce_float(raw_p):.4f}"
+    holm_p = f"{coerce_float(raw_holm):.4f}"
+    ci = st.get("ci_95", [0, 0])
+    ci_low = coerce_float(ci[0]) if isinstance(ci, (list, tuple)) and len(ci) > 0 else 0.0
+    ci_high = coerce_float(ci[1]) if isinstance(ci, (list, tuple)) and len(ci) > 1 else 0.0
+    ci_str = f"[{ci_low:.2f}, {ci_high:.2f}]"
+    is_sig = st.get("is_significant_holm", st.get("is_significant", False))
+    sig_str = "**YES**" if is_sig else "NO"
+    return f"| `{m_name}` | `{t_type}` | {pval} | {holm_p} | `{ci_str}` | {sig_str} |"
+
+
+def _format_stat_tests_table(stat_tests: List[Dict[str, Any]]) -> List[str]:
+    if not stat_tests:
+        return []
+    lines = [
+        "### Statistical Hypothesis Testing (Paired Seed Deltas)",
+        "",
+        "| Metric | Test Type | p-value | Holm-Adjusted p | 95% CI | Significant? |",
+        "| :--- | :--- | :--- | :--- | :--- | :--- |",
+    ]
+    for st in stat_tests:
+        if isinstance(st, dict):
+            lines.append(_format_stat_test_row(st))
+    lines.append("")
+    return lines
+
+
 def _format_ab_comparison_section(comparison: Dict[str, Any]) -> List[str]:
-    lines = []
-    c_delta = comparison.get("deltas", {})
-    c_stages = comparison.get("stage_deltas", {})
-    b_metrics = comparison.get("baseline_metrics", {})
-    cand_metrics = comparison.get("candidate_metrics", {})
+    c_delta = comparison.get("deltas", {}) if isinstance(comparison.get("deltas"), dict) else {}
+    c_stages = comparison.get("stage_deltas", {}) if isinstance(comparison.get("stage_deltas"), dict) else {}
+    b_metrics = comparison.get("baseline_metrics", {}) if isinstance(comparison.get("baseline_metrics"), dict) else {}
+    cand_metrics = comparison.get("candidate_metrics", {}) if isinstance(comparison.get("candidate_metrics"), dict) else {}
+    stat_tests = comparison.get("statistical_tests", []) if isinstance(comparison.get("statistical_tests"), list) else []
 
-    b_tot = f"{b_metrics.get('total_tokens', 0):,}" if "total_tokens" in b_metrics else "—"
-    c_tot = f"{cand_metrics.get('total_tokens', 0):,}" if "total_tokens" in cand_metrics else "—"
-    b_ptot = f"{b_metrics.get('prompt_tokens', 0):,}" if "prompt_tokens" in b_metrics else "—"
-    c_ptot = f"{cand_metrics.get('prompt_tokens', 0):,}" if "prompt_tokens" in cand_metrics else "—"
-    b_per_acc = f"{b_metrics.get('tokens_per_accepted_row', 0.0):,.2f}" if "tokens_per_accepted_row" in b_metrics else "—"
-    c_per_acc = f"{cand_metrics.get('tokens_per_accepted_row', 0.0):,.2f}" if "tokens_per_accepted_row" in cand_metrics else "—"
-    b_wall = b_metrics.get("wall_clock_ms", 0.0)
-    c_wall = cand_metrics.get("wall_clock_ms", 0.0)
-    b_dur = f"{b_wall / 1000.0:.1f}s" if b_wall and b_wall > 0 else "n/a"
-    c_dur = f"{c_wall / 1000.0:.1f}s" if c_wall and c_wall > 0 else "n/a"
-    b_hit = f"{b_metrics.get('cache_hit_rate_pct', 0.0):.1f}%" if "cache_hit_rate_pct" in b_metrics else "—"
-    c_hit = f"{cand_metrics.get('cache_hit_rate_pct', 0.0):.1f}%" if "cache_hit_rate_pct" in cand_metrics else "—"
+    b_tot = _fmt_metric_val(b_metrics, "total_tokens", "{:,}")
+    c_tot = _fmt_metric_val(cand_metrics, "total_tokens", "{:,}")
+    b_ptot = _fmt_metric_val(b_metrics, "prompt_tokens", "{:,}")
+    c_ptot = _fmt_metric_val(cand_metrics, "prompt_tokens", "{:,}")
+    b_per_acc = _fmt_metric_val(b_metrics, "tokens_per_accepted_row", "{:,.2f}")
+    c_per_acc = _fmt_metric_val(cand_metrics, "tokens_per_accepted_row", "{:,.2f}")
+    b_dur = _fmt_wall_clock(b_metrics.get("wall_clock_ms"))
+    c_dur = _fmt_wall_clock(cand_metrics.get("wall_clock_ms"))
+    b_hit = _fmt_metric_val(b_metrics, "cache_hit_rate_pct", "{:.1f}%")
+    c_hit = _fmt_metric_val(cand_metrics, "cache_hit_rate_pct", "{:.1f}%")
 
-    lines.append(f"## A/B Comparison: Candidate `{comparison.get('candidate_run_id', '')}` vs Baseline `{comparison.get('baseline_run_id', '')}`")
-    lines.append("")
-    lines.append("| Dimension | Baseline | Candidate | Delta / Speedup |")
-    lines.append("| :--- | :--- | :--- | :--- |")
-    lines.append(f"| **Total Tokens** | {b_tot} | {c_tot} | `{c_delta.get('total_tokens_pct', 0.0):+.2f}%` |")
-    lines.append(f"| **Prompt Tokens** | {b_ptot} | {c_ptot} | `{c_delta.get('prompt_tokens_pct', 0.0):+.2f}%` |")
-    lines.append(f"| **Tokens / Accepted Row** | {b_per_acc} | {c_per_acc} | `{c_delta.get('tokens_per_accepted_row_pct', 0.0):+.2f}%` |")
-    lines.append(f"| **Wall-Clock Duration** | {b_dur} | {c_dur} | `{c_delta.get('wall_clock_pct', 0.0):+.2f}%` |")
-    lines.append(f"| **Cache Hit Rate** | {b_hit} | {c_hit} | `{c_delta.get('cache_hit_rate_diff_pct', 0.0):+.2f}%` |")
-    lines.append("")
-    lines.append("### Stage Latency Speedups")
-    lines.append("")
-    lines.append("| Stage | Baseline Avg (ms) | Candidate Avg (ms) | Speedup (%) |")
-    lines.append("| :--- | :--- | :--- | :--- |")
-    for s_name, s_data in c_stages.items():
-        lines.append(f"| `{s_name}` | {s_data.get('baseline_avg_ms', 0.0):.1f}ms | {s_data.get('candidate_avg_ms', 0.0):.1f}ms | `{s_data.get('speedup_pct', 0.0):+.2f}%` |")
-    lines.append("")
+    lines = [
+        f"## A/B Comparison: Candidate `{comparison.get('candidate_run_id', '')}` vs Baseline `{comparison.get('baseline_run_id', '')}`",
+        "",
+        "| Dimension | Baseline | Candidate | Delta / Speedup |",
+        "| :--- | :--- | :--- | :--- |",
+        f"| **Total Tokens** | {b_tot} | {c_tot} | `{coerce_float(c_delta.get('total_tokens_pct')):+.2f}%` |",
+        f"| **Prompt Tokens** | {b_ptot} | {c_ptot} | `{coerce_float(c_delta.get('prompt_tokens_pct')):+.2f}%` |",
+        f"| **Tokens / Accepted Row** | {b_per_acc} | {c_per_acc} | `{coerce_float(c_delta.get('tokens_per_accepted_row_pct')):+.2f}%` |",
+        f"| **Wall-Clock Duration** | {b_dur} | {c_dur} | `{coerce_float(c_delta.get('wall_clock_pct')):+.2f}%` |",
+        f"| **Cache Hit Rate** | {b_hit} | {c_hit} | `{coerce_float(c_delta.get('cache_hit_rate_diff_pct')):+.2f}%` |",
+        "",
+    ]
+    lines.extend(_format_ab_stage_table(c_stages))
+    lines.extend(_format_stat_tests_table(stat_tests))
     return lines
 
 
