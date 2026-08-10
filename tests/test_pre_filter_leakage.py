@@ -15,9 +15,12 @@ from pathlib import Path
 
 import numpy as np
 
-from scripts.train_pre_filter import (
+from scenarios.debate.pre_filter import (
+    _extract_scenario_id,
     _parse_attempt_record,
     partition_dataset_by_scenario_stratified,
+)
+from scripts.train_pre_filter import (
     _train_stage_b_vectorizer,
     _run_null_model_sanity_check,
     _evaluate_stage_b,
@@ -113,3 +116,20 @@ def test_holdout_metrics_export(tmp_path: Path):
     metrics = _evaluate_stage_b(classifier, x_test, y_test)
     assert metrics["accuracy"] == 1.0
     assert metrics["balanced_accuracy"] == 1.0
+
+
+def test_scenario_id_resolution_tiers():
+    """Verify 3-tier scenario identifier resolution (cve_id -> CVE regex -> SHA-256 fallback)."""
+    # Tier 1: Explicit cve_id field
+    rec_cve = {"cve_id": "CVE-2024-1234"}
+    assert _extract_scenario_id(rec_cve, "any predicate") == "CVE-2024-1234"
+
+    # Tier 2: Regex extraction from predicate
+    rec_regex = {}
+    assert _extract_scenario_id(rec_regex, "vulnerability in CVE-2023-9999 parse") == "CVE-2023-9999"
+
+    # Tier 3: SHA-256 hash fallback
+    rec_hash = {}
+    scen_id = _extract_scenario_id(rec_hash, "custom vulnerability predicate without cve")
+    assert scen_id.startswith("HASH-")
+    assert len(scen_id) == 15  # "HASH-" + 10 chars

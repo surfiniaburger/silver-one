@@ -242,7 +242,9 @@ def _build_stage_breakdown(
             "completion_tokens": stage_completion_tokens.get(stage, 0),
             "total_tokens": stage_prompt_tokens.get(stage, 0) + stage_completion_tokens.get(stage, 0),
             "avg_duration_ms": round(mean(dur_list), 2) if dur_list else 0.0,
+            "p50_duration_ms": round(_percentile(dur_list, 50.0), 2) if dur_list else 0.0,
             "p95_duration_ms": round(_percentile(dur_list, 95.0), 2) if dur_list else 0.0,
+            "p99_duration_ms": round(_percentile(dur_list, 99.0), 2) if dur_list else 0.0,
             "min_duration_ms": round(min(dur_list), 2) if dur_list else 0.0,
             "max_duration_ms": round(max(dur_list), 2) if dur_list else 0.0,
         }
@@ -273,7 +275,9 @@ def _aggregate_cache_spans(spans: List[Dict[str, Any]]) -> Dict[str, Any]:
         "total_span_calls": total_span_calls,
         "cache_hit_rate_pct": round(cache_hit_rate_pct, 2),
         "avg_span_duration_ms": round(mean(span_durations), 2) if span_durations else 0.0,
+        "p50_span_duration_ms": round(_percentile(span_durations, 50.0), 2) if span_durations else 0.0,
         "p95_span_duration_ms": round(_percentile(span_durations, 95.0), 2) if span_durations else 0.0,
+        "p99_span_duration_ms": round(_percentile(span_durations, 99.0), 2) if span_durations else 0.0,
     }
 
 
@@ -823,11 +827,18 @@ def _format_stage_breakdown_section(stages: Dict[str, Any]) -> List[str]:
     lines = [
         "## Stage Breakdown",
         "",
-        "| Stage | Calls | Prompt Tokens | Completion Tokens | Avg Duration | P95 Duration |",
-        "| :--- | :--- | :--- | :--- | :--- | :--- |",
+        "| Stage | Calls | Prompt Tokens | Completion Tokens | Avg | P50 (ms) | P95 (ms) | P99 (ms) |",
+        "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
     ]
     for s_name, s_data in stages.items():
-        lines.append(f"| `{s_name}` | {s_data.get('calls', 0)} | {s_data.get('prompt_tokens', 0):,} | {s_data.get('completion_tokens', 0):,} | {s_data.get('avg_duration_ms', 0.0):.1f}ms | {s_data.get('p95_duration_ms', 0.0):.1f}ms |")
+        avg = coerce_float(s_data.get("avg_duration_ms"))
+        p50 = coerce_float(s_data.get("p50_duration_ms"))
+        p95 = coerce_float(s_data.get("p95_duration_ms"))
+        p99 = coerce_float(s_data.get("p99_duration_ms"))
+        lines.append(
+            f"| `{s_name}` | {s_data.get('calls', 0)} | {s_data.get('prompt_tokens', 0):,} | "
+            f"{s_data.get('completion_tokens', 0):,} | {avg:.1f}ms | {p50:.1f}ms | {p95:.1f}ms | {p99:.1f}ms |"
+        )
     lines.append("")
     return lines
 
