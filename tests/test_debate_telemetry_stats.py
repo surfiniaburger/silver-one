@@ -28,7 +28,7 @@ def test_percentile_telemetry_fields():
     # Multi-sample input
     samples = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0]
     assert math.isclose(_percentile(samples, 50.0), 55.0, abs_tol=1e-1)
-    assert _percentile(samples, 95.0) > 90.0
+    assert math.isclose(_percentile(samples, 95.0), 95.5, abs_tol=1e-1)
 
     # Stage breakdown schema verification with P50 and P99
     stage_durations = {"stage_1": [10.0, 20.0, 30.0, 40.0, 50.0]}

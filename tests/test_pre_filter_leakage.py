@@ -133,8 +133,12 @@ def test_scenario_id_resolution_tiers():
     assert _extract_scenario_id(rec_regex, "vulnerability in cve-2023-9999 parse") == "CVE-2023-9999"
 
     # Tier 3: SHA-256 hash fallback
+    import hashlib
     rec_hash = {}
-    scen_id = _extract_scenario_id(rec_hash, "custom vulnerability predicate without cve")
+    pred_text = "custom vulnerability predicate without cve"
+    expected_hash = f"HASH-{hashlib.sha256(pred_text.encode('utf-8')).hexdigest()[:10]}"
+    scen_id = _extract_scenario_id(rec_hash, pred_text)
+    assert scen_id == expected_hash
     assert scen_id.startswith("HASH-")
     assert len(scen_id) == 15  # "HASH-" + 10 chars
 
