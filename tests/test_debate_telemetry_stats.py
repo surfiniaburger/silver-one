@@ -5,13 +5,38 @@ Unit tests for statistical hypothesis testing functions in debate_telemetry.py.
 import math
 import pytest
 from scripts.debate_telemetry import (
+    _build_stage_breakdown,
     _coerce_finite_metric,
+    _percentile,
     apply_holm_step_down,
     compute_ab_benchmark_comparison,
     compute_hodges_lehmann,
     compute_statistical_hypothesis_test,
     compute_t_interval,
 )
+
+
+def test_percentile_telemetry_fields():
+    # Empty input
+    assert _percentile([], 50.0) == 0.0
+    assert _percentile([], 99.0) == 0.0
+
+    # Single-sample input
+    assert _percentile([100.0], 50.0) == 100.0
+    assert _percentile([100.0], 99.0) == 100.0
+
+    # Multi-sample input
+    samples = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0]
+    assert math.isclose(_percentile(samples, 50.0), 55.0, abs_tol=1e-1)
+    assert math.isclose(_percentile(samples, 95.0), 95.5, abs_tol=1e-1)
+
+    # Stage breakdown schema verification with P50 and P99
+    stage_durations = {"stage_1": [10.0, 20.0, 30.0, 40.0, 50.0]}
+    breakdown = _build_stage_breakdown(stage_durations, {"stage_1": 100}, {"stage_1": 50}, {"stage_1": 5})
+    assert breakdown["stage_1"]["p50_duration_ms"] == 30.0
+    assert breakdown["stage_1"]["p95_duration_ms"] == 48.0
+    assert breakdown["stage_1"]["p99_duration_ms"] == 49.6
+
 
 
 def test_coerce_finite_metric():

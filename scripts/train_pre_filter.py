@@ -43,6 +43,9 @@ from scenarios.debate.pre_filter import (
     extract_domain_features_batch,
     FallbackStandardScaler,
     _combine_features,
+    _extract_scenario_id,
+    _parse_attempt_record,
+    partition_dataset_by_scenario_stratified,
 )
 
 # Optional imports for model training and persistence
@@ -195,55 +198,6 @@ class FallbackClassifier:
         return (probs[:, 1] >= 0.5).astype(int)
 
 
-def _extract_scenario_id(record: dict, predicate: str) -> str:
-    """Resolve scenario identifier from record/seed metadata or generate deterministic predicate hash fallback."""
-    seed_val = record.get("seed")
-    seed_dict = seed_val if isinstance(seed_val, dict) else {}
-    cve_id = record.get("cve_id") or seed_dict.get("cve_id")
-    if cve_id:
-        return str(cve_id)
-    # Tier 2: Regex search for literal "CVE-YYYY-XXXX" patterns inside the predicate text
-    cve_match = CVE_REGEX.search(predicate)
-    if cve_match:
-        return cve_match.group(0).upper()
-    
-    # Tier 3 (Primary Fallback): Deterministic SHA-256 Hash of the Predicate Text
-    return f"HASH-{hashlib.sha256(predicate.encode('utf-8')).hexdigest()[:10]}"
-
-
-def _extract_code_snippet(record: dict, judge_dict: dict) -> str:
-    """Extract code anchors or fall back to raw input_block."""
-    anchors = record.get("anchors_normalized") or judge_dict.get("anchors", [])
-    if isinstance(anchors, list) and anchors:
-        return " ".join(str(a) for a in anchors)
-    if anchors and not isinstance(anchors, list):
-        return str(anchors)
-    return str(record.get("input_block", ""))
-
-
-def _parse_attempt_record(record: dict) -> Tuple[Optional[str], Optional[int], Optional[str]]:
-    """Extract (combined_text, label, scenario_id) from a single attempt record dictionary."""
-    if not isinstance(record, dict):
-        return None, None, None
-
-    decision = str(record.get("decision", "")).lower()
-    if decision not in ("accepted", "rejected"):
-        return None, None, None
-
-    judge_eval = record.get("judge_eval")
-    judge_dict = judge_eval if isinstance(judge_eval, dict) else {}
-    predicate = record.get("predicate") or judge_dict.get("predicate", "")
-    if not predicate or not isinstance(predicate, str):
-        return None, None, None
-
-    label = 1 if decision == "accepted" else 0
-    scenario_id = _extract_scenario_id(record, predicate)
-    code_snippet = _extract_code_snippet(record, judge_dict)
-
-    combined_text = f"{PREDICATE_PREFIX}{predicate}{CODE_DELIMITER}{code_snippet[:1000]}"
-    return combined_text, label, scenario_id
-
-
 def _process_jsonl_file(jsonl_file: Path) -> Tuple[List[str], List[int], List[str]]:
     """Process a single JSONL file and extract texts, labels, and scenario_ids."""
     texts: List[str] = []
@@ -384,90 +338,6 @@ def extract_dataset_from_attempts(
             scenario_ids.append(cve)
 
     return texts, labels, scenario_ids
-
-
-def partition_dataset_by_scenario_stratified(
-    texts: List[str],
-    labels: List[int],
-    scenario_ids: List[str],
-    n_splits: int = 5,
-    seed: int = 42,
-) -> List[Dict[str, Any]]:
-    """Partition dataset into Stratified Scenario-Grouped folds (zero scenario-predicate leakage across splits)."""
-    unique_scenarios = len(set(scenario_ids))
-    if unique_scenarios < 2:
-        raise ValueError(
-            f"Scenario-grouped cross-validation requires at least 2 unique scenario IDs, but found {unique_scenarios}."
-        )
-
-    effective_n_splits = max(2, min(n_splits, len(texts), unique_scenarios))
-    try:
-        from sklearn.model_selection import StratifiedGroupKFold
-        sgkf = StratifiedGroupKFold(n_splits=effective_n_splits, shuffle=True, random_state=seed)
-        x_arr = np.array(texts, dtype=object)
-        y_arr = np.array(labels, dtype=int)
-        groups_arr = np.array(scenario_ids, dtype=object)
-
-        folds = []
-        for fold_idx, (train_idx, test_idx) in enumerate(sgkf.split(x_arr, y_arr, groups=groups_arr), 1):
-            train_scenarios = set(groups_arr[train_idx])
-            test_scenarios = set(groups_arr[test_idx])
-            folds.append({
-                "fold": fold_idx,
-                "train_idx": train_idx,
-                "test_idx": test_idx,
-                "train_texts": list(x_arr[train_idx]),
-                "train_labels": list(y_arr[train_idx]),
-                "test_texts": list(x_arr[test_idx]),
-                "test_labels": list(y_arr[test_idx]),
-                "test_scenario_ids": sorted(test_scenarios),
-                "train_scenario_ids": sorted(train_scenarios),
-            })
-        return folds
-    except (ImportError, ValueError):
-        logger.warning("scikit-learn StratifiedGroupKFold unavailable or failed due to class counts. Using fallback scenario bucket partitioning.")
-        grouped: Dict[str, List[Tuple[str, int]]] = defaultdict(list)
-        for t, l, s in zip(texts, labels, scenario_ids):
-            grouped[s].append((t, l))
-
-        scenario_acc_rates = []
-        for s_id, items in grouped.items():
-            tot = len(items)
-            acc = sum(l for _, l in items)
-            rate = acc / tot if tot > 0 else 0.0
-            scenario_acc_rates.append((rate, tot, s_id))
-
-        scenario_acc_rates.sort(reverse=True)
-        fold_buckets: List[List[str]] = [[] for _ in range(effective_n_splits)]
-        for idx, (_, _, s_id) in enumerate(scenario_acc_rates):
-            fold_buckets[idx % effective_n_splits].append(s_id)
-
-        folds = []
-        texts_arr = np.array(texts, dtype=object)
-        labels_arr = np.array(labels, dtype=int)
-        scenarios_arr = np.array(scenario_ids, dtype=object)
-
-        for fold_idx in range(1, effective_n_splits + 1):
-            test_scenarios_set = set(fold_buckets[fold_idx - 1])
-            test_mask = np.array([s in test_scenarios_set for s in scenario_ids])
-            train_mask = ~test_mask
-
-            train_idx = np.nonzero(train_mask)[0]
-            test_idx = np.nonzero(test_mask)[0]
-
-            folds.append({
-                "fold": fold_idx,
-                "train_idx": train_idx,
-                "test_idx": test_idx,
-                "train_texts": list(texts_arr[train_idx]),
-                "train_labels": list(labels_arr[train_idx]),
-                "test_texts": list(texts_arr[test_idx]),
-                "test_labels": list(labels_arr[test_idx]),
-                "test_scenario_ids": sorted(test_scenarios_set),
-                "train_scenario_ids": sorted(set(scenarios_arr[train_mask])),
-            })
-
-        return folds
 
 
 def _save_artifact(obj: Any, target_path: Path) -> None:
