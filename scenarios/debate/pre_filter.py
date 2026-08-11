@@ -67,7 +67,9 @@ def _extract_scenario_id(record: dict, predicate: str) -> str:
     seed_dict = seed_val if isinstance(seed_val, dict) else {}
     cve_id = (record.get("cve_id") if isinstance(record, dict) else None) or seed_dict.get("cve_id")
     if cve_id:
-        return str(cve_id)
+        normalized_cve = str(cve_id).strip().upper()
+        if normalized_cve:
+            return normalized_cve
     cve_match = CVE_REGEX.search(predicate)
     if cve_match:
         return cve_match.group(0).upper()
@@ -116,6 +118,9 @@ def _fallback_bucket_partitioning(
     effective_n_splits: int,
 ) -> List[Dict[str, Any]]:
     """Fallback scenario bucket partitioning when StratifiedGroupKFold is unavailable."""
+    if not (len(texts) == len(labels) == len(scenario_ids)):
+        raise ValueError("Input lists to fallback partitioning must have equal lengths.")
+
     grouped: Dict[str, List[Tuple[str, int]]] = defaultdict(list)
     for t, l, s in zip(texts, labels, scenario_ids):
         grouped[s].append((t, l))
@@ -168,6 +173,12 @@ def partition_dataset_by_scenario_stratified(
     seed: int = 42,
 ) -> List[Dict[str, Any]]:
     """Partition dataset into Stratified Scenario-Grouped folds (zero scenario-predicate leakage across splits)."""
+    if not (len(texts) == len(labels) == len(scenario_ids)):
+        raise ValueError(
+            f"Input lists must have equal lengths: len(texts)={len(texts)}, "
+            f"len(labels)={len(labels)}, len(scenario_ids)={len(scenario_ids)}."
+        )
+
     unique_scenarios = len(set(scenario_ids))
     if unique_scenarios < 2:
         raise ValueError(

@@ -120,16 +120,32 @@ def test_holdout_metrics_export(tmp_path: Path):
 
 def test_scenario_id_resolution_tiers():
     """Verify 3-tier scenario identifier resolution (cve_id -> CVE regex -> SHA-256 fallback)."""
-    # Tier 1: Explicit cve_id field
-    rec_cve = {"cve_id": "CVE-2024-1234"}
+    # Tier 1: Explicit cve_id field (uppercase canonicalization)
+    rec_cve = {"cve_id": "cve-2024-1234"}
     assert _extract_scenario_id(rec_cve, "any predicate") == "CVE-2024-1234"
+
+    # Tier 1b: seed_dict.cve_id with lowercase & whitespace
+    rec_seed_cve = {"seed": {"cve_id": "  cve-2025-5678  "}}
+    assert _extract_scenario_id(rec_seed_cve, "any predicate") == "CVE-2025-5678"
 
     # Tier 2: Regex extraction from predicate
     rec_regex = {}
-    assert _extract_scenario_id(rec_regex, "vulnerability in CVE-2023-9999 parse") == "CVE-2023-9999"
+    assert _extract_scenario_id(rec_regex, "vulnerability in cve-2023-9999 parse") == "CVE-2023-9999"
 
     # Tier 3: SHA-256 hash fallback
     rec_hash = {}
     scen_id = _extract_scenario_id(rec_hash, "custom vulnerability predicate without cve")
     assert scen_id.startswith("HASH-")
     assert len(scen_id) == 15  # "HASH-" + 10 chars
+
+
+def test_partition_dataset_length_mismatch_validation():
+    """Verify partition_dataset_by_scenario_stratified rejects unaligned input lengths."""
+    import pytest
+    texts = ["text 1", "text 2"]
+    labels = [1, 0]
+    scenario_ids = ["HASH-1"]  # Mismatched length
+
+    with pytest.raises(ValueError, match="Input lists must have equal lengths"):
+        partition_dataset_by_scenario_stratified(texts, labels, scenario_ids)
+
