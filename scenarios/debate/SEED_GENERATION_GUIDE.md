@@ -7,7 +7,7 @@ This document explains the methodology and goals behind the 50 high-fidelity see
 Traditional synthetic data generation often starts with a generic prompt ("Generate a SQL injection example"). Our approach, **GEPA-First (Generative Explanation of Program Anomalies)**, flips this by starting with **ground-truth reality**.
 
 ### Phase A: Clean-Room Selection
-We pull "Seeds" from the 1.5GB **CVEFixes** dataset. To protect the integrity of our evaluation set, we implement a **3-Tier Deduplication** layer:
+We pull "Seeds" from the 1.5GB **[CVEFixes](https://www.kaggle.com/datasets/girish17019/cvefixes-vulnerable-and-fixed-code)** dataset. To protect the integrity of our evaluation set, we implement a **3-Tier Deduplication** layer:
 1.  **Exact Hash**: Rejects identical code snippets.
 2.  **Normalized Hash**: Rejects code that differs only in whitespace, comments, or indentation.
 3.  **Fuzzy Shingling**: Rejects "near-duplicates" (similarly structured code) using Jaccard similarity on 5-gram tokens.
