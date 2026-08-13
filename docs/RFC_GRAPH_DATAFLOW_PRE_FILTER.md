@@ -134,14 +134,14 @@ def is_sanitizer_valid_for_sink(sink_type: str, sanitizer_type: str | None) -> b
 def evaluate_graph_reachability(
     graph_snapshot: FlowGraphSnapshot,
     as_of: float | None = None,
-    risk_threshold: float = 0.10,
 ) -> float:
     """
     Computes deterministic risk score based on source-to-sink graph topology.
-    Fails closed (returns 1.0 / High Risk) if evidence is incomplete or parse errors occur.
+    Fails closed (returns 1.0 / High Risk) if evidence is incomplete, parse errors occur,
+    or signature endpoint nodes are missing from graph_snapshot.nodes.
     
-    - Risk Score >= risk_threshold (0.10): REJECT (Flagged High Risk).
-    - Risk Score < risk_threshold (0.10): PASS (Guarded/Safe Flow score = 0.05).
+    - Returns 1.0 (High Risk) for unsanitized paths, incomplete graphs, or invalid endpoints.
+    - Returns 0.05 (Low Risk) for verified guarded or safe flows.
     """
     # Fail closed on incomplete extraction or parse error
     if not graph_snapshot.is_complete or graph_snapshot.parse_error is not None:
@@ -153,6 +153,12 @@ def evaluate_graph_reachability(
         sig for sig in graph_snapshot.signatures
         if sig.invalid_at is None or sig.invalid_at > eval_time
     ]
+
+    # Validate that signature endpoints exist in graph_snapshot.nodes (fail closed if missing)
+    if graph_snapshot.nodes:
+        for sig in active_signatures:
+            if sig.source_id not in graph_snapshot.nodes or sig.sink_id not in graph_snapshot.nodes:
+                return 1.0
 
     # Check for unhandled or unknown sink types in active signatures (fail closed)
     for sig in active_signatures:
@@ -166,6 +172,19 @@ def evaluate_graph_reachability(
                 return 1.0  # Confirmed unsanitized reachability path -> High Risk (Reject)
 
     return 0.05  # All flows guarded or safe -> Low Risk (Pass)
+
+def is_graph_candidate_rejected(
+    graph_snapshot: FlowGraphSnapshot,
+    as_of: float | None = None,
+    risk_threshold: float = 0.10,
+) -> bool:
+    """
+    Evaluates whether candidate should be rejected based on advisory risk_threshold (default 0.10).
+    Returns True if risk_score >= risk_threshold, False otherwise.
+    """
+    score = evaluate_graph_reachability(graph_snapshot, as_of=as_of)
+    return score >= risk_threshold
+
 ```
 
 ### 4.1 Advisory Threshold Contract

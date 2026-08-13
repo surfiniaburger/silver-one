@@ -54,9 +54,9 @@ class FlowGraphSnapshot:
     snapshot_id: str
     scenario_id: str
     version: int
+    created_at: float
     nodes: Dict[str, dict] = field(default_factory=dict)
     signatures: List[FlowSignature] = field(default_factory=list)
-    created_at: float = field(default_factory=lambda: time.time())
     is_complete: bool = True
     parse_error: Optional[str] = None
 
@@ -65,22 +65,24 @@ class FlowGraphSnapshot:
             "snapshot_id": self.snapshot_id,
             "scenario_id": self.scenario_id,
             "version": self.version,
+            "created_at": self.created_at,
             "nodes": self.nodes,
             "signatures": [sig.to_dict() for sig in self.signatures],
-            "created_at": self.created_at,
             "is_complete": self.is_complete,
             "parse_error": self.parse_error,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "FlowGraphSnapshot":
+        if "created_at" not in data:
+            raise KeyError("FlowGraphSnapshot deserialization requires explicit 'created_at' timestamp")
         return cls(
             snapshot_id=data["snapshot_id"],
             scenario_id=data["scenario_id"],
             version=data["version"],
+            created_at=float(data["created_at"]),
             nodes=data.get("nodes", {}),
             signatures=[FlowSignature.from_dict(s) for s in data.get("signatures", [])],
-            created_at=data.get("created_at", time.time()),
             is_complete=data.get("is_complete", True),
             parse_error=data.get("parse_error"),
         )
@@ -102,14 +104,14 @@ def is_sanitizer_valid_for_sink(sink_type: str, sanitizer_type: Optional[str]) -
 def evaluate_graph_reachability(
     graph_snapshot: FlowGraphSnapshot,
     as_of: Optional[float] = None,
-    risk_threshold: float = 0.10,
 ) -> float:
     """
     Computes deterministic risk score based on source-to-sink graph topology.
-    Fails closed (returns 1.0 / High Risk) if evidence is incomplete or parse errors occur.
+    Fails closed (returns 1.0 / High Risk) if evidence is incomplete, parse errors occur,
+    or signature endpoint nodes are missing from graph_snapshot.nodes.
     
-    - Risk Score >= risk_threshold (0.10): REJECT (Flagged High Risk).
-    - Risk Score < risk_threshold (0.10): PASS (Guarded/Safe Flow score = 0.05).
+    - Returns 1.0 (High Risk) for unsanitized paths, incomplete graphs, or invalid endpoints.
+    - Returns 0.05 (Low Risk) for verified guarded or safe flows.
     """
     # Fail closed on incomplete extraction or parse error
     if not graph_snapshot.is_complete or graph_snapshot.parse_error is not None:
@@ -121,6 +123,12 @@ def evaluate_graph_reachability(
         sig for sig in graph_snapshot.signatures
         if sig.invalid_at is None or sig.invalid_at > eval_time
     ]
+
+    # Validate that signature endpoints exist in graph_snapshot.nodes (fail closed if missing)
+    if graph_snapshot.nodes:
+        for sig in active_signatures:
+            if sig.source_id not in graph_snapshot.nodes or sig.sink_id not in graph_snapshot.nodes:
+                return 1.0
 
     # Check for unhandled or unknown sink types in active signatures (fail closed)
     for sig in active_signatures:
@@ -134,3 +142,17 @@ def evaluate_graph_reachability(
                 return 1.0  # Confirmed unsanitized reachability path -> High Risk (Reject)
 
     return 0.05  # All flows guarded or safe -> Low Risk (Pass)
+
+
+def is_graph_candidate_rejected(
+    graph_snapshot: FlowGraphSnapshot,
+    as_of: Optional[float] = None,
+    risk_threshold: float = 0.10,
+) -> bool:
+    """
+    Evaluates whether candidate should be rejected based on advisory risk_threshold (default 0.10).
+    Returns True if risk_score >= risk_threshold, False otherwise.
+    """
+    score = evaluate_graph_reachability(graph_snapshot, as_of=as_of)
+    return score >= risk_threshold
+
