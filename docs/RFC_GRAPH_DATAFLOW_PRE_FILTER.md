@@ -74,13 +74,14 @@ The code AST is mapped into a lightweight **Semantic Flow Graph Snapshot**:
 - **Flow Nodes**:
   - `SourceNode`: External inputs, parameters, network buffers, user-controlled pointers.
   - `TransformNode`: Arithmetic operations, bitwise shifts, memory allocations (`malloc`), string copies (`strcpy`).
-  - `SanitizerNode`: Explicit bounds checks (`if (len > MAX)`), range validations, NULL checks.
+  - `SanitizerNode`: Explicit bounds checks (`if (len > MAX)`), range validations, NULL checks, command sanitization, allowlist checks.
   - `SinkNode`: Memory writes, pointer dereferences, array index access, system calls.
 
 - **Sink-Specific Sanitizer Evidence & Signature Triples**:
   Generic `is_guarded` flags (such as treating a NULL check as a guard for a buffer overflow) are prohibited. Flow signatures require **sink-matched sanitizer evidence**:
   - `ARRAY_INDEX` and `MEMORY_WRITE` sinks require `BOUNDS_CHECK` or `RANGE_VALIDATION` targeting the index/length variable.
   - `POINTER_DEREF` sinks require `NULL_CHECK` targeting the specific pointer.
+  - `SYSTEM_CALL` sinks require `COMMAND_SANITIZATION` or `ALLOWLIST_CHECK` targeting the command argument.
 
   ```python
   @dataclass(frozen=True)
@@ -90,12 +91,12 @@ The code AST is mapped into a lightweight **Semantic Flow Graph Snapshot**:
       source_type: str                    # e.g., "UNTRUSTED_INPUT"
       sink_type: str                      # "MEMORY_WRITE", "POINTER_DEREF", "ARRAY_INDEX", "SYSTEM_CALL"
       flow_type: str                      # e.g., "DIRECT_ASSIGN", "ARITHMETIC_OFFSET"
-      sanitizer_type: str | None = None   # "BOUNDS_CHECK", "RANGE_VALIDATION", "NULL_CHECK"
+      sanitizer_type: str | None = None   # "BOUNDS_CHECK", "RANGE_VALIDATION", "NULL_CHECK", "COMMAND_SANITIZATION", "ALLOWLIST_CHECK"
       guarded_target: str | None = None   # Specific variable/property proven safe by sanitizer
       invalid_at: float | None = None     # Timestamp if edge invalidated by counterfactual patch
   ```
 
-- **Graph Snapshot Identity Contract**:
+- **Graph Snapshot Identity & Integrity Contract**:
   ```python
   @dataclass
   class FlowGraphSnapshot:
@@ -105,6 +106,8 @@ The code AST is mapped into a lightweight **Semantic Flow Graph Snapshot**:
       nodes: dict[str, dict]
       signatures: list[FlowSignature]
       created_at: float
+      is_complete: bool = True
+      parse_error: str | None = None
   ```
 
 ---
@@ -123,38 +126,53 @@ def is_sanitizer_valid_for_sink(sink_type: str, sanitizer_type: str | None) -> b
     if sink_type in ("MEMORY_WRITE", "ARRAY_INDEX"):
         return sanitizer_type in ("BOUNDS_CHECK", "RANGE_VALIDATION")
     if sink_type == "POINTER_DEREF":
-        return sanitizer_type in ("NULL_CHECK", "BOUNDS_CHECK")
+        return sanitizer_type == "NULL_CHECK"
     if sink_type == "SYSTEM_CALL":
         return sanitizer_type in ("COMMAND_SANITIZATION", "ALLOWLIST_CHECK")
     return False
 
-def evaluate_graph_reachability(graph_snapshot: FlowGraphSnapshot) -> float:
+def evaluate_graph_reachability(
+    graph_snapshot: FlowGraphSnapshot,
+    as_of: float | None = None,
+    risk_threshold: float = 0.10,
+) -> float:
     """
     Computes deterministic risk score based on source-to-sink graph topology.
-    - Score >= 0.10: Rejects candidate (flagged high risk).
-    - Score < 0.10: Passes candidate (guarded/safe flow score = 0.05).
+    Fails closed (returns 1.0 / High Risk) if evidence is incomplete or parse errors occur.
+    
+    - Risk Score >= risk_threshold (0.10): REJECT (Flagged High Risk).
+    - Risk Score < risk_threshold (0.10): PASS (Guarded/Safe Flow score = 0.05).
     """
-    if not graph_snapshot.signatures:
-        return 0.05  # Disconnected flow graph -> Low risk (Pass)
-        
-    for sig in graph_snapshot.signatures:
-        # Ignore invalidated edges (bi-temporal patch history)
-        if sig.invalid_at is not None:
-            continue
-            
+    # Fail closed on incomplete extraction or parse error
+    if not graph_snapshot.is_complete or graph_snapshot.parse_error is not None:
+        return 1.0
+
+    eval_time = as_of if as_of is not None else graph_snapshot.created_at
+
+    active_signatures = [
+        sig for sig in graph_snapshot.signatures
+        if sig.invalid_at is None or sig.invalid_at > eval_time
+    ]
+
+    # Check for unhandled or unknown sink types in active signatures (fail closed)
+    for sig in active_signatures:
+        if sig.sink_type not in SUPPORTED_SINKS:
+            return 1.0
+
+    for sig in active_signatures:
         if sig.source_type == "UNTRUSTED_INPUT" and sig.sink_type in SUPPORTED_SINKS:
             # Check if sink-specific sanitizer proof is present on the path
             if not is_sanitizer_valid_for_sink(sig.sink_type, sig.sanitizer_type):
                 return 1.0  # Confirmed unsanitized reachability path -> High Risk (Reject)
-                
+
     return 0.05  # All flows guarded or safe -> Low Risk (Pass)
 ```
 
 ### 4.1 Advisory Threshold Contract
 - **Classifier Threshold**: `graph_risk_threshold = 0.10`.
 - **Decision Rule**:
-  - `risk_score >= 0.10` $\rightarrow$ **Reject** (un-sanitized source-to-sink reachability path detected).
-  - `risk_score < 0.10` $\rightarrow$ **Pass** (guarded flow score $0.05$ or disconnected flow score $0.05$).
+  - `risk_score >= 0.10` $\rightarrow$ **Reject** (un-sanitized source-to-sink reachability path detected, or incomplete extraction).
+  - `risk_score < 0.10` $\rightarrow$ **Pass** (guarded flow score $0.05$ or disconnected safe flow score $0.05$).
 
 ---
 
@@ -165,7 +183,7 @@ In multi-agent debate, debaters frequently introduce counterfactual patches (e.g
 Following Graphiti's **fact invalidation model**:
 - **Fact Addition**: When a debater adds a bounds check node, a `SanitizerNode` is inserted into the graph snapshot.
 - **Edge Invalidation**: The reachability edge `(source_id, sink_id)` is marked `invalid_at` timestamp $T$, breaking the un-guarded reachability path.
-- **Dynamic Snapshot Re-evaluation**: The reachability classifier immediately re-evaluates the updated `FlowGraphSnapshot`, updating the risk score from $1.0$ (vulnerable/reject) to $0.05$ (guarded/pass).
+- **Dynamic Snapshot Re-evaluation**: When evaluated at timestamp $\text{as\_of} \ge T$, the reachability classifier skips invalidated signatures. If no other active unguarded reachability paths remain, the risk score updates to $0.05$ (guarded/pass). If another active path still lacks valid sanitizer evidence, the risk score remains $1.0$ (reject).
 
 ---
 
@@ -176,10 +194,11 @@ Evaluation will follow the rigorous statistical protocol in [GRAPH_PRE_FILTER_HY
 ### 6.1 Authoritative Acceptance Bounds
 Candidate graph models must meet the identical authoritative acceptance checklist across $N=5$ paired partition seeds (`--seed 42, 1337, 2026, 7, 99`):
 
-1. **Zero Logic Error Rate**: $\text{accepted\_logic\_error\_rate} = \frac{\text{Accepted Corpus Rows with Verifier Logic Error}}{\text{Total Accepted Corpus Rows}} = 0.0$.
+1. **Zero Logic Error Rate**: $\text{accepted\_logic\_error\_rate} = \frac{\text{Accepted Corpus Rows with Verifier Logic Error}}{\text{Total Accepted Corpus Rows}} = 0.0$. If $\text{Total Accepted Corpus Rows} == 0$, the criterion fails hard (declared unacceptable due to zero-yield collapse).
 2. **ROC-AUC Floor**: Pooled Out-of-Fold $\text{ROC-AUC} \ge 0.7000$ (Baseline: $0.4052$).
 3. **PR-AUC Floor**: Pooled Out-of-Fold $\text{PR-AUC} \ge 0.6000$ (Baseline: $0.2864$).
 4. **Sensitivity / TPR Floor**: Sensitivity (TPR) at advisory threshold ($0.10$) $\ge 0.9000$.
 5. **Statistical Significance**: Paired-seed statistical significance ($p < \alpha_{\text{adjusted}}$ via Holm Step-Down Procedure).
 6. **Non-Parametric Confidence Interval**: Hodges-Lehmann 95% Confidence Interval for $\Delta\text{ROC-AUC}$ strictly excludes $0.0$.
+
 
