@@ -68,13 +68,27 @@ def test_flow_graph_snapshot_serialization_and_created_at():
 
 def test_flow_graph_snapshot_immutability():
     original_nodes = {"src_1": {"kind": "source"}, "sink_1": {"kind": "sink"}}
+    original_signatures = [
+        FlowSignature(
+            source_id="src_1",
+            sink_id="sink_1",
+            source_type="UNTRUSTED_INPUT",
+            sink_type="MEMORY_WRITE",
+            flow_type="DIRECT_ASSIGN",
+        )
+    ]
     snapshot = FlowGraphSnapshot(
         snapshot_id="snap_immut",
         scenario_id="scenario_abc",
         version=1,
         created_at=1000.0,
         nodes=original_nodes,
+        signatures=original_signatures,
     )
+    # Mutating original caller list should not alter snapshot.signatures
+    original_signatures.clear()
+    assert len(snapshot.signatures) == 1
+
     # Mutating original caller dictionary should not alter snapshot.nodes
     original_nodes["src_1"]["kind"] = "MUTATED_CALLER"
     assert snapshot.nodes["src_1"]["kind"] == "source"
@@ -178,7 +192,7 @@ def test_time_aware_invalidation():
     assert evaluate_graph_reachability(snap, as_of=150.0) == 0.05
 
 
-def test_non_finite_timestamps_fail_closed():
+def test_non_finite_and_malformed_timestamps_fail_closed():
     guarded_sig = FlowSignature(
         source_id="src_1",
         sink_id="sink_1",
@@ -198,6 +212,17 @@ def test_non_finite_timestamps_fail_closed():
     )
     assert evaluate_graph_reachability(snap_nan_created) == 1.0
 
+    # Malformed string created_at -> Fails closed (1.0)
+    snap_str_created = FlowGraphSnapshot(
+        snapshot_id="s_str",
+        scenario_id="sc1",
+        version=1,
+        created_at="invalid_timestamp",  # type: ignore
+        nodes={"src_1": {}, "sink_1": {}},
+        signatures=[guarded_sig],
+    )
+    assert evaluate_graph_reachability(snap_str_created) == 1.0
+
     # Inf as_of -> Fails closed (1.0)
     snap_valid = FlowGraphSnapshot(
         snapshot_id="s_valid",
@@ -208,6 +233,7 @@ def test_non_finite_timestamps_fail_closed():
         signatures=[guarded_sig],
     )
     assert evaluate_graph_reachability(snap_valid, as_of=float("inf")) == 1.0
+    assert evaluate_graph_reachability(snap_valid, as_of="invalid_as_of") == 1.0  # type: ignore
 
     # NaN invalid_at -> Fails closed (1.0)
     nan_invalid_sig = FlowSignature(
@@ -228,6 +254,27 @@ def test_non_finite_timestamps_fail_closed():
         signatures=[nan_invalid_sig],
     )
     assert evaluate_graph_reachability(snap_nan_invalid) == 1.0
+
+    # Malformed string invalid_at -> Fails closed (1.0)
+    str_invalid_sig = FlowSignature(
+        source_id="src_1",
+        sink_id="sink_1",
+        source_type="UNTRUSTED_INPUT",
+        sink_type="MEMORY_WRITE",
+        flow_type="DIRECT_ASSIGN",
+        sanitizer_type="BOUNDS_CHECK",
+        invalid_at="not_a_float",  # type: ignore
+    )
+    snap_str_invalid = FlowGraphSnapshot(
+        snapshot_id="s_str_inv",
+        scenario_id="sc1",
+        version=1,
+        created_at=1000.0,
+        nodes={"src_1": {}, "sink_1": {}},
+        signatures=[str_invalid_sig],
+    )
+    assert evaluate_graph_reachability(snap_str_invalid) == 1.0
+
 
 
 def test_endpoint_node_validation_fails_closed():

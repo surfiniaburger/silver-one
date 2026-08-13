@@ -94,6 +94,15 @@ class FlowGraphSnapshot:
         )
 
 
+def _is_finite_numeric(val: float) -> bool:
+    """Returns True if val is a finite int or float (excluding bool and non-numeric types)."""
+    if val is None or isinstance(val, bool):
+        return False
+    if isinstance(val, (int, float)):
+        return math.isfinite(val)
+    return False
+
+
 def is_sanitizer_valid_for_sink(sink_type: str, sanitizer_type: Optional[str]) -> bool:
     """Verifies that sanitizer proof matches specific sink requirements."""
     if not sanitizer_type:
@@ -112,13 +121,13 @@ def _filter_active_signatures(
 ) -> Optional[List[FlowSignature]]:
     """
     Extracts active signatures evaluated at eval_time.
-    Returns None (failing closed) if non-finite timestamps, unsupported sinks, or invalid node endpoints appear.
+    Returns None (failing closed) if non-finite/non-numeric timestamps, unsupported sinks, or invalid node endpoints appear.
     """
     active: List[FlowSignature] = []
     for sig in graph_snapshot.signatures:
         if sig.invalid_at is not None:
-            if not math.isfinite(sig.invalid_at):
-                return None  # Non-finite invalid_at -> Fail closed
+            if not _is_finite_numeric(sig.invalid_at):
+                return None  # Malformed or non-finite invalid_at -> Fail closed
             if sig.invalid_at <= eval_time:
                 continue  # Invalidated edge
 
@@ -151,7 +160,7 @@ def evaluate_graph_reachability(
     """
     Computes deterministic risk score based on source-to-sink graph topology.
     Fails closed (returns 1.0 / High Risk) if evidence is incomplete, parse errors occur,
-    timestamps are non-finite (NaN / Inf), or signature endpoint nodes are missing.
+    timestamps are non-finite/non-numeric (NaN / Inf / string / None), or signature endpoint nodes are missing.
     
     - Returns 1.0 (High Risk) for unsanitized paths, incomplete graphs, or invalid endpoints.
     - Returns 0.05 (Low Risk) for verified guarded or safe flows.
@@ -159,13 +168,13 @@ def evaluate_graph_reachability(
     if not graph_snapshot.is_complete or graph_snapshot.parse_error is not None:
         return 1.0
 
-    if not math.isfinite(graph_snapshot.created_at):
+    if not _is_finite_numeric(graph_snapshot.created_at):
         return 1.0
 
-    if as_of is not None and not math.isfinite(as_of):
+    if as_of is not None and not _is_finite_numeric(as_of):
         return 1.0
 
-    eval_time = as_of if as_of is not None else graph_snapshot.created_at
+    eval_time = float(as_of) if as_of is not None else float(graph_snapshot.created_at)
 
     active = _filter_active_signatures(graph_snapshot, eval_time)
     if active is None:
@@ -175,6 +184,7 @@ def evaluate_graph_reachability(
         return 1.0
 
     return 0.05  # All flows guarded or safe -> Low Risk (Pass)
+
 
 
 def is_graph_candidate_rejected(
