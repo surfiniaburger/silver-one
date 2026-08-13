@@ -1,9 +1,10 @@
 """
 Contract tests for FlowSignature, FlowGraphSnapshot, and evaluate_graph_reachability.
-Verifies serialization, sanitizer proof matching, time-aware invalidation, fail-closed handling, node endpoint validation, and threshold outcomes.
+Verifies serialization, sanitizer proof matching, time-aware invalidation, fail-closed handling, node endpoint validation, snapshot immutability, and non-finite timestamp validation.
 """
 
 import pytest
+import math
 import time
 from scenarios.debate.graph_dataflow import (
     FlowSignature,
@@ -63,6 +64,25 @@ def test_flow_graph_snapshot_serialization_and_created_at():
     data_bad = {"snapshot_id": "s", "scenario_id": "sc", "version": 1}
     with pytest.raises(KeyError, match="created_at"):
         FlowGraphSnapshot.from_dict(data_bad)
+
+
+def test_flow_graph_snapshot_immutability():
+    original_nodes = {"src_1": {"kind": "source"}, "sink_1": {"kind": "sink"}}
+    snapshot = FlowGraphSnapshot(
+        snapshot_id="snap_immut",
+        scenario_id="scenario_abc",
+        version=1,
+        created_at=1000.0,
+        nodes=original_nodes,
+    )
+    # Mutating original caller dictionary should not alter snapshot.nodes
+    original_nodes["src_1"]["kind"] = "MUTATED_CALLER"
+    assert snapshot.nodes["src_1"]["kind"] == "source"
+
+    # Mutating dictionary returned by to_dict() should not alter snapshot.nodes
+    serialized = snapshot.to_dict()
+    serialized["nodes"]["src_1"]["kind"] = "MUTATED_SERIALIZED"
+    assert snapshot.nodes["src_1"]["kind"] == "source"
 
 
 def test_sink_specific_sanitizer_matching():
@@ -156,6 +176,58 @@ def test_time_aware_invalidation():
 
     # Evaluation at t=150.0 (after invalidation): Signature skipped -> Guarded/Safe (0.05)
     assert evaluate_graph_reachability(snap, as_of=150.0) == 0.05
+
+
+def test_non_finite_timestamps_fail_closed():
+    guarded_sig = FlowSignature(
+        source_id="src_1",
+        sink_id="sink_1",
+        source_type="UNTRUSTED_INPUT",
+        sink_type="MEMORY_WRITE",
+        flow_type="DIRECT_ASSIGN",
+        sanitizer_type="BOUNDS_CHECK",
+    )
+    # NaN created_at -> Fails closed (1.0)
+    snap_nan_created = FlowGraphSnapshot(
+        snapshot_id="s_nan",
+        scenario_id="sc1",
+        version=1,
+        created_at=float("nan"),
+        nodes={"src_1": {}, "sink_1": {}},
+        signatures=[guarded_sig],
+    )
+    assert evaluate_graph_reachability(snap_nan_created) == 1.0
+
+    # Inf as_of -> Fails closed (1.0)
+    snap_valid = FlowGraphSnapshot(
+        snapshot_id="s_valid",
+        scenario_id="sc1",
+        version=1,
+        created_at=1000.0,
+        nodes={"src_1": {}, "sink_1": {}},
+        signatures=[guarded_sig],
+    )
+    assert evaluate_graph_reachability(snap_valid, as_of=float("inf")) == 1.0
+
+    # NaN invalid_at -> Fails closed (1.0)
+    nan_invalid_sig = FlowSignature(
+        source_id="src_1",
+        sink_id="sink_1",
+        source_type="UNTRUSTED_INPUT",
+        sink_type="MEMORY_WRITE",
+        flow_type="DIRECT_ASSIGN",
+        sanitizer_type="BOUNDS_CHECK",
+        invalid_at=float("nan"),
+    )
+    snap_nan_invalid = FlowGraphSnapshot(
+        snapshot_id="s_nan_inv",
+        scenario_id="sc1",
+        version=1,
+        created_at=1000.0,
+        nodes={"src_1": {}, "sink_1": {}},
+        signatures=[nan_invalid_sig],
+    )
+    assert evaluate_graph_reachability(snap_nan_invalid) == 1.0
 
 
 def test_endpoint_node_validation_fails_closed():
