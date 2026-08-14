@@ -19,6 +19,7 @@ from scenarios.debate.graph_dataflow import (
 SYSTEM_CALL_FUNCTIONS = {"os.system", "subprocess.Popen", "subprocess.run", "eval", "exec", "system", "Popen", "run"}
 MEMORY_FUNCTIONS = {"memcpy", "strcpy", "memset", "memmove"}
 EXPLICIT_INPUT_SOURCES = {"input", "sys.argv", "request.args", "request.get_json", "socket.recv", "file.read"}
+SANITIZER_FUNCTIONS = {"quote", "escape", "sanitize", "quote_plus", "escape_string", "shlex.quote", "html.escape"}
 
 
 def _is_finite_numeric(val: float) -> bool:
@@ -48,7 +49,25 @@ class SecurityFlowVisitor(ast.NodeVisitor):
         return f"{prefix}_{self.node_counter}"
 
     def visit_FunctionDef(self, node: ast.FunctionDef):
-        for arg in node.args.args:
+        self._register_function_args(node)
+        self._visit_statement_block(node.body)
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+    def _register_function_args(self, node: ast.AST):
+        args_node = getattr(node, "args", None)
+        if not args_node:
+            return
+        all_args = []
+        all_args.extend(getattr(args_node, "posonlyargs", []))
+        all_args.extend(getattr(args_node, "args", []))
+        if getattr(args_node, "vararg", None):
+            all_args.append(args_node.vararg)
+        all_args.extend(getattr(args_node, "kwonlyargs", []))
+        if getattr(args_node, "kwarg", None):
+            all_args.append(args_node.kwarg)
+
+        for arg in all_args:
             arg_name = arg.arg
             src_id = self._gen_id("src")
             self.nodes[src_id] = {
@@ -61,8 +80,6 @@ class SecurityFlowVisitor(ast.NodeVisitor):
             }
             self.sources[arg_name] = src_id
 
-        self._visit_statement_block(node.body)
-
     def visit_Module(self, node: ast.Module):
         self._visit_statement_block(node.body)
 
@@ -72,6 +89,7 @@ class SecurityFlowVisitor(ast.NodeVisitor):
         try:
             for stmt in statements:
                 if isinstance(stmt, ast.Assert):
+                    self.visit(stmt.test)
                     self._merge_guards(block_guards, self._collect_guard_condition(stmt.test))
                     continue
                 self.visit(stmt)
@@ -122,9 +140,8 @@ class SecurityFlowVisitor(ast.NodeVisitor):
                     "label": f"InputSource({func_name})",
                     "type": "UNTRUSTED_INPUT",
                     "target_var": target.id,
-                    "source_kind": "explicit_input_call",
-                    "source_call": func_name,
-                    **self._location_metadata(node),
+                    "source_kind": "explicit_input",
+                    **self._location_metadata(target),
                 }
                 self.sources[target.id] = src_id
 
@@ -132,11 +149,12 @@ class SecurityFlowVisitor(ast.NodeVisitor):
         if not isinstance(node.value, ast.Call):
             return
         func_name = self._get_call_name(node.value)
-        if not any(k in func_name for k in ("quote", "escape", "sanitize")):
+        callee = func_name.rsplit(".", 1)[-1]
+        if callee not in SANITIZER_FUNCTIONS and func_name not in SANITIZER_FUNCTIONS:
             return
         for arg in node.value.args:
             arg_var = self._extract_var_name(arg)
-            if not arg_var:
+            if not arg_var or arg_var not in self.sources:
                 continue
             for target in node.targets:
                 if isinstance(target, ast.Name):
@@ -191,21 +209,18 @@ class SecurityFlowVisitor(ast.NodeVisitor):
                 "kind": "sink",
                 "label": f"ArrayIndex({idx_var})",
                 "type": "ARRAY_INDEX",
+                "sink_expr_kind": "subscript_index",
                 "target_var": idx_var,
-                "sink_expr_kind": "subscript_read",
                 **self._location_metadata(node),
             }
             sanitizer_type, guarded_target = self._resolve_sanitizer("ARRAY_INDEX", idx_var)
-            self.signatures.append(
-                FlowSignature(
-                    source_id=source_id,
-                    sink_id=sink_id,
-                    source_type="UNTRUSTED_INPUT",
-                    sink_type="ARRAY_INDEX",
-                    flow_type="SUBSCRIPT_INDEX",
-                    sanitizer_type=sanitizer_type,
-                    guarded_target=guarded_target,
-                )
+            self._add_signature(
+                source_id=source_id,
+                sink_id=sink_id,
+                sink_type="ARRAY_INDEX",
+                flow_type="SUBSCRIPT_INDEX",
+                sanitizer_type=sanitizer_type,
+                guarded_target=guarded_target,
             )
 
         self.generic_visit(node)
@@ -219,21 +234,18 @@ class SecurityFlowVisitor(ast.NodeVisitor):
                 "kind": "sink",
                 "label": f"PointerDeref({base_var}.{node.attr})",
                 "type": "POINTER_DEREF",
-                "target_var": base_var,
                 "sink_expr_kind": "attribute_access",
+                "target_var": base_var,
                 **self._location_metadata(node),
             }
             sanitizer_type, guarded_target = self._resolve_sanitizer("POINTER_DEREF", base_var)
-            self.signatures.append(
-                FlowSignature(
-                    source_id=source_id,
-                    sink_id=sink_id,
-                    source_type="UNTRUSTED_INPUT",
-                    sink_type="POINTER_DEREF",
-                    flow_type="ATTRIBUTE_ACCESS",
-                    sanitizer_type=sanitizer_type,
-                    guarded_target=guarded_target,
-                )
+            self._add_signature(
+                source_id=source_id,
+                sink_id=sink_id,
+                sink_type="POINTER_DEREF",
+                flow_type="ATTRIBUTE_ACCESS",
+                sanitizer_type=sanitizer_type,
+                guarded_target=guarded_target,
             )
 
         self.generic_visit(node)
@@ -257,22 +269,18 @@ class SecurityFlowVisitor(ast.NodeVisitor):
                     "kind": "sink",
                     "label": f"SystemCall({func_name})",
                     "type": "SYSTEM_CALL",
+                    "sink_expr_kind": "command_execution",
                     "target_var": cmd_var,
-                    "sink_expr_kind": "system_call",
-                    "callee": func_name,
                     **self._location_metadata(node),
                 }
                 sanitizer_type, guarded_target = self._resolve_sanitizer("SYSTEM_CALL", cmd_var)
-                self.signatures.append(
-                    FlowSignature(
-                        source_id=source_id,
-                        sink_id=sink_id,
-                        source_type="UNTRUSTED_INPUT",
-                        sink_type="SYSTEM_CALL",
-                        flow_type="COMMAND_EXECUTION",
-                        sanitizer_type=sanitizer_type,
-                        guarded_target=guarded_target,
-                    )
+                self._add_signature(
+                    source_id=source_id,
+                    sink_id=sink_id,
+                    sink_type="SYSTEM_CALL",
+                    flow_type="COMMAND_EXECUTION",
+                    sanitizer_type=sanitizer_type,
+                    guarded_target=guarded_target,
                 )
 
     def _check_memory_call_sink(self, node: ast.Call, func_name: str):
@@ -280,37 +288,36 @@ class SecurityFlowVisitor(ast.NodeVisitor):
             return
         dest_var = self._extract_var_name(node.args[0])
         src_var = self._extract_var_name(node.args[1])
-        size_var = self._extract_var_name(node.args[2]) if len(node.args) >= 3 else None
-        risk_var = size_var or dest_var
-        source_id = self.sources.get(size_var) or self.sources.get(src_var) or self.sources.get(dest_var)
-        if source_id and risk_var:
+
+        size_var = None
+        if len(node.args) >= 3:
+            size_var = self._extract_var_name(node.args[2])
+
+        source_id = self.sources.get(src_var) or self.sources.get(dest_var) or (self.sources.get(size_var) if size_var else None)
+        target_var = size_var or dest_var
+
+        if source_id and target_var:
             sink_id = self._gen_id("sink")
             self.nodes[sink_id] = {
                 "kind": "sink",
                 "label": f"MemoryWrite({func_name})",
                 "type": "MEMORY_WRITE",
-                "target_var": risk_var,
-                "sink_expr_kind": "memory_call",
-                "callee": func_name,
-                "dest_var": dest_var,
-                "src_var": src_var,
-                "size_var": size_var,
+                "sink_expr_kind": "memory_copy_call",
+                "target_var": target_var,
                 **self._location_metadata(node),
             }
-            sanitizer_type, guarded_target = self._resolve_sanitizer("MEMORY_WRITE", risk_var)
-            self.signatures.append(
-                FlowSignature(
-                    source_id=source_id,
-                    sink_id=sink_id,
-                    source_type="UNTRUSTED_INPUT",
-                    sink_type="MEMORY_WRITE",
-                    flow_type="MEMORY_COPY_CALL",
-                    sanitizer_type=sanitizer_type,
-                    guarded_target=guarded_target,
-                )
+            sanitizer_type, guarded_target = self._resolve_sanitizer("MEMORY_WRITE", target_var)
+            self._add_signature(
+                source_id=source_id,
+                sink_id=sink_id,
+                sink_type="MEMORY_WRITE",
+                flow_type="MEMORY_COPY_CALL",
+                sanitizer_type=sanitizer_type,
+                guarded_target=guarded_target,
             )
 
     def visit_If(self, node: ast.If):
+        self.visit(node.test)
         guard_map = self._collect_guard_condition(node.test)
         self.guard_stack.append(guard_map)
         try:
@@ -321,9 +328,6 @@ class SecurityFlowVisitor(ast.NodeVisitor):
         if node.orelse:
             self._visit_statement_block(node.orelse)
 
-    def visit_Assert(self, node: ast.Assert):
-        self._record_current_assert_guards(node.test)
-
     def _check_memory_write(self, target: ast.Subscript, value: ast.AST):
         idx_var = self._extract_var_name(target.slice)
         val_var = self._extract_var_name(value)
@@ -332,61 +336,78 @@ class SecurityFlowVisitor(ast.NodeVisitor):
         source_id = self.sources.get(val_var) or self.sources.get(idx_var) or self.sources.get(base_var)
         if source_id:
             sink_id = self._gen_id("sink")
+            target_var = idx_var or base_var
             self.nodes[sink_id] = {
                 "kind": "sink",
                 "label": f"MemoryWrite({base_var}[{idx_var}])",
                 "type": "MEMORY_WRITE",
-                "target_var": idx_var or base_var,
                 "sink_expr_kind": "subscript_write",
+                "target_var": target_var,
                 **self._location_metadata(target),
             }
-            check_var = idx_var or base_var
-            sanitizer_type, guarded_target = self._resolve_sanitizer("MEMORY_WRITE", check_var)
-            self.signatures.append(
-                FlowSignature(
-                    source_id=source_id,
-                    sink_id=sink_id,
-                    source_type="UNTRUSTED_INPUT",
-                    sink_type="MEMORY_WRITE",
-                    flow_type="SUBSCRIPT_WRITE",
-                    sanitizer_type=sanitizer_type,
-                    guarded_target=guarded_target,
-                )
+            sanitizer_type, guarded_target = self._resolve_sanitizer("MEMORY_WRITE", target_var)
+            self._add_signature(
+                source_id=source_id,
+                sink_id=sink_id,
+                sink_type="MEMORY_WRITE",
+                flow_type="SUBSCRIPT_WRITE",
+                sanitizer_type=sanitizer_type,
+                guarded_target=guarded_target,
             )
 
-    def _record_current_assert_guards(self, test: ast.AST):
-        if not self.guard_stack:
-            self.guard_stack.append({})
-        self._merge_guards(self.guard_stack[-1], self._collect_guard_condition(test))
-
     def _collect_guard_condition(self, test: ast.AST) -> Dict[str, Set[str]]:
-        guards: Dict[str, Set[str]] = {}
         if isinstance(test, ast.Compare):
-            self._analyze_compare_guard(test, guards)
-        elif isinstance(test, ast.Name):
-            guards.setdefault(test.id, set()).add("NULL_CHECK")
-        elif isinstance(test, ast.UnaryOp) and isinstance(test.op, ast.Not):
+            return self._analyze_compare_guard(test)
+        if isinstance(test, ast.Name):
+            return {test.id: {"NULL_CHECK"}}
+        if isinstance(test, ast.UnaryOp) and isinstance(test.op, ast.Not):
             var = self._extract_var_name(test.operand)
             if var:
-                guards.setdefault(var, set()).add("NULL_CHECK")
-        elif isinstance(test, ast.BoolOp):
-            for value in test.values:
-                self._merge_guards(guards, self._collect_guard_condition(value))
+                return {var: {"NULL_CHECK"}}
+        return {}
+
+    def _analyze_compare_guard(self, test: ast.Compare) -> Dict[str, Set[str]]:
+        guards: Dict[str, Set[str]] = {}
+        operand_vars = [self._extract_var_name(test.left)] + [self._extract_var_name(c) for c in test.comparators]
+        is_chained = len(test.ops) > 1
+
+        for idx, op in enumerate(test.ops):
+            self._process_compare_operator(op, idx, operand_vars, is_chained, guards)
+
         return guards
 
-    def _analyze_compare_guard(self, test: ast.Compare, guards: Dict[str, Set[str]]):
-        left_var = self._extract_var_name(test.left)
-        for op, comparator in zip(test.ops, test.comparators):
-            right_var = self._extract_var_name(comparator)
-            target_var = left_var or right_var
+    def _process_compare_operator(
+        self,
+        op: ast.cmpop,
+        idx: int,
+        operand_vars: List[Optional[str]],
+        is_chained: bool,
+        guards: Dict[str, Set[str]],
+    ):
+        if isinstance(op, (ast.Lt, ast.LtE, ast.Gt, ast.GtE)):
+            self._add_inequality_guard(idx, operand_vars, is_chained, guards)
+        elif isinstance(op, (ast.IsNot, ast.NotEq)):
+            self._add_single_target_guard(operand_vars[idx] or operand_vars[idx + 1], "NULL_CHECK", guards)
+        elif isinstance(op, ast.In):
+            self._add_single_target_guard(operand_vars[idx] or operand_vars[idx + 1], "ALLOWLIST_CHECK", guards)
 
-            if isinstance(op, (ast.Lt, ast.LtE, ast.Gt, ast.GtE)) and target_var:
-                san_type = "RANGE_VALIDATION" if len(test.ops) > 1 else "BOUNDS_CHECK"
-                guards.setdefault(target_var, set()).add(san_type)
-            elif isinstance(op, (ast.IsNot, ast.NotEq)) and target_var:
-                guards.setdefault(target_var, set()).add("NULL_CHECK")
-            elif isinstance(op, ast.In) and target_var:
-                guards.setdefault(target_var, set()).add("ALLOWLIST_CHECK")
+    def _add_single_target_guard(self, target_var: Optional[str], sanitizer_type: str, guards: Dict[str, Set[str]]):
+        if target_var:
+            guards.setdefault(target_var, set()).add(sanitizer_type)
+
+    def _add_inequality_guard(
+        self,
+        idx: int,
+        operand_vars: List[Optional[str]],
+        is_chained: bool,
+        guards: Dict[str, Set[str]],
+    ):
+        if is_chained:
+            target_var = operand_vars[1] if len(operand_vars) >= 2 else None
+            self._add_single_target_guard(target_var, "RANGE_VALIDATION", guards)
+        else:
+            target_var = operand_vars[idx] or operand_vars[idx + 1]
+            self._add_single_target_guard(target_var, "BOUNDS_CHECK", guards)
 
     def _extract_var_name(self, node: Optional[ast.AST]) -> Optional[str]:
         if node is None:
@@ -416,8 +437,6 @@ class SecurityFlowVisitor(ast.NodeVisitor):
             return None, None
 
         guards = self._active_guards_for(target_var)
-        if not guards:
-            return None, None
 
         if sink_type in ("MEMORY_WRITE", "ARRAY_INDEX"):
             if "RANGE_VALIDATION" in guards:
@@ -435,6 +454,32 @@ class SecurityFlowVisitor(ast.NodeVisitor):
                 return "ALLOWLIST_CHECK", target_var
 
         return None, None
+
+    def _add_signature(
+        self,
+        source_id: str,
+        sink_id: str,
+        sink_type: str,
+        flow_type: str,
+        sanitizer_type: Optional[str] = None,
+        guarded_target: Optional[str] = None,
+    ):
+        if sink_type not in SUPPORTED_SINKS:
+            raise ValueError(f"Emitted sink_type '{sink_type}' is not in SUPPORTED_SINKS")
+        if sanitizer_type and sanitizer_type not in VALID_SANITIZERS:
+            raise ValueError(f"Emitted sanitizer_type '{sanitizer_type}' is not in VALID_SANITIZERS")
+
+        self.signatures.append(
+            FlowSignature(
+                source_id=source_id,
+                sink_id=sink_id,
+                source_type="UNTRUSTED_INPUT",
+                sink_type=sink_type,
+                flow_type=flow_type,
+                sanitizer_type=sanitizer_type,
+                guarded_target=guarded_target,
+            )
+        )
 
 
 def extract_flow_graph_snapshot(
@@ -464,7 +509,7 @@ def extract_flow_graph_snapshot(
 
     try:
         tree = ast.parse(code_text)
-    except ( Exception) as exc:
+    except Exception as exc:
         return FlowGraphSnapshot(
             snapshot_id=snapshot_id,
             scenario_id=scenario_id,

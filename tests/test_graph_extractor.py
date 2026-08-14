@@ -3,7 +3,6 @@ Contract tests for scenarios/debate/graph_extractor.py.
 Verifies AST extraction accuracy, sink/sanitizer mapping, operand identity, and fail-closed behavior across all verification vectors.
 """
 
-import pytest
 from scenarios.debate.graph_dataflow import evaluate_graph_reachability, is_graph_candidate_rejected
 from scenarios.debate.graph_extractor import extract_flow_graph_snapshot
 
