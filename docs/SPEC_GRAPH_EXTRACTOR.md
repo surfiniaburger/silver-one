@@ -67,7 +67,7 @@ The extractor recognizes four supported sink categories (`SUPPORTED_SINKS`) defi
 | `SYSTEM_CALL` | `ast.Call` | Invocations of qualified allowlisted system command functions (`os.system`, `subprocess.Popen`, `subprocess.run`, `eval`, `exec`). |
 
 > [!NOTE]
-> `ast.UnaryOp` and `*ptr` syntax are excluded from `POINTER_DEREF` because Python expressions do not support C-style pointer dereference operator syntax. `ast.Assign` and `ast.AugAssign` act as `MEMORY_WRITE` sinks strictly when writing to subscripted array/buffer targets.
+> Every production sink node MUST populate the proof-bearing `target_var` metadata field (e.g. `sink_node["target_var"] = "i"`). The evaluator verifies `sig.guarded_target == sink_node.get("target_var")` to enforce target identity matching. `ast.UnaryOp` and `*ptr` syntax are excluded from `POINTER_DEREF` because Python expressions do not support C-style pointer dereference operator syntax. `ast.Assign` and `ast.AugAssign` act as `MEMORY_WRITE` sinks strictly when writing to subscripted array/buffer targets.
 
 ### 3.3 Sanitizer Evidence Mapping & Dominance Binding
 

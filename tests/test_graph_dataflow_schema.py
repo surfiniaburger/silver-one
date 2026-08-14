@@ -49,7 +49,7 @@ def test_flow_graph_snapshot_serialization_and_created_at():
         scenario_id="scenario_abc",
         version=1,
         created_at=1000.0,
-        nodes={"src_1": {"kind": "source"}, "sink_1": {"kind": "sink"}},
+        nodes={"src_1": {"kind": "source"}, "sink_1": {"kind": "sink", "target_var": "ptr"}},
         signatures=[sig],
     )
     data = snapshot.to_dict()
@@ -155,7 +155,7 @@ def test_evaluate_reachability_vulnerable_and_guarded():
         scenario_id="sc1",
         version=2,
         created_at=1000.0,
-        nodes={"src_1": {}, "sink_1": {}},
+        nodes={"src_1": {}, "sink_1": {"target_var": "buffer_len"}},
         signatures=[guarded_sig],
     )
     assert evaluate_graph_reachability(snap_guarded) == 0.05
@@ -207,7 +207,7 @@ def test_non_finite_and_malformed_timestamps_fail_closed():
         scenario_id="sc1",
         version=1,
         created_at=float("nan"),
-        nodes={"src_1": {}, "sink_1": {}},
+        nodes={"src_1": {}, "sink_1": {"target_var": "buffer_len"}},
         signatures=[guarded_sig],
     )
     assert evaluate_graph_reachability(snap_nan_created) == 1.0
@@ -218,7 +218,7 @@ def test_non_finite_and_malformed_timestamps_fail_closed():
         scenario_id="sc1",
         version=1,
         created_at="invalid_timestamp",  # type: ignore
-        nodes={"src_1": {}, "sink_1": {}},
+        nodes={"src_1": {}, "sink_1": {"target_var": "buffer_len"}},
         signatures=[guarded_sig],
     )
     assert evaluate_graph_reachability(snap_str_created) == 1.0
@@ -229,7 +229,7 @@ def test_non_finite_and_malformed_timestamps_fail_closed():
         scenario_id="sc1",
         version=1,
         created_at=1000.0,
-        nodes={"src_1": {}, "sink_1": {}},
+        nodes={"src_1": {}, "sink_1": {"target_var": "buffer_len"}},
         signatures=[guarded_sig],
     )
     assert evaluate_graph_reachability(snap_valid, as_of=float("inf")) == 1.0
@@ -250,7 +250,7 @@ def test_non_finite_and_malformed_timestamps_fail_closed():
         scenario_id="sc1",
         version=1,
         created_at=1000.0,
-        nodes={"src_1": {}, "sink_1": {}},
+        nodes={"src_1": {}, "sink_1": {"target_var": "buffer_len"}},
         signatures=[nan_invalid_sig],
     )
     assert evaluate_graph_reachability(snap_nan_invalid) == 1.0
@@ -270,7 +270,7 @@ def test_non_finite_and_malformed_timestamps_fail_closed():
         scenario_id="sc1",
         version=1,
         created_at=1000.0,
-        nodes={"src_1": {}, "sink_1": {}},
+        nodes={"src_1": {}, "sink_1": {"target_var": "buffer_len"}},
         signatures=[str_invalid_sig],
     )
     assert evaluate_graph_reachability(snap_str_invalid) == 1.0
@@ -296,6 +296,57 @@ def test_endpoint_node_validation_fails_closed():
         signatures=[sig],
     )
     assert evaluate_graph_reachability(snap_missing_node) == 1.0
+
+    # Signatures without a populated node registry are malformed evidence and fail closed.
+    snap_empty_nodes = FlowGraphSnapshot(
+        snapshot_id="s_empty_nodes",
+        scenario_id="sc1",
+        version=1,
+        created_at=1000.0,
+        nodes={},
+        signatures=[sig],
+    )
+    assert evaluate_graph_reachability(snap_empty_nodes) == 1.0
+
+
+def test_sanitizer_proof_requires_guarded_target_identity():
+    missing_target_sig = FlowSignature(
+        source_id="src_1",
+        sink_id="sink_1",
+        source_type="UNTRUSTED_INPUT",
+        sink_type="MEMORY_WRITE",
+        flow_type="DIRECT_ASSIGN",
+        sanitizer_type="BOUNDS_CHECK",
+        guarded_target=None,
+    )
+    snap_missing_target = FlowGraphSnapshot(
+        snapshot_id="s_missing_target",
+        scenario_id="sc1",
+        version=1,
+        created_at=1000.0,
+        nodes={"src_1": {"kind": "source"}, "sink_1": {"kind": "sink", "target_var": "i"}},
+        signatures=[missing_target_sig],
+    )
+    assert evaluate_graph_reachability(snap_missing_target) == 1.0
+
+    wrong_target_sig = FlowSignature(
+        source_id="src_1",
+        sink_id="sink_1",
+        source_type="UNTRUSTED_INPUT",
+        sink_type="ARRAY_INDEX",
+        flow_type="SUBSCRIPT_INDEX",
+        sanitizer_type="BOUNDS_CHECK",
+        guarded_target="j",
+    )
+    snap_wrong_target = FlowGraphSnapshot(
+        snapshot_id="s_wrong_target",
+        scenario_id="sc1",
+        version=1,
+        created_at=1000.0,
+        nodes={"src_1": {"kind": "source"}, "sink_1": {"kind": "sink", "target_var": "i"}},
+        signatures=[wrong_target_sig],
+    )
+    assert evaluate_graph_reachability(snap_wrong_target) == 1.0
 
 
 def test_fail_closed_on_incomplete_evidence_or_errors():
