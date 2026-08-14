@@ -3,10 +3,11 @@ Evaluation Script for Graph Data-Flow Pre-Filter (PR 3 Benchmark).
 Executes 5-Fold Stratified Scenario-Grouped CV across 5 random seeds on the deduplicated dataset.
 Computes ROC-AUC, PR-AUC, seed-wise percentile CIs, and graph parser error bucket diagnostics.
 
-Report Schema Overview:
+Report Schema Overview (schema_version: "1.0"):
+- schema_version: "1.0"
 - dataset_summary: total_samples, unique_scenarios, positive_samples, negative_samples
 - evaluation_protocol: requested_n_splits, effective_n_splits, seeds, partition_strategy
-- graph_pre_filter_metrics: mean_roc_auc, std_roc_auc, mean_pr_auc, std_pr_auc, percentile_95_ci
+- graph_pre_filter_metrics: mean_roc_auc, std_roc_auc, mean_pr_auc, std_pr_auc, roc_auc_95_percentile_ci, pr_auc_95_percentile_ci
 - seed_breakdown: per-seed metrics, confusion matrices, and graph parser diagnostics
 """
 
@@ -166,6 +167,7 @@ def run_graph_cv_evaluation(
     med_pr, pr_low, pr_high = compute_seed_percentile_ci(valid_pr_aucs)
 
     report = {
+        "schema_version": "1.0",
         "dataset_summary": {
             "total_samples": len(texts),
             "unique_scenarios": len(set(scenario_ids)),

@@ -240,15 +240,43 @@ def test_evaluate_graph_pre_filter_persisted_report_schema(tmp_path):
     attempts_dir = tmp_path / "attempts"
     attempts_dir.mkdir(parents=True, exist_ok=True)
     attempt_file = attempts_dir / "attempt_1.jsonl"
-    record = {
-        "scenario_id": "sc_test_schema",
-        "attempt_index": 1,
-        "combined_text": "Predicate: vuln | Code: def f(data, i):\n    buf[i] = data",
-        "predicate_label": "VULNERABLE",
-        "accepted": True,
-        "round_index": 0,
-    }
-    attempt_file.write_text(json.dumps(record) + "\n", encoding="utf-8")
+    records = [
+        {
+            "scenario_id": "sc_vuln_1",
+            "attempt_index": 1,
+            "combined_text": "Predicate: vuln | Code: def f(data, i):\n    buf[i] = data",
+            "predicate_label": "VULNERABLE",
+            "accepted": True,
+            "round_index": 0,
+        },
+        {
+            "scenario_id": "sc_vuln_2",
+            "attempt_index": 1,
+            "combined_text": "Predicate: vuln | Code: def g(data, i):\n    buf[i] = data",
+            "predicate_label": "VULNERABLE",
+            "accepted": True,
+            "round_index": 0,
+        },
+        {
+            "scenario_id": "sc_safe_1",
+            "attempt_index": 1,
+            "combined_text": "Predicate: safe | Code: def h(data, i):\n    if i < 10:\n        buf[i] = data",
+            "predicate_label": "SAFE",
+            "accepted": False,
+            "round_index": 0,
+        },
+        {
+            "scenario_id": "sc_safe_2",
+            "attempt_index": 1,
+            "combined_text": "Predicate: safe | Code: def k(data, i):\n    if i < 10:\n        buf[i] = data",
+            "predicate_label": "SAFE",
+            "accepted": False,
+            "round_index": 0,
+        },
+    ]
+    with attempt_file.open("w", encoding="utf-8") as f:
+        for rec in records:
+            f.write(json.dumps(rec) + "\n")
 
     output_path = tmp_path / "artifacts" / "metrics" / "graph_report.json"
     report = run_graph_cv_evaluation(
@@ -259,15 +287,24 @@ def test_evaluate_graph_pre_filter_persisted_report_schema(tmp_path):
     )
 
     assert output_path.exists()
-    assert "dataset_summary" in report
-    assert "evaluation_protocol" in report
-    assert "graph_pre_filter_metrics" in report
-    assert "seed_breakdown" in report
+    persisted_report = json.loads(output_path.read_text(encoding="utf-8"))
+    assert persisted_report == report
 
-    assert report["evaluation_protocol"]["requested_n_splits"] == 2
-    assert "effective_n_splits" in report["evaluation_protocol"]
-    assert report["evaluation_protocol"]["seeds"] == [42]
-    assert len(report["seed_breakdown"]) == 1
-    assert "diagnostics" in report["seed_breakdown"][0]
+    assert persisted_report["schema_version"] == "1.0"
+    assert "dataset_summary" in persisted_report
+    assert "evaluation_protocol" in persisted_report
+    assert "graph_pre_filter_metrics" in persisted_report
+    assert "seed_breakdown" in persisted_report
+
+    assert persisted_report["evaluation_protocol"]["requested_n_splits"] == 2
+    assert persisted_report["evaluation_protocol"]["effective_n_splits"] == 2
+    assert persisted_report["evaluation_protocol"]["seeds"] == [42]
+
+    metrics = persisted_report["graph_pre_filter_metrics"]
+    assert "roc_auc_95_percentile_ci" in metrics
+    assert "pr_auc_95_percentile_ci" in metrics
+
+    assert len(persisted_report["seed_breakdown"]) == 1
+    assert "diagnostics" in persisted_report["seed_breakdown"][0]
 
 
