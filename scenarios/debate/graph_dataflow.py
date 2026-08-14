@@ -116,6 +116,18 @@ def is_sanitizer_valid_for_sink(sink_type: str, sanitizer_type: Optional[str]) -
     return False
 
 
+def _has_valid_signature_endpoints(sig: FlowSignature, nodes: Dict[str, dict]) -> bool:
+    return sig.source_id in nodes and sig.sink_id in nodes
+
+
+def _is_signature_active(sig: FlowSignature, eval_time: float) -> Optional[bool]:
+    if sig.invalid_at is None:
+        return True
+    if not _is_finite_numeric(sig.invalid_at):
+        return None
+    return sig.invalid_at > eval_time
+
+
 def _filter_active_signatures(
     graph_snapshot: FlowGraphSnapshot, eval_time: float
 ) -> Optional[List[FlowSignature]]:
@@ -123,32 +135,48 @@ def _filter_active_signatures(
     Extracts active signatures evaluated at eval_time.
     Returns None (failing closed) if non-finite/non-numeric timestamps, unsupported sinks, or invalid node endpoints appear.
     """
+    if graph_snapshot.signatures and not graph_snapshot.nodes:
+        return None
+
     active: List[FlowSignature] = []
     for sig in graph_snapshot.signatures:
-        if sig.invalid_at is not None:
-            if not _is_finite_numeric(sig.invalid_at):
-                return None  # Malformed or non-finite invalid_at -> Fail closed
-            if sig.invalid_at <= eval_time:
-                continue  # Invalidated edge
-
         if sig.sink_type not in SUPPORTED_SINKS:
             return None  # Unsupported sink -> Fail closed
 
-        if graph_snapshot.nodes and (
-            sig.source_id not in graph_snapshot.nodes or sig.sink_id not in graph_snapshot.nodes
-        ):
+        if not _has_valid_signature_endpoints(sig, graph_snapshot.nodes):
             return None  # Missing endpoint nodes -> Fail closed
+
+        is_active = _is_signature_active(sig, eval_time)
+        if is_active is None:
+            return None  # Malformed or non-finite invalid_at -> Fail closed
+        if not is_active:
+            continue  # Invalidated edge
 
         active.append(sig)
 
     return active
 
 
-def _has_unsanitized_path(active_signatures: List[FlowSignature]) -> bool:
+def _is_sanitizer_proof_valid(sig: FlowSignature, sink_node: dict) -> bool:
+    """Returns True only when sanitizer type and guarded target both prove this sink."""
+    if not is_sanitizer_valid_for_sink(sig.sink_type, sig.sanitizer_type):
+        return False
+
+    sink_target = sink_node.get("target_var")
+    if not sig.guarded_target or not sink_target:
+        return False
+
+    return sig.guarded_target == sink_target
+
+
+def _has_unsanitized_path(
+    active_signatures: List[FlowSignature], graph_snapshot: FlowGraphSnapshot
+) -> bool:
     """Returns True if any active signature contains an unsanitized untrusted flow."""
     for sig in active_signatures:
         if sig.source_type == "UNTRUSTED_INPUT" and sig.sink_type in SUPPORTED_SINKS:
-            if not is_sanitizer_valid_for_sink(sig.sink_type, sig.sanitizer_type):
+            sink_node = graph_snapshot.nodes.get(sig.sink_id, {})
+            if not _is_sanitizer_proof_valid(sig, sink_node):
                 return True
     return False
 
@@ -180,7 +208,7 @@ def evaluate_graph_reachability(
     if active is None:
         return 1.0
 
-    if _has_unsanitized_path(active):
+    if _has_unsanitized_path(active, graph_snapshot):
         return 1.0
 
     return 0.05  # All flows guarded or safe -> Low Risk (Pass)
