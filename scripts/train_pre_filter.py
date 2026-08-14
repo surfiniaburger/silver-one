@@ -47,6 +47,8 @@ from scenarios.debate.pre_filter import (
     _parse_attempt_record,
     partition_dataset_by_scenario_stratified,
 )
+from scenarios.debate.graph_dataflow import evaluate_graph_reachability, is_sanitizer_valid_for_sink
+from scenarios.debate.graph_extractor import extract_flow_graph_snapshot
 
 # Optional imports for model training and persistence
 try:
@@ -792,6 +794,92 @@ def _compute_pooled_cv_metrics(
     return pooled
 
 
+def _extract_code_from_combined_text(text: str) -> str:
+    """Return the code portion from a pre-filter combined text record."""
+    if CODE_DELIMITER not in text:
+        return ""
+    return text.split(CODE_DELIMITER, 1)[1]
+
+
+def _classify_graph_extraction_bucket(text: str, sample_idx: int) -> Tuple[str, float]:
+    """Classify graph extraction outcome for fold diagnostics without changing model decisions."""
+    code_text = _extract_code_from_combined_text(text)
+    snapshot = extract_flow_graph_snapshot(
+        code_text=code_text,
+        scenario_id=f"cv_sample_{sample_idx}",
+        snapshot_id=f"cv_snapshot_{sample_idx}",
+        version=1,
+        created_at=0.0,
+    )
+
+    if not snapshot.is_complete or snapshot.parse_error is not None:
+        return "unsupported_syntax", 1.0
+
+    source_nodes = [node for node in snapshot.nodes.values() if node.get("kind") == "source"]
+    if not source_nodes:
+        return "missing_source", 1.0
+
+    if not snapshot.signatures:
+        return "missing_sink", 1.0
+
+    risk_score = evaluate_graph_reachability(snapshot)
+    if risk_score < 0.10:
+        return "guarded_or_safe", risk_score
+
+    for sig in snapshot.signatures:
+        if sig.source_type != "UNTRUSTED_INPUT":
+            continue
+        if not sig.sanitizer_type:
+            return "missing_sanitizer", risk_score
+        if not is_sanitizer_valid_for_sink(sig.sink_type, sig.sanitizer_type):
+            return "wrong_sanitizer", risk_score
+
+        sink_node = snapshot.nodes.get(sig.sink_id, {})
+        if sig.guarded_target != sink_node.get("target_var"):
+            return "wrong_sanitizer", risk_score
+
+    return "graph_high_risk", risk_score
+
+
+def _compute_graph_fold_diagnostics(
+    texts: List[str],
+    labels: List[int],
+    predictions: List[int],
+) -> Dict[str, Any]:
+    """Compute graph parser coverage and error buckets for fold reports."""
+    bucket_counts: Counter[str] = Counter()
+    error_bucket_counts: Counter[str] = Counter()
+    high_risk_count = 0
+    low_risk_count = 0
+    parse_complete_count = 0
+
+    for idx, (text, label, prediction) in enumerate(zip(texts, labels, predictions, strict=True)):
+        bucket, risk_score = _classify_graph_extraction_bucket(text, idx)
+        bucket_counts[bucket] += 1
+        if bucket != "unsupported_syntax":
+            parse_complete_count += 1
+        if risk_score >= 0.10:
+            high_risk_count += 1
+        else:
+            low_risk_count += 1
+        if int(label) != int(prediction):
+            error_bucket_counts[bucket] += 1
+
+    total = len(texts)
+    return {
+        "total_samples": total,
+        "parse_complete_count": parse_complete_count,
+        "parse_failed_count": total - parse_complete_count,
+        "parser_coverage": round(float(parse_complete_count / total), 4) if total else 0.0,
+        "graph_high_risk_count": high_risk_count,
+        "graph_low_risk_count": low_risk_count,
+        "bucket_counts": dict(sorted(bucket_counts.items())),
+        "prediction_error_bucket_counts": dict(sorted(error_bucket_counts.items())),
+        "accepted_logic_error_rate": None,
+        "accepted_logic_error_note": "not_computed_from_fold_texts_only",
+    }
+
+
 def _json_default_encoder(obj: Any) -> Any:
     """Convert numpy types or non-serializable objects for JSON serialization."""
     if isinstance(obj, (np.integer, np.int64)):
@@ -882,6 +970,7 @@ def run_kfold_cross_validation(
     oof_y_true: List[int] = []
     oof_preds_b: List[int] = []
     oof_probs_b: List[float] = []
+    oof_texts: List[str] = []
     oof_y_true_c: List[int] = []
     oof_preds_c: List[int] = []
 
@@ -891,12 +980,14 @@ def run_kfold_cross_validation(
         oof_y_true.extend(te_labels)
         oof_preds_b.extend(b_preds)
         oof_probs_b.extend(b_probs)
+        oof_texts.extend(fold_info["test_texts"])
         if c_preds is not None:
             oof_y_true_c.extend(te_labels)
             oof_preds_c.extend(c_preds)
 
     macro_metrics = _compute_macro_cv_metrics(fold_results)
     pooled_metrics = _compute_pooled_cv_metrics(oof_y_true, oof_preds_b, oof_probs_b, oof_y_true_c, oof_preds_c)
+    graph_diagnostics = _compute_graph_fold_diagnostics(oof_texts, oof_y_true, oof_preds_b)
 
     full_report = {
         "total_samples": len(texts),
@@ -906,6 +997,7 @@ def run_kfold_cross_validation(
         "partition_seed": seed,
         "macro_metrics": macro_metrics,
         "pooled_micro_metrics": pooled_metrics,
+        "graph_diagnostics": graph_diagnostics,
         "fold_details": fold_results,
     }
 

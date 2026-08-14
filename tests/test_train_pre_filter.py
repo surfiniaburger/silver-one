@@ -4,7 +4,11 @@ from pathlib import Path
 import pytest
 import joblib
 
-from scripts.train_pre_filter import extract_dataset_from_attempts, train_pre_filter
+from scripts.train_pre_filter import (
+    _compute_graph_fold_diagnostics,
+    extract_dataset_from_attempts,
+    train_pre_filter,
+)
 from scenarios.debate.pre_filter import BarredPreFilter
 
 
@@ -206,4 +210,27 @@ def test_model_manifest_generation_and_validation(tmp_path):
     assert filter_tampered.vectorizer is None
     assert filter_tampered.xgb is None
 
+
+def test_graph_fold_diagnostics_bucket_parser_and_prediction_errors():
+    texts = [
+        "Predicate: vuln | Code: def f(data, i):\n    buf[i] = data",
+        "Predicate: guarded | Code: def f(data, i):\n    if i < MAX_LEN:\n        buf[i] = data",
+        "Predicate: no sink | Code: def f(data):\n    return data",
+        "Predicate: c syntax | Code: int f(char *s) { return 0; }",
+    ]
+    labels = [1, 1, 0, 0]
+    predictions = [1, 0, 1, 0]
+
+    diagnostics = _compute_graph_fold_diagnostics(texts, labels, predictions)
+
+    assert diagnostics["total_samples"] == 4
+    assert diagnostics["parse_complete_count"] == 3
+    assert diagnostics["parse_failed_count"] == 1
+    assert diagnostics["parser_coverage"] == 0.75
+    assert diagnostics["bucket_counts"]["missing_sanitizer"] == 1
+    assert diagnostics["bucket_counts"]["guarded_or_safe"] == 1
+    assert diagnostics["bucket_counts"]["missing_sink"] == 1
+    assert diagnostics["bucket_counts"]["unsupported_syntax"] == 1
+    assert diagnostics["prediction_error_bucket_counts"]["guarded_or_safe"] == 1
+    assert diagnostics["prediction_error_bucket_counts"]["missing_sink"] == 1
 
