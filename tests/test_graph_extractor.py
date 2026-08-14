@@ -318,3 +318,42 @@ def execute(cmd):
     assert sig.sanitizer_type is None
     assert sig.guarded_target is None
     assert evaluate_graph_reachability(snap) == 1.0
+
+
+def test_html_escape_does_not_provide_command_sanitization():
+    code = """
+def execute(cmd):
+    import os, html
+    safe_cmd = html.escape(cmd)
+    os.system(safe_cmd)
+"""
+    snap = extract_flow_graph_snapshot(
+        code_text=code, scenario_id="sc_sys_html", snapshot_id="snap_html", version=1, created_at=1000.0
+    )
+    assert snap.is_complete is True
+    assert len(snap.signatures) == 1
+    sig = snap.signatures[0]
+    assert sig.sink_type == "SYSTEM_CALL"
+    assert sig.sanitizer_type is None
+    assert sig.guarded_target is None
+    assert evaluate_graph_reachability(snap) == 1.0
+
+
+def test_rebound_variable_clears_prior_command_sanitization():
+    code = """
+def execute(cmd, attacker):
+    import os, shlex
+    cmd = shlex.quote(cmd)
+    cmd = attacker
+    os.system(cmd)
+"""
+    snap = extract_flow_graph_snapshot(
+        code_text=code, scenario_id="sc_sys_rebound", snapshot_id="snap_rebound", version=1, created_at=1000.0
+    )
+    assert snap.is_complete is True
+    assert len(snap.signatures) == 1
+    sig = snap.signatures[0]
+    assert sig.sink_type == "SYSTEM_CALL"
+    assert sig.sanitizer_type is None
+    assert sig.guarded_target is None
+    assert evaluate_graph_reachability(snap) == 1.0

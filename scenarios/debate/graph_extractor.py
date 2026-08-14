@@ -19,7 +19,7 @@ from scenarios.debate.graph_dataflow import (
 SYSTEM_CALL_FUNCTIONS = {"os.system", "subprocess.Popen", "subprocess.run", "eval", "exec", "system", "Popen", "run"}
 MEMORY_FUNCTIONS = {"memcpy", "strcpy", "memset", "memmove"}
 EXPLICIT_INPUT_SOURCES = {"input", "sys.argv", "request.args", "request.get_json", "socket.recv", "file.read"}
-SANITIZER_FUNCTIONS = {"quote", "escape", "sanitize", "quote_plus", "escape_string", "shlex.quote", "html.escape"}
+COMMAND_SANITIZER_FUNCTIONS = {"shlex.quote", "quote"}
 
 
 def _is_finite_numeric(val: float) -> bool:
@@ -118,7 +118,17 @@ class SecurityFlowVisitor(ast.NodeVisitor):
             "ast_type": type(node).__name__,
         }
 
+    def _clear_guards_for_rebound_targets(self, targets: List[ast.expr]):
+        if not self.guard_stack:
+            return
+        for target in targets:
+            var_name = self._extract_var_name(target)
+            if var_name:
+                for frame in self.guard_stack:
+                    frame.pop(var_name, None)
+
     def visit_Assign(self, node: ast.Assign):
+        self._clear_guards_for_rebound_targets(node.targets)
         self._track_explicit_input_assignment(node)
         self._track_sanitizer_call_assignment(node)
         self._propagate_source_bindings(node)
@@ -150,7 +160,7 @@ class SecurityFlowVisitor(ast.NodeVisitor):
             return
         func_name = self._get_call_name(node.value)
         callee = func_name.rsplit(".", 1)[-1]
-        if callee not in SANITIZER_FUNCTIONS and func_name not in SANITIZER_FUNCTIONS:
+        if callee not in COMMAND_SANITIZER_FUNCTIONS and func_name not in COMMAND_SANITIZER_FUNCTIONS:
             return
         for arg in node.value.args:
             arg_var = self._extract_var_name(arg)
@@ -189,6 +199,7 @@ class SecurityFlowVisitor(ast.NodeVisitor):
                 self._check_memory_write(target, node.value)
 
     def visit_AugAssign(self, node: ast.AugAssign):
+        self._clear_guards_for_rebound_targets([node.target])
         if isinstance(node.target, ast.Subscript):
             setattr(node.target, "_is_assign_target", True)
             self._check_memory_write(node.target, node.value)
