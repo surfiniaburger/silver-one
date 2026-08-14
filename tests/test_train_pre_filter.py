@@ -234,3 +234,40 @@ def test_graph_fold_diagnostics_bucket_parser_and_prediction_errors():
     assert diagnostics["prediction_error_bucket_counts"]["guarded_or_safe"] == 1
     assert diagnostics["prediction_error_bucket_counts"]["missing_sink"] == 1
 
+
+def test_evaluate_graph_pre_filter_persisted_report_schema(tmp_path):
+    from scripts.evaluate_graph_pre_filter import run_graph_cv_evaluation
+    attempts_dir = tmp_path / "attempts"
+    attempts_dir.mkdir(parents=True, exist_ok=True)
+    attempt_file = attempts_dir / "attempt_1.jsonl"
+    record = {
+        "scenario_id": "sc_test_schema",
+        "attempt_index": 1,
+        "combined_text": "Predicate: vuln | Code: def f(data, i):\n    buf[i] = data",
+        "predicate_label": "VULNERABLE",
+        "accepted": True,
+        "round_index": 0,
+    }
+    attempt_file.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    output_path = tmp_path / "artifacts" / "metrics" / "graph_report.json"
+    report = run_graph_cv_evaluation(
+        attempts_dir=attempts_dir,
+        output_path=output_path,
+        n_splits=2,
+        seeds=[42],
+    )
+
+    assert output_path.exists()
+    assert "dataset_summary" in report
+    assert "evaluation_protocol" in report
+    assert "graph_pre_filter_metrics" in report
+    assert "seed_breakdown" in report
+
+    assert report["evaluation_protocol"]["requested_n_splits"] == 2
+    assert "effective_n_splits" in report["evaluation_protocol"]
+    assert report["evaluation_protocol"]["seeds"] == [42]
+    assert len(report["seed_breakdown"]) == 1
+    assert "diagnostics" in report["seed_breakdown"][0]
+
+
