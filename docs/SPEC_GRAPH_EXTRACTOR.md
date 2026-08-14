@@ -18,7 +18,7 @@ The extracted snapshots are evaluated by `evaluate_graph_reachability` in `scena
 
 ## 2. Extraction Pipeline Architecture
 
-```
+```text
 ┌───────────────────────────┐
 │ Code Attempt Snippet (str)│
 └─────────────┬─────────────┘
@@ -57,16 +57,19 @@ An AST node is tagged as `UNTRUSTED_INPUT` if it satisfies any of the following 
 
 ### 3.2 Sink Node Identification
 
-The extractor recognizes four supported sink categories (`SUPPORTED_SINKS`):
+The extractor recognizes four supported sink categories (`SUPPORTED_SINKS`) defined using semantic AST predicates:
 
-| Sink Category | Target AST Node Types | Pattern Description |
+| Sink Category | Target AST Node Types | Semantic Predicate & Pattern Description |
 | :--- | :--- | :--- |
-| `MEMORY_WRITE` | `ast.Assign`, `ast.AugAssign`, `ast.Call` | Array slice writes (`buf[i] = val`), buffer allocations, or calls to memory functions (`memcpy`, `strcpy`, `memset`). |
-| `ARRAY_INDEX` | `ast.Subscript` | Index access on sequence types (`data[index]`). |
-| `POINTER_DEREF` | `ast.Attribute`, `ast.UnaryOp` | Attribute access or dereference on pointer/reference variables (`ptr.value`, `*ptr`). |
-| `SYSTEM_CALL` | `ast.Call` | Invocation of system commands (`os.system`, `subprocess.Popen`, `subprocess.run`, `eval`, `exec`). |
+| `MEMORY_WRITE` | `ast.Assign`, `ast.AugAssign`, `ast.Call` | `ast.Assign` / `ast.AugAssign` where `target` is `ast.Subscript` (`buf[i] = val`), or `ast.Call` to qualified allowlisted memory callees (`memcpy`, `strcpy`, `memset`). |
+| `ARRAY_INDEX` | `ast.Subscript` | Subscript index access on sequence types where the index variable is an untrusted operand (`data[index]`). |
+| `POINTER_DEREF` | `ast.Attribute` | Attribute access on tracked pointer base variables (`ptr.value`). |
+| `SYSTEM_CALL` | `ast.Call` | Invocations of qualified allowlisted system command functions (`os.system`, `subprocess.Popen`, `subprocess.run`, `eval`, `exec`). |
 
-### 3.3 Sanitizer Evidence Mapping
+> [!NOTE]
+> `ast.UnaryOp` and `*ptr` syntax are excluded from `POINTER_DEREF` because Python expressions do not support C-style pointer dereference operator syntax. `ast.Assign` and `ast.AugAssign` act as `MEMORY_WRITE` sinks strictly when writing to subscripted array/buffer targets.
+
+### 3.3 Sanitizer Evidence Mapping & Dominance Binding
 
 Sanitizer evidence must be extracted from enclosing conditional guards (`ast.If`, `ast.Assert`, or ternary expressions `ast.IfExp`):
 
@@ -80,15 +83,20 @@ VALID_SANITIZERS = {
 }
 ```
 
+#### Strict Dominance & Operand Identity Binding Rules
+To prevent false-positive sanitization, `sanitizer_type` is assigned to a flow signature **only when both criteria are met**:
+1. **Dominance**: The enclosing conditional guard dominates the sink node on the execution branch containing the sink.
+2. **Operand Identity**: The variable evaluated in the guard is **identity-equivalent** to the sink's target index, pointer, or command argument.
+
 - **`BOUNDS_CHECK` / `RANGE_VALIDATION`**:
-  - AST Pattern: `ast.Compare` in `ast.If` checking length or upper/lower bound index (`idx < MAX_LEN`, `len(data) <= BUF_SIZE`).
-  - Target Binding (`guarded_target`): The specific index or length variable checked (e.g. `"idx"`).
+  - AST Pattern: `ast.Compare` in `ast.If` checking length or upper/lower bound index (`idx < MAX_LEN`, `MIN_VAL <= index <= MAX_VAL`).
+  - Target Binding (`guarded_target`): Must match the exact index variable evaluated at the `ARRAY_INDEX` or `MEMORY_WRITE` sink (e.g. `"idx"`). An unrelated length check like `len(data) <= BUF_SIZE` for `buf[i]` **does not** sanitize `i`.
 - **`NULL_CHECK`**:
   - AST Pattern: Identity or truthiness checks (`ptr is not None`, `if ptr:`, `if not ptr: return`).
-  - Target Binding (`guarded_target`): The specific pointer variable checked (e.g. `"ptr"`).
+  - Target Binding (`guarded_target`): Must match the exact pointer base evaluated at the `POINTER_DEREF` sink (e.g. `"ptr"`).
 - **`COMMAND_SANITIZATION` / `ALLOWLIST_CHECK`**:
-  - AST Pattern: Membership checks (`cmd in ALLOWLIST`) or calls to escaping utilities (`shlex.quote(arg)`).
-  - Target Binding (`guarded_target`): The command string argument.
+  - AST Pattern: Membership checks (`cmd in ALLOWLIST`) or escaping functions (`shlex.quote(cmd)`).
+  - Target Binding (`guarded_target`): Must match the exact command argument passed to the `SYSTEM_CALL` sink. An unrelated check like `arg2 in ALLOWLIST` for `subprocess.run(cmd)` **does not** sanitize `cmd`.
 
 ---
 
@@ -151,10 +159,72 @@ def extract_flow_graph_snapshot(
 
 ## 7. Verification Vectors & Test Plan
 
+```python
+# Multiline reference function snippets used in verification table below:
+
+VULN_MEM_WRITE = """
+def process(data, i):
+    buf[i] = data
+"""
+
+GUARDED_MEM_WRITE = """
+def process(data, i):
+    if i < MAX_LEN:
+        buf[i] = data
+"""
+
+VULN_ARRAY_INDEX = """
+def get_elem(arr, index):
+    return arr[index]
+"""
+
+GUARDED_ARRAY_INDEX = """
+def get_elem(arr, index):
+    if 0 <= index < len(arr):
+        return arr[index]
+"""
+
+VULN_POINTER_DEREF = """
+def inspect(ptr):
+    return ptr.data
+"""
+
+GUARDED_POINTER_DEREF = """
+def inspect(ptr):
+    if ptr is not None:
+        return ptr.data
+"""
+
+VULN_SYSTEM_CALL = """
+def execute(cmd):
+    import os
+    os.system(cmd)
+"""
+
+GUARDED_SYSTEM_CALL_QUOTE = """
+def execute(cmd):
+    import os, shlex
+    safe_cmd = shlex.quote(cmd)
+    os.system(safe_cmd)
+"""
+
+GUARDED_SYSTEM_CALL_ALLOWLIST = """
+def execute(cmd):
+    import os
+    if cmd in ALLOWED_COMMANDS:
+        os.system(cmd)
+"""
+```
+
 | Test Case | Code Snippet Pattern | Expected `FlowSignature` | Evaluator Risk Score |
 | :--- | :--- | :--- | :--- |
-| **Vulnerable Memory Write** | `def f(data): buf[i] = data` | `sink_type="MEMORY_WRITE"`, `sanitizer_type=None` | `1.0` (Reject) |
-| **Guarded Memory Write** | `def f(data): if i < MAX: buf[i] = data` | `sink_type="MEMORY_WRITE"`, `sanitizer_type="BOUNDS_CHECK"`, `guarded_target="i"` | `0.05` (Pass) |
-| **Vulnerable Pointer Deref** | `def f(ptr): val = ptr.data` | `sink_type="POINTER_DEREF"`, `sanitizer_type=None` | `1.0` (Reject) |
-| **Guarded Pointer Deref** | `def f(ptr): if ptr is not None: val = ptr.data` | `sink_type="POINTER_DEREF"`, `sanitizer_type="NULL_CHECK"`, `guarded_target="ptr"` | `0.05` (Pass) |
-| **Syntax Error Code** | `def f(data): if data` | `is_complete=False`, `parse_error="..."` | `1.0` (Reject) |
+| **Vulnerable Memory Write** | `VULN_MEM_WRITE` | `sink_type="MEMORY_WRITE"`, `sanitizer_type=None` | `1.0` (Reject) |
+| **Guarded Memory Write** | `GUARDED_MEM_WRITE` | `sink_type="MEMORY_WRITE"`, `sanitizer_type="BOUNDS_CHECK"`, `guarded_target="i"` | `0.05` (Pass) |
+| **Vulnerable Array Index** | `VULN_ARRAY_INDEX` | `sink_type="ARRAY_INDEX"`, `sanitizer_type=None` | `1.0` (Reject) |
+| **Guarded Array Index** | `GUARDED_ARRAY_INDEX` | `sink_type="ARRAY_INDEX"`, `sanitizer_type="RANGE_VALIDATION"`, `guarded_target="index"` | `0.05` (Pass) |
+| **Vulnerable Pointer Deref** | `VULN_POINTER_DEREF` | `sink_type="POINTER_DEREF"`, `sanitizer_type=None` | `1.0` (Reject) |
+| **Guarded Pointer Deref** | `GUARDED_POINTER_DEREF` | `sink_type="POINTER_DEREF"`, `sanitizer_type="NULL_CHECK"`, `guarded_target="ptr"` | `0.05` (Pass) |
+| **Vulnerable System Call** | `VULN_SYSTEM_CALL` | `sink_type="SYSTEM_CALL"`, `sanitizer_type=None` | `1.0` (Reject) |
+| **Guarded System Call (Quote)** | `GUARDED_SYSTEM_CALL_QUOTE` | `sink_type="SYSTEM_CALL"`, `sanitizer_type="COMMAND_SANITIZATION"`, `guarded_target="cmd"` | `0.05` (Pass) |
+| **Guarded System Call (Allowlist)** | `GUARDED_SYSTEM_CALL_ALLOWLIST` | `sink_type="SYSTEM_CALL"`, `sanitizer_type="ALLOWLIST_CHECK"`, `guarded_target="cmd"` | `0.05` (Pass) |
+| **Syntax Error Code** | `def process(data): if data` | `is_complete=False`, `parse_error="..."` | `1.0` (Reject) |
