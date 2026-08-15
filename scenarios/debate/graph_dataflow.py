@@ -205,8 +205,8 @@ def evaluate_graph_reachability(
     eval_time = float(as_of) if as_of is not None else float(graph_snapshot.created_at)
 
     active = _filter_active_signatures(graph_snapshot, eval_time)
-    if active is None:
-        return 1.0
+    if active is None or not active:
+        return 1.0  # Fail closed (1.0) when no active flow signatures exist at eval_time
 
     if _has_unsanitized_path(active, graph_snapshot):
         return 1.0

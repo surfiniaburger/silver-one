@@ -357,3 +357,61 @@ def execute(cmd, attacker):
     assert sig.sanitizer_type is None
     assert sig.guarded_target is None
     assert evaluate_graph_reachability(snap) == 1.0
+
+
+def test_normalize_code_for_ast_loose_statements_and_markdown_fences():
+    from scenarios.debate.graph_extractor import normalize_code_for_ast
+
+    c_fenced = "```c\nif (ptr == NULL);\n```"
+    norm = normalize_code_for_ast(c_fenced)
+    assert "None" in norm
+
+    c_loose = "int f(char *s) { return 0; }"
+    norm_loose = normalize_code_for_ast(c_loose)
+    assert "def f(s):" in norm_loose
+
+    snap = extract_flow_graph_snapshot(
+        code_text="def store(data, i):\n    buf[i] = data",
+        scenario_id="sc_loose",
+        snapshot_id="snap_loose",
+        version=1,
+        created_at=1000.0,
+    )
+    assert snap.is_complete is True
+    assert len(snap.signatures) == 1
+    assert snap.signatures[0].sink_type == "MEMORY_WRITE"
+
+
+def test_normalize_code_quote_awareness_and_multiline_braces():
+    import ast
+    from scenarios.debate.graph_extractor import normalize_code_for_ast
+
+    # 1. Quote awareness: URLs and string literals containing //, NULL, true are preserved
+    c_quotes = 'char *url = "http://example.com/api?val=NULL&flag=true";'
+    norm_quotes = normalize_code_for_ast(c_quotes)
+    assert '"http://example.com/api?val=NULL&flag=true"' in norm_quotes
+    ast.parse(norm_quotes)
+
+    # 2. Multiline C block brace structure and indentation
+    c_multiline = """
+int process_data(char *data, int len) {
+    if (ptr == NULL);
+    if (len > 0) {
+        buf[i] = data;
+    }
+    return 0;
+}
+"""
+    norm_multi = normalize_code_for_ast(c_multiline)
+    tree = ast.parse(norm_multi)
+    process_data = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "process_data"
+    )
+    empty_guard, bounds_guard, return_stmt = process_data.body[-3:]
+    assert isinstance(empty_guard, ast.If)
+    assert isinstance(empty_guard.body[0], ast.Pass)
+    assert isinstance(bounds_guard, ast.If)
+    assert isinstance(bounds_guard.body[0], ast.Assign)
+    assert isinstance(return_stmt, ast.Return)
