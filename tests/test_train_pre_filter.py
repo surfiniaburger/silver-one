@@ -216,7 +216,7 @@ def test_graph_fold_diagnostics_bucket_parser_and_prediction_errors():
         "Predicate: vuln | Code: def f(data, i):\n    buf[i] = data",
         "Predicate: guarded | Code: def f(data, i):\n    if i < MAX_LEN:\n        buf[i] = data",
         "Predicate: no sink | Code: def f(data):\n    return data",
-        "Predicate: c syntax | Code: int f(char *s) { return 0; }",
+        "Predicate: c syntax | Code: : : invalid {{{ syntax",
     ]
     labels = [1, 1, 0, 0]
     predictions = [1, 0, 1, 0]

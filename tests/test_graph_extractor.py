@@ -357,3 +357,24 @@ def execute(cmd, attacker):
     assert sig.sanitizer_type is None
     assert sig.guarded_target is None
     assert evaluate_graph_reachability(snap) == 1.0
+
+
+def test_normalize_code_for_ast_loose_statements_and_markdown_fences():
+    from scenarios.debate.graph_extractor import normalize_code_for_ast
+
+    c_fenced = "```c\nif (ptr == NULL);\n```"
+    norm = normalize_code_for_ast(c_fenced)
+    assert "None" in norm
+
+    c_loose = "int f(char *s) { return 0; }"
+    norm_loose = normalize_code_for_ast(c_loose)
+    assert "def f(s):" in norm_loose
+
+    snap = extract_flow_graph_snapshot(
+        code_text="buf[i] = data",
+        scenario_id="sc_loose",
+        snapshot_id="snap_loose",
+        version=1,
+        created_at=1000.0,
+    )
+    assert snap.is_complete is True

@@ -493,6 +493,87 @@ class SecurityFlowVisitor(ast.NodeVisitor):
         )
 
 
+def _strip_markdown_fences(text: str) -> str:
+    if not text.startswith("```"):
+        return text
+    lines = text.splitlines()
+    if lines[0].startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
+def _is_parseable(text: str) -> bool:
+    try:
+        ast.parse(text)
+        return True
+    except Exception:
+        return False
+
+
+def _transform_c_function_header(l: str) -> str:
+    if l.startswith(("int ", "void ", "char ")) and "(" in l and ")" in l:
+        header, rest = l.split(")", 1)
+        parts = header.split("(", 1)
+        func_name = parts[0].split()[-1].replace("*", "")
+        args_str = parts[1]
+        clean_args = [
+            arg.strip().split()[-1].replace("*", "")
+            for arg in args_str.split(",")
+            if arg.strip().split()
+        ]
+        body_part = rest.strip()
+        return f"def {func_name}({', '.join(clean_args)}):" + (f" {body_part}" if body_part else "")
+    return l
+
+
+def _apply_c_syntax_transformations(text: str) -> str:
+    lines = text.splitlines()
+    norm_lines = []
+    for line in lines:
+        l = line.strip()
+        if "//" in l:
+            parts = l.split("//", 1)
+            l = parts[0].rstrip() + ("  # " + parts[1] if parts[0].rstrip() else "# " + parts[1])
+        l = l.replace("NULL", "None").replace("true", "True").replace("false", "False")
+        l = l.replace("{", "").replace("}", "").strip()
+        if l.endswith(";"):
+            l = l[:-1].strip()
+        if l.startswith("if (") and l.endswith(")"):
+            l = "if " + l[4:-1] + ":"
+        l = _transform_c_function_header(l)
+        norm_lines.append(l)
+    return "\n".join(norm_lines)
+
+
+def _wrap_in_candidate_wrapper(text: str) -> str:
+    lines = text.splitlines()
+    wrapped = ["def candidate_wrapper():"] + [f"    {l}" if l else "" for l in lines]
+    wrapped_text = "\n".join(wrapped)
+    return wrapped_text if _is_parseable(wrapped_text) else text
+
+
+def normalize_code_for_ast(code_text: str) -> str:
+    """
+    Normalizes raw snippet text into valid Python AST-parseable source code.
+    Strips markdown code fences, translates C/C++ keywords and comments into Python equivalents,
+    and wraps loose top-level statements inside a candidate wrapper function.
+    """
+    if not code_text or not code_text.strip():
+        return ""
+
+    text = _strip_markdown_fences(code_text.strip())
+    if _is_parseable(text):
+        return text
+
+    processed_text = _apply_c_syntax_transformations(text)
+    if _is_parseable(processed_text):
+        return processed_text
+
+    return _wrap_in_candidate_wrapper(processed_text)
+
+
 def extract_flow_graph_snapshot(
     code_text: str,
     scenario_id: str,
@@ -518,8 +599,10 @@ def extract_flow_graph_snapshot(
             parse_error="Invalid non-numeric or non-finite created_at timestamp",
         )
 
+    normalized_text = normalize_code_for_ast(code_text)
+
     try:
-        tree = ast.parse(code_text)
+        tree = ast.parse(normalized_text)
     except Exception as exc:
         return FlowGraphSnapshot(
             snapshot_id=snapshot_id,
