@@ -657,6 +657,207 @@ def test_treesitter_rejects_recovery_tree_syntax_errors():
     assert snap is None
 
 
+def test_corpus_unsupported_positive_index_write_from_derived_pointer_read():
+    code = "r1.i = *(uint64_t*)(ip + 1); mem[r1.i] = 0;"
+
+    snap = extract_flow_graph_snapshot(
+        code_text=code,
+        scenario_id="HASH-c966428621",
+        snapshot_id="snap_idx82",
+        version=1,
+        created_at=1000.0,
+    )
+
+    assert snap.is_complete is True
+    assert len(snap.signatures) == 1
+    sig = snap.signatures[0]
+    assert sig.sink_type == "MEMORY_WRITE"
+    assert sig.flow_type == "INDEX_WRITE"
+    assert snap.nodes[sig.source_id]["target_var"] == "r1.i"
+    assert snap.nodes[sig.source_id]["source_kind"] == "fragment_derived_value"
+    assert snap.nodes[sig.sink_id]["target_var"] == "r1.i"
+    assert evaluate_graph_reachability(snap) == 1.0
+
+
+def test_corpus_unsupported_positive_output_index_write_from_derived_offset():
+    code = (
+        "pixeloutstart = ((ADAM7_IY[i] + y * ADAM7_DY[i]) * w + ADAM7_IX[i] + x * ADAM7_DX[i]) * bytewidth; "
+        "out[pixeloutstart + b] = in[pixelinstart + b];"
+    )
+
+    snap = extract_flow_graph_snapshot(
+        code_text=code,
+        scenario_id="HASH-94bb66ef2c",
+        snapshot_id="snap_idx102",
+        version=1,
+        created_at=1000.0,
+    )
+
+    assert snap.is_complete is True
+    assert len(snap.signatures) == 1
+    sig = snap.signatures[0]
+    assert sig.sink_type == "MEMORY_WRITE"
+    assert sig.flow_type == "INDEX_WRITE"
+    assert snap.nodes[sig.source_id]["target_var"] == "pixeloutstart"
+    assert snap.nodes[sig.source_id]["source_kind"] == "fragment_derived_value"
+    assert snap.nodes[sig.sink_id]["target_var"] == "pixeloutstart"
+    assert evaluate_graph_reachability(snap) == 1.0
+
+
+def test_corpus_unsupported_positive_selected_copy_fragments_remain_unproven_without_source():
+    cases = [
+        (
+            "HASH-db77a7663a",
+            "item_len = btrfs_item_size_nr(leaf, i); memcpy(tmp_buf, &sh, sizeof(sh));",
+        ),
+        (
+            "HASH-c153a60648",
+            "if (pos > dp->realSize) memcpy((void *)(tmp + (dp->pos)), src, size) dp->pos = pos;",
+        ),
+    ]
+
+    for scenario_id, code in cases:
+        snap = extract_flow_graph_snapshot(
+            code_text=code,
+            scenario_id=scenario_id,
+            snapshot_id=f"snap_{scenario_id}",
+            version=1,
+            created_at=1000.0,
+        )
+        assert evaluate_graph_reachability(snap) == 1.0
+        assert not snap.signatures
+
+
+def test_corpus_unsupported_positive_sprintf_from_underallocated_buffer():
+    code = (
+        'mac_tmp_len = strlen(mac_exe) + strlen(MAC_PATH_VALUE) mac_tmp = malloc(mac_tmp_len) '
+        'sprintf(mac_tmp, "%s%s%s", mac_exe, MAC_PATH_VALUE, mac_exe) if (mac_tmp_len <= arg0_len)'
+    )
+
+    snap = extract_flow_graph_snapshot(
+        code_text=code,
+        scenario_id="HASH-9c691500ed",
+        snapshot_id="snap_sprintf_underallocated",
+        version=1,
+        created_at=1000.0,
+    )
+
+    assert snap.is_complete is True
+    assert len(snap.signatures) == 1
+    sig = snap.signatures[0]
+    assert sig.sink_type == "MEMORY_WRITE"
+    assert sig.flow_type == "MEMORY_COPY_CALL"
+    assert snap.nodes[sig.source_id]["target_var"] == "mac_tmp"
+    assert snap.nodes[sig.source_id]["source_kind"] == "underallocated_format_buffer"
+    assert snap.nodes[sig.sink_id]["target_var"] == "mac_tmp"
+    assert evaluate_graph_reachability(snap) == 1.0
+
+
+def test_adversarial_sprintf_literal_only_is_not_positive_evidence():
+    code = 'buf = malloc(32); sprintf(buf, "constant")'
+
+    snap = extract_flow_graph_snapshot(
+        code_text=code,
+        scenario_id="sprintf-literal-only",
+        snapshot_id="snap_sprintf_literal_only",
+        version=1,
+        created_at=1000.0,
+    )
+
+    assert evaluate_graph_reachability(snap) == 1.0
+    assert not snap.signatures
+
+
+def test_adversarial_sprintf_matching_allocation_terms_is_not_positive_evidence():
+    code = 'buf_len = strlen(name); buf = malloc(buf_len); sprintf(buf, "%s", name)'
+
+    snap = extract_flow_graph_snapshot(
+        code_text=code,
+        scenario_id="sprintf-matching-allocation",
+        snapshot_id="snap_sprintf_matching_allocation",
+        version=1,
+        created_at=1000.0,
+    )
+
+    assert evaluate_graph_reachability(snap) == 1.0
+    assert not snap.signatures
+
+
+def test_adversarial_sprintf_escaped_percent_is_not_positive_evidence():
+    code = 'buf_len = strlen(name); buf = malloc(buf_len); sprintf(buf, "%%s%s", name)'
+
+    snap = extract_flow_graph_snapshot(
+        code_text=code,
+        scenario_id="sprintf-escaped-percent",
+        snapshot_id="snap_sprintf_escaped_percent",
+        version=1,
+        created_at=1000.0,
+    )
+
+    assert evaluate_graph_reachability(snap) == 1.0
+    assert not snap.signatures
+
+
+def test_adversarial_project_macro_fragment_stays_unsupported():
+    code = "char buffer[BUFF_SIG_SIZE + in_buffer_size] BUFFER_ADD (pea.username, username_len)"
+
+    snap = extract_flow_graph_snapshot(
+        code_text=code,
+        scenario_id="HASH-115fc070e2",
+        snapshot_id="snap_macro_adversarial",
+        version=1,
+        created_at=1000.0,
+    )
+
+    assert evaluate_graph_reachability(snap) == 1.0
+    assert not snap.signatures
+
+
+def test_adversarial_scalar_computed_index_is_not_positive_evidence():
+    code = "safe_idx = i & 7; mem[safe_idx] = 0;"
+
+    snap = extract_flow_graph_snapshot(
+        code_text=code,
+        scenario_id="scalar-computed-index",
+        snapshot_id="snap_scalar_computed_index",
+        version=1,
+        created_at=1000.0,
+    )
+
+    assert evaluate_graph_reachability(snap) == 1.0
+    assert not snap.signatures
+
+
+def test_adversarial_unrelated_index_write_is_not_positive_evidence():
+    code = "offset = table[i] + 1; mem[fixed_idx] = 0;"
+
+    snap = extract_flow_graph_snapshot(
+        code_text=code,
+        scenario_id="unrelated-index-write",
+        snapshot_id="snap_unrelated_index_write",
+        version=1,
+        created_at=1000.0,
+    )
+
+    assert evaluate_graph_reachability(snap) == 1.0
+    assert not snap.signatures
+
+
+def test_adversarial_sizeof_index_is_not_positive_evidence():
+    code = "idx = sizeof(buf); mem[idx] = 0;"
+
+    snap = extract_flow_graph_snapshot(
+        code_text=code,
+        scenario_id="sizeof-index-write",
+        snapshot_id="snap_sizeof_index_write",
+        version=1,
+        created_at=1000.0,
+    )
+
+    assert evaluate_graph_reachability(snap) == 1.0
+    assert not snap.signatures
+
+
 def test_treesitter_registers_execv_tainted_argv_argument():
     from scenarios.debate.graph_extractor import extract_flow_graph_snapshot_treesitter
 

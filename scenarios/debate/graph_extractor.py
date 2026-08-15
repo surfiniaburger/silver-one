@@ -571,6 +571,104 @@ def _split_c_comment_quote_aware(line_str: str) -> Tuple[str, Optional[str]]:
     return line_str, None
 
 
+def _repair_c_fragment_statement_separators(text: str) -> str:
+    repaired: List[str] = []
+    in_quote = None
+    escaped = False
+    idx = 0
+
+    while idx < len(text):
+        char = text[idx]
+        repaired.append(char)
+        in_quote, escaped = _advance_quote_state(char, in_quote, escaped)
+
+        if in_quote or escaped or char != ")":
+            idx += 1
+            continue
+
+        rest = text[idx + 1 :]
+        next_match = re.match(r"\s+([A-Za-z_]\w*)\s*([=(])", rest)
+        if next_match and _should_insert_c_fragment_separator(next_match, repaired):
+            repaired.append(";")
+        idx += 1
+
+    return "".join(repaired)
+
+
+def _should_insert_c_fragment_separator(match: re.Match[str], repaired: List[str]) -> bool:
+    next_token = match.group(1)
+    next_operator = match.group(2)
+    return (
+        next_token == "if"
+        or next_operator == "="
+        or (next_operator == "(" and _current_c_fragment_statement_is_assignment(repaired))
+    )
+
+
+def _current_c_fragment_statement_is_assignment(chars: List[str]) -> bool:
+    current_statement = "".join(chars).rsplit(";", 1)[-1].strip()
+    return "=" in current_statement and not current_statement.startswith("if ")
+
+
+def _drop_trailing_c_if_condition(text: str) -> str:
+    match = re.search(r";\s*if\s*\([^;{}]*\)\s*$", text)
+    if not match:
+        return text
+    return text[: match.start() + 1].strip()
+
+
+C_FORMAT_LENGTH_CHARS = set("hlLzjt")
+C_FORMAT_CONVERSION_CHARS = set("diuoxXfFeEgGaAcspn")
+C_FORMAT_FLAG_CHARS = set("-+ #0")
+
+
+def _count_c_format_conversions(format_text: str) -> int:
+    count = 0
+    idx = 0
+
+    while idx < len(format_text):
+        if format_text[idx] != "%":
+            idx += 1
+            continue
+
+        idx, has_conversion = _consume_c_format_specifier(format_text, idx + 1)
+        if has_conversion:
+            count += 1
+
+    return count
+
+
+def _consume_c_format_specifier(format_text: str, idx: int) -> Tuple[int, bool]:
+    if idx < len(format_text) and format_text[idx] == "%":
+        return idx + 1, False
+
+    idx = _consume_chars(format_text, idx, C_FORMAT_FLAG_CHARS)
+    idx = _consume_digits(format_text, idx)
+    idx = _consume_c_format_precision(format_text, idx)
+    idx = _consume_chars(format_text, idx, C_FORMAT_LENGTH_CHARS)
+    if idx < len(format_text) and format_text[idx] in C_FORMAT_CONVERSION_CHARS:
+        return idx + 1, True
+    return idx, False
+
+
+def _consume_c_format_precision(format_text: str, idx: int) -> int:
+    if idx >= len(format_text) or format_text[idx] != ".":
+        return idx
+    return _consume_digits(format_text, idx + 1)
+
+
+def _consume_chars(text: str, idx: int, chars: Set[str]) -> int:
+    while idx < len(text) and text[idx] in chars:
+        idx += 1
+    return idx
+
+
+def _consume_digits(text: str, idx: int) -> int:
+    while idx < len(text) and text[idx].isdigit():
+        idx += 1
+    return idx
+
+
 def _transform_tokens_outside_quotes(line_str: str) -> str:
     """
     Strips C-style line comments (//) and replaces C keywords (NULL, true, false)
@@ -694,6 +792,9 @@ C_RETURN_VALUE_SOURCE_FUNCTIONS = {"getenv"}
 C_BUFFER_SOURCE_ARG_INDEX = {"read": 1, "recv": 1, "fread": 0}
 C_SYSTEM_CALL_FUNCTIONS = {"open", "fopen", "system", "popen", "execl", "execlp", "execle", "execv", "execve", "execvp"}
 C_MEMORY_FUNCTIONS = {"memcpy", "memmove", "memset", "strcpy", "strncpy", "strcat", "sprintf", "snprintf"}
+C_ALLOCATION_FUNCTIONS = {"malloc"}
+C_FORMAT_WRITE_FUNCTIONS = {"sprintf"}
+C_SIZE_CALCULATION_FUNCTIONS = {"strlen", "sizeof"}
 
 
 class TreeSitterFlowVisitor:
@@ -708,6 +809,8 @@ class TreeSitterFlowVisitor:
         self.node_counter = 0
         self.guard_stack: List[Dict[str, Set[str]]] = []
         self.source_by_var: Dict[str, str] = {}
+        self.size_expr_by_var: Dict[str, str] = {}
+        self.alloc_size_by_var: Dict[str, str] = {}
 
     def _gen_id(self, prefix: str) -> str:
         self.node_counter += 1
@@ -769,13 +872,94 @@ class TreeSitterFlowVisitor:
     def visit_assignment_expression(self, node: tree_sitter.Node):
         left_node = node.child_by_field_name("left") or (node.children[0] if node.children else None)
         right_node = node.child_by_field_name("right") or (node.children[2] if len(node.children) > 2 else None)
-        target_var = self._find_first_identifier(left_node) if left_node else None
+        target_var = self._extract_assignment_target_var(left_node) if left_node else None
         source_func = self._extract_func_name(right_node) if right_node and right_node.type == "call_expression" else None
 
         if target_var and source_func in C_RETURN_VALUE_SOURCE_FUNCTIONS:
             self._register_source(target_var, source_func, node)
+        elif target_var and self._is_fragment_derived_source(right_node):
+            self._register_source(target_var, "fragment_derived_value", node)
+        elif target_var and self._is_size_calculation_expression(right_node):
+            self.size_expr_by_var[target_var] = self._get_node_text(right_node)
+
+        if target_var and source_func in C_ALLOCATION_FUNCTIONS:
+            self._track_allocation_size(target_var, right_node)
+
+        self._handle_assignment_sink(node, left_node)
 
         self.generic_visit(node)
+
+    def _extract_assignment_target_var(self, node: Optional[tree_sitter.Node]) -> Optional[str]:
+        if not node:
+            return None
+        if node.type in {"identifier", "field_expression"}:
+            return self._get_node_text(node)
+        return self._find_first_identifier(node)
+
+    def _is_fragment_derived_source(self, node: Optional[tree_sitter.Node]) -> bool:
+        if not node:
+            return False
+        if node.type in {"pointer_expression", "subscript_expression", "field_expression"}:
+            return True
+        return node.type == "binary_expression" and self._contains_node_type(
+            node,
+            {"pointer_expression", "subscript_expression", "field_expression"},
+        )
+
+    def _contains_node_type(self, node: tree_sitter.Node, node_types: Set[str]) -> bool:
+        if node.type in node_types:
+            return True
+        return any(self._contains_node_type(child, node_types) for child in node.children)
+
+    def _is_size_calculation_expression(self, node: Optional[tree_sitter.Node]) -> bool:
+        if not node:
+            return False
+        if node.type == "sizeof_expression":
+            return True
+        if node.type == "call_expression":
+            return self._extract_func_name(node) in C_SIZE_CALCULATION_FUNCTIONS
+        return any(self._is_size_calculation_expression(child) for child in node.children)
+
+    def _track_allocation_size(self, target_var: str, call_node: Optional[tree_sitter.Node]):
+        if not call_node:
+            return
+        arg_list = call_node.child_by_field_name("arguments") or self._find_child_of_type(call_node, "argument_list")
+        arg_vars = self._extract_arg_vars(arg_list) if arg_list else []
+        if arg_vars and arg_vars[0] in self.size_expr_by_var:
+            self.alloc_size_by_var[target_var] = arg_vars[0]
+
+    def _handle_assignment_sink(self, node: tree_sitter.Node, left_node: Optional[tree_sitter.Node]):
+        if not left_node or left_node.type != "subscript_expression":
+            return
+
+        index_vars = self._extract_subscript_index_vars(left_node)
+        source_vars = [var_name for var_name in index_vars if var_name in self.source_by_var]
+        if not source_vars:
+            return
+
+        target_var = source_vars[0]
+        sink_id = self._gen_id("sink_ts_index_write")
+        self.nodes[sink_id] = {
+            "id": sink_id,
+            "kind": "sink",
+            "type": "MEMORY_WRITE",
+            "target_var": target_var,
+            "sink_expr_kind": "index_assignment",
+            "lineno": node.start_point[0] + 1,
+            "col_offset": node.start_point[1],
+        }
+
+        sanitizer_type, guarded_target = self._resolve_sanitizer("MEMORY_WRITE", target_var)
+        for source_var in source_vars:
+            _add_signature(
+                self.signatures,
+                source_id=self.source_by_var[source_var],
+                sink_id=sink_id,
+                sink_type="MEMORY_WRITE",
+                flow_type="INDEX_WRITE",
+                sanitizer_type=sanitizer_type,
+                guarded_target=guarded_target,
+            )
 
     def _handle_call_source(self, node: tree_sitter.Node, func_name: str):
         source_arg_index = C_BUFFER_SOURCE_ARG_INDEX.get(func_name)
@@ -819,6 +1003,9 @@ class TreeSitterFlowVisitor:
         sanitizer_type, guarded_target = self._resolve_sanitizer(sink_type, target_var)
 
         all_arg_vars = {v for v in self._extract_arg_vars(arg_list) if v} if arg_list else set()
+        if self._is_underallocated_format_sink(func_name, arg_list, target_var):
+            self._register_source(target_var, "underallocated_format_buffer", node)
+            all_arg_vars.add(target_var)
         if sink_type == "SYSTEM_CALL" and func_name in {"system", "popen", "open", "fopen"} and target_var:
             source_vars = {target_var}
         else:
@@ -843,6 +1030,32 @@ class TreeSitterFlowVisitor:
             return "MEMORY_WRITE"
         return None
 
+    def _is_underallocated_format_sink(
+        self,
+        func_name: str,
+        arg_list: Optional[tree_sitter.Node],
+        target_var: Optional[str],
+    ) -> bool:
+        if func_name not in C_FORMAT_WRITE_FUNCTIONS or not arg_list or not target_var:
+            return False
+        size_var = self.alloc_size_by_var.get(target_var)
+        if not size_var:
+            return False
+
+        format_text = self._extract_format_arg_text(arg_list)
+        if not format_text:
+            return False
+
+        conversion_count = _count_c_format_conversions(format_text)
+        strlen_count = len(re.findall(r"\bstrlen\s*\(", self.size_expr_by_var.get(size_var, "")))
+        return conversion_count > strlen_count > 0
+
+    def _extract_format_arg_text(self, arg_list: tree_sitter.Node) -> Optional[str]:
+        args = list(arg_list.named_children)
+        if len(args) < 2 or args[1].type != "string_literal":
+            return None
+        return self._get_node_text(args[1])
+
     def _find_child_of_type(self, node: tree_sitter.Node, node_type: str) -> Optional[tree_sitter.Node]:
         for child in node.children:
             if child.type == node_type:
@@ -865,6 +1078,33 @@ class TreeSitterFlowVisitor:
                 id_text = self._find_first_identifier(child)
                 arg_vars.append(id_text if id_text else None)
         return arg_vars
+
+    def _extract_subscript_index_vars(self, node: tree_sitter.Node) -> List[str]:
+        expr_text = self._get_node_text(node)
+        if "[" not in expr_text or "]" not in expr_text:
+            return []
+
+        index_text = expr_text.split("[", 1)[1].rsplit("]", 1)[0].strip()
+        if not index_text:
+            return []
+        if index_text in self.source_by_var:
+            return [index_text]
+
+        wrapped = f"void f(void){{ value = {index_text}; }}"
+        tree = C_PARSER.parse(wrapped.encode("utf-8"))
+        if tree.root_node.has_error:
+            return [index_text] if index_text in self.source_by_var else []
+
+        identifiers: List[str] = []
+
+        def collect_identifiers(child: tree_sitter.Node):
+            if child.type == "identifier":
+                identifiers.append(wrapped.encode("utf-8")[child.start_byte : child.end_byte].decode("utf-8"))
+            for grandchild in child.children:
+                collect_identifiers(grandchild)
+
+        collect_identifiers(tree.root_node)
+        return [identifier for identifier in identifiers if identifier != "value"]
 
     def _active_guards_for(self, target_var: str) -> Set[str]:
         active: Set[str] = set()
@@ -959,30 +1199,40 @@ def extract_flow_graph_snapshot_treesitter(
     if not code_text or not code_text.strip():
         return None
 
-    clean_text = _strip_markdown_fences(code_text.strip())
-    code_bytes = clean_text.encode("utf-8")
-
     try:
-        tree = C_PARSER.parse(code_bytes)
-        if tree.root_node.has_error:
-            return None
+        clean_text = _strip_markdown_fences(code_text.strip())
+        repaired_text = _repair_c_fragment_statement_separators(clean_text)
+        candidate_texts = [clean_text]
+        if repaired_text != clean_text:
+            candidate_texts.append(repaired_text)
+        truncated_text = _drop_trailing_c_if_condition(repaired_text)
+        if truncated_text not in candidate_texts:
+            candidate_texts.append(truncated_text)
 
-        visitor = TreeSitterFlowVisitor(code_bytes)
-        visitor.visit(tree.root_node)
+        for candidate_text in candidate_texts:
+            code_bytes = candidate_text.encode("utf-8")
+            tree = C_PARSER.parse(code_bytes)
+            if tree.root_node.has_error:
+                continue
 
-        if not visitor.signatures:
-            return None
+            visitor = TreeSitterFlowVisitor(code_bytes)
+            visitor.visit(tree.root_node)
 
-        return FlowGraphSnapshot(
-            snapshot_id=snapshot_id,
-            scenario_id=scenario_id,
-            version=version,
-            created_at=float(created_at),
-            nodes=visitor.nodes,
-            signatures=visitor.signatures,
-            is_complete=True,
-            parse_error=None,
-        )
+            if not visitor.signatures:
+                continue
+
+            return FlowGraphSnapshot(
+                snapshot_id=snapshot_id,
+                scenario_id=scenario_id,
+                version=version,
+                created_at=float(created_at),
+                nodes=visitor.nodes,
+                signatures=visitor.signatures,
+                is_complete=True,
+                parse_error=None,
+            )
+
+        return None
     except Exception:
         return None
 
