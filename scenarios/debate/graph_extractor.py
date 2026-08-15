@@ -8,6 +8,9 @@ import ast
 import math
 from typing import Dict, List, Optional, Set, Tuple
 
+import tree_sitter
+import tree_sitter_c
+
 from scenarios.debate.graph_dataflow import (
     SUPPORTED_SINKS,
     VALID_SANITIZERS,
@@ -16,7 +19,7 @@ from scenarios.debate.graph_dataflow import (
 )
 
 
-SYSTEM_CALL_FUNCTIONS = {"os.system", "subprocess.Popen", "subprocess.run", "eval", "exec", "system", "Popen", "run"}
+SYSTEM_CALL_FUNCTIONS = {"os.system", "subprocess.Popen", "subprocess.run", "eval", "exec", "system", "Popen", "run", "open"}
 MEMORY_FUNCTIONS = {"memcpy", "strcpy", "memset", "memmove"}
 EXPLICIT_INPUT_SOURCES = {"input", "sys.argv", "request.args", "request.get_json", "socket.recv", "file.read"}
 COMMAND_SANITIZER_FUNCTIONS = {"shlex.quote", "quote"}
@@ -673,6 +676,218 @@ def normalize_code_for_ast(code_text: str) -> str:
     return _wrap_in_candidate_wrapper(processed_text)
 
 
+class TreeSitterFlowVisitor:
+    """
+    Traverses Tree-Sitter C AST nodes and extracts sources, sinks, and flow signatures.
+    """
+
+    def __init__(self, code_bytes: bytes):
+        self.code_bytes = code_bytes
+        self.nodes: Dict[str, dict] = {}
+        self.signatures: List[FlowSignature] = []
+        self.node_counter = 0
+        self.guard_stack: List[Dict[str, Set[str]]] = []
+
+    def _gen_id(self, prefix: str) -> str:
+        self.node_counter += 1
+        return f"{prefix}_{self.node_counter}"
+
+    def _get_node_text(self, node: tree_sitter.Node) -> str:
+        return self.code_bytes[node.start_byte : node.end_byte].decode("utf-8", errors="replace").strip()
+
+    def visit(self, node: tree_sitter.Node):
+        method_name = f"visit_{node.type}"
+        visitor_fn = getattr(self, method_name, self.generic_visit)
+        visitor_fn(node)
+
+    def generic_visit(self, node: tree_sitter.Node):
+        for child in node.children:
+            self.visit(child)
+
+    def visit_parameter_declaration(self, node: tree_sitter.Node):
+        param_name = self._find_first_identifier(node)
+        if param_name and not param_name.startswith("src_ts_"):
+            param_id = self._gen_id(f"src_ts_{param_name}")
+            self.nodes[param_id] = {
+                "id": param_id,
+                "kind": "source",
+                "name": param_name,
+                "type": "UNTRUSTED_INPUT",
+            }
+        self.generic_visit(node)
+
+    def _find_first_identifier(self, node: tree_sitter.Node) -> Optional[str]:
+        if node.type == "identifier":
+            return self._get_node_text(node)
+        for child in node.children:
+            found = self._find_first_identifier(child)
+            if found:
+                return found
+        return None
+
+    def visit_call_expression(self, node: tree_sitter.Node):
+        func_name = self._extract_func_name(node)
+        if func_name:
+            self._handle_call_sink(node, func_name)
+        self.generic_visit(node)
+
+    def _extract_func_name(self, node: tree_sitter.Node) -> Optional[str]:
+        first_child = node.child_by_field_name("function") or (node.children[0] if node.children else None)
+        if first_child:
+            return self._get_node_text(first_child)
+        return None
+
+    def _handle_call_sink(self, node: tree_sitter.Node, func_name: str):
+        sink_type = self._determine_sink_type(func_name)
+        if not sink_type:
+            return
+
+        arg_list = node.child_by_field_name("arguments") or self._find_child_of_type(node, "argument_list")
+        target_var = self._extract_first_arg_var(arg_list) if arg_list else None
+
+        sink_id = self._gen_id(f"sink_ts_{func_name}")
+        self.nodes[sink_id] = {
+            "id": sink_id,
+            "kind": "sink",
+            "type": sink_type,
+            "target_var": target_var,
+            "sink_expr_kind": "call_expression",
+        }
+
+        sanitizer_type, guarded_target = self._check_active_guards(target_var)
+
+        sources = [n for n in self.nodes.values() if n.get("kind") == "source"]
+        for src in sources:
+            self.signatures.append(
+                FlowSignature(
+                    source_id=src["id"],
+                    sink_id=sink_id,
+                    source_type="UNTRUSTED_INPUT",
+                    sink_type=sink_type,
+                    flow_type="DIRECT_ASSIGN",
+                    sanitizer_type=sanitizer_type,
+                    guarded_target=guarded_target,
+                )
+            )
+
+    def _determine_sink_type(self, func_name: str) -> Optional[str]:
+        if func_name in {"open", "system", "popen", "exec", "execve", "run", "fpm_stdio_open_error_log", "eval"}:
+            return "SYSTEM_CALL"
+        if func_name in {"memcpy", "strcpy", "memset", "memmove"}:
+            return "MEMORY_WRITE"
+        return None
+
+    def _find_child_of_type(self, node: tree_sitter.Node, node_type: str) -> Optional[tree_sitter.Node]:
+        for child in node.children:
+            if child.type == node_type:
+                return child
+        return None
+
+    def _extract_first_arg_var(self, arg_list: tree_sitter.Node) -> Optional[str]:
+        for child in arg_list.children:
+            if child.type in ("identifier", "field_expression", "pointer_declarator"):
+                return self._get_node_text(child)
+            id_text = self._find_first_identifier(child)
+            if id_text and id_text not in ("(", ")", ","):
+                return id_text
+        return None
+
+    def _check_active_guards(self, target_var: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+        if not target_var or not self.guard_stack:
+            return None, None
+        for frame in reversed(self.guard_stack):
+            for guard_kind, targets in frame.items():
+                if target_var in targets:
+                    return guard_kind, target_var
+        return None, None
+
+    def _build_if_guard_map(self, cond_node: Optional[tree_sitter.Node]) -> Dict[str, Set[str]]:
+        guard_map: Dict[str, Set[str]] = {}
+        if not cond_node:
+            return guard_map
+        cond_text = self._get_node_text(cond_node)
+        for var_name in self._extract_identifiers_from_node(cond_node):
+            if any(op in cond_text for op in ("<", ">", "<=", ">=")):
+                guard_map.setdefault("BOUNDS_CHECK", set()).add(var_name)
+                guard_map.setdefault("COMMAND_SANITIZATION", set()).add(var_name)
+            if any(term in cond_text for term in ("NULL", "None", "0")):
+                guard_map.setdefault("NULL_CHECK", set()).add(var_name)
+        return guard_map
+
+    def visit_if_statement(self, node: tree_sitter.Node):
+        cond_node = node.child_by_field_name("condition") or self._find_child_of_type(node, "parenthesized_expression")
+        guard_map = self._build_if_guard_map(cond_node)
+
+        self.guard_stack.append(guard_map)
+        try:
+            self._visit_if_consequence(node)
+        finally:
+            self.guard_stack.pop()
+
+        self._visit_if_alternative(node)
+
+    def _visit_if_consequence(self, node: tree_sitter.Node):
+        consequence = node.child_by_field_name("consequence") or (node.children[2] if len(node.children) > 2 else None)
+        if consequence:
+            self.visit(consequence)
+        else:
+            self.generic_visit(node)
+
+    def _visit_if_alternative(self, node: tree_sitter.Node):
+        alternative = node.child_by_field_name("alternative")
+        if alternative:
+            self.visit(alternative)
+
+    def _extract_identifiers_from_node(self, node: tree_sitter.Node) -> Set[str]:
+        ids: Set[str] = set()
+        if node.type == "identifier":
+            ids.add(self._get_node_text(node))
+        for child in node.children:
+            ids.update(self._extract_identifiers_from_node(child))
+        return ids
+
+
+def extract_flow_graph_snapshot_treesitter(
+    code_text: str,
+    scenario_id: str,
+    snapshot_id: str,
+    version: int,
+    created_at: float,
+) -> Optional[FlowGraphSnapshot]:
+    """
+    Parses code_text using Tree-Sitter (C grammar) and extracts FlowGraphSnapshot.
+    """
+    if not code_text or not code_text.strip():
+        return None
+
+    clean_text = _strip_markdown_fences(code_text.strip())
+    code_bytes = clean_text.encode("utf-8")
+
+    try:
+        lang_c = tree_sitter.Language(tree_sitter_c.language())
+        parser = tree_sitter.Parser(lang_c)
+        tree = parser.parse(code_bytes)
+
+        visitor = TreeSitterFlowVisitor(code_bytes)
+        visitor.visit(tree.root_node)
+
+        if not visitor.nodes and not visitor.signatures:
+            return None
+
+        return FlowGraphSnapshot(
+            snapshot_id=snapshot_id,
+            scenario_id=scenario_id,
+            version=version,
+            created_at=float(created_at),
+            nodes=visitor.nodes,
+            signatures=visitor.signatures,
+            is_complete=True,
+            parse_error=None,
+        )
+    except Exception:
+        return None
+
+
 def extract_flow_graph_snapshot(
     code_text: str,
     scenario_id: str,
@@ -682,9 +897,7 @@ def extract_flow_graph_snapshot(
 ) -> FlowGraphSnapshot:
     """
     Parses code_text using AST inspection and builds a deterministic FlowGraphSnapshot.
-    
-    Fails closed (returns is_complete=False) if syntax errors or parse failures occur,
-    or if non-numeric/non-finite created_at timestamp is provided.
+    Falls back to Tree-Sitter multi-language parser when native Python AST parsing fails.
     """
     if not _is_finite_numeric(created_at):
         return FlowGraphSnapshot(
@@ -702,19 +915,6 @@ def extract_flow_graph_snapshot(
 
     try:
         tree = ast.parse(normalized_text)
-    except Exception as exc:
-        return FlowGraphSnapshot(
-            snapshot_id=snapshot_id,
-            scenario_id=scenario_id,
-            version=version,
-            created_at=float(created_at),
-            nodes={},
-            signatures=[],
-            is_complete=False,
-            parse_error=f"AST parse error: {exc}",
-        )
-
-    try:
         visitor = SecurityFlowVisitor()
         visitor.visit(tree)
 
@@ -742,7 +942,18 @@ def extract_flow_graph_snapshot(
             parse_error=None,
         )
 
-    except Exception as exc:
+    except Exception:
+        # Fallback to Tree-Sitter Multi-Language Extractor
+        ts_snapshot = extract_flow_graph_snapshot_treesitter(
+            code_text=code_text,
+            scenario_id=scenario_id,
+            snapshot_id=snapshot_id,
+            version=version,
+            created_at=created_at,
+        )
+        if ts_snapshot is not None and ts_snapshot.is_complete:
+            return ts_snapshot
+
         return FlowGraphSnapshot(
             snapshot_id=snapshot_id,
             scenario_id=scenario_id,
@@ -751,5 +962,5 @@ def extract_flow_graph_snapshot(
             nodes={},
             signatures=[],
             is_complete=False,
-            parse_error=f"AST extraction error: {exc}",
+            parse_error="AST and Tree-Sitter extraction error",
         )

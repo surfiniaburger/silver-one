@@ -415,3 +415,35 @@ int process_data(char *data, int len) {
     assert isinstance(bounds_guard, ast.If)
     assert isinstance(bounds_guard.body[0], ast.Assign)
     assert isinstance(return_stmt, ast.Return)
+
+
+def test_treesitter_c_extraction_sources_sinks_and_guards():
+    from scenarios.debate.graph_extractor import extract_flow_graph_snapshot_treesitter
+
+    c_code = """
+int fpm_stdio_open_error_log(char *error_log, int len) {
+    if (error_log != NULL) {
+        open(error_log, O_WRONLY | O_CREAT);
+    }
+}
+"""
+    snap = extract_flow_graph_snapshot_treesitter(
+        code_text=c_code,
+        scenario_id="sc_c_open",
+        snapshot_id="snap_c_open",
+        version=1,
+        created_at=1000.0,
+    )
+
+    assert snap is not None
+    assert snap.is_complete is True
+    assert len(snap.signatures) > 0
+    sources = [n for n in snap.nodes.values() if n.get("kind") == "source"]
+    sinks = [n for n in snap.nodes.values() if n.get("kind") == "sink"]
+    assert len(sources) >= 1
+    assert len(sinks) >= 1
+    assert any(s["type"] == "SYSTEM_CALL" for s in sinks)
+    sig = snap.signatures[0]
+    assert sig.sink_type == "SYSTEM_CALL"
+    assert sig.sanitizer_type == "NULL_CHECK"
+    assert sig.guarded_target == "error_log"
