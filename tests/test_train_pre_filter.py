@@ -318,20 +318,24 @@ def test_evaluate_graph_pre_filter_persisted_report_schema(tmp_path):
             f.write(json.dumps(rec) + "\n")
 
     output_path = tmp_path / "artifacts" / "metrics" / "graph_report.json"
-    examples_path = tmp_path / "artifacts" / "metrics" / "graph_examples.json"
-    report = run_graph_cv_evaluation(
-        attempts_dir=attempts_dir,
-        output_path=output_path,
-        n_splits=2,
-        seeds=[42],
-        bucket_examples_path=examples_path,
-        bucket_example_limit=1,
-    )
+    examples_path = Path("artifacts/metrics/test_graph_examples_schema.json")
+    try:
+        report = run_graph_cv_evaluation(
+            attempts_dir=attempts_dir,
+            output_path=output_path,
+            n_splits=2,
+            seeds=[42],
+            bucket_examples_path=examples_path,
+            bucket_example_limit=1,
+        )
+        assert examples_path.exists()
+        persisted_examples = json.loads(examples_path.read_text(encoding="utf-8"))
+    finally:
+        if examples_path.exists():
+            examples_path.unlink()
 
     assert output_path.exists()
-    assert examples_path.exists()
     persisted_report = json.loads(output_path.read_text(encoding="utf-8"))
-    persisted_examples = json.loads(examples_path.read_text(encoding="utf-8"))
     assert persisted_report == report
     assert persisted_examples
     assert all(len(rows) <= 1 for rows in persisted_examples.values())
@@ -352,3 +356,37 @@ def test_evaluate_graph_pre_filter_persisted_report_schema(tmp_path):
 
     assert len(persisted_report["seed_breakdown"]) == 1
     assert "diagnostics" in persisted_report["seed_breakdown"][0]
+
+
+def test_evaluate_graph_pre_filter_rejects_external_bucket_examples_path(tmp_path):
+    from scripts.evaluate_graph_pre_filter import run_graph_cv_evaluation
+
+    attempts_dir = tmp_path / "attempts"
+    attempts_dir.mkdir(parents=True, exist_ok=True)
+    attempt_file = attempts_dir / "attempt_1.jsonl"
+    attempt_file.write_text(
+        json.dumps(
+            {
+                "scenario_id": "sc_vuln_1",
+                "attempt_index": 1,
+                "combined_text": "Predicate: vuln | Code: def f(data, i):\n    buf[i] = data",
+                "predicate_label": "VULNERABLE",
+                "accepted": True,
+                "round_index": 0,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    output_path = tmp_path / "graph_report.json"
+    bucket_examples_path = Path.home() / "graph_examples_outside_project.json"
+
+    with pytest.raises(ValueError, match="outside project root"):
+        run_graph_cv_evaluation(
+            attempts_dir=attempts_dir,
+            output_path=output_path,
+            n_splits=2,
+            seeds=[42],
+            bucket_examples_path=bucket_examples_path,
+        )

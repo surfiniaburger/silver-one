@@ -84,13 +84,15 @@ SYNTHETIC_DATA = [
 ]
 
 
-def _validate_safe_path(target_path: Path) -> Path:
+def _validate_safe_path(target_path: Path, *, allow_outside_project: bool = True) -> Path:
     """Sanitize target path to ensure it is contained within project directory tree."""
     resolved = target_path.resolve()
     project_root = Path(__file__).resolve().parent.parent
     try:
         resolved.relative_to(project_root)
     except ValueError:
+        if not allow_outside_project:
+            raise ValueError(f"Path '{target_path}' points outside project root '{project_root}'")
         logger.warning("Path '%s' points outside project root '%s'. Resolving safely.", target_path, project_root)
     return resolved
 

@@ -136,7 +136,7 @@ def run_graph_cv_evaluation(
     logger.info("Dataset loaded: %d deduplicated samples across %d unique scenarios", len(texts), len(set(scenario_ids)))
 
     if bucket_examples_path is not None:
-        safe_examples_path = _validate_safe_path(bucket_examples_path)
+        safe_examples_path = _validate_safe_path(bucket_examples_path, allow_outside_project=False)
         examples = collect_graph_bucket_examples(texts, labels, scenario_ids, limit_per_bucket=bucket_example_limit)
         safe_examples_path.parent.mkdir(parents=True, exist_ok=True)
         with open(safe_examples_path, "w", encoding="utf-8") as f:

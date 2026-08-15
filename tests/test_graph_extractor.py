@@ -493,7 +493,12 @@ void copy_buffer(char *dest, char *src, int n) {
 def test_treesitter_corpus_getenv_to_execlp_source_sink_flow():
     from scenarios.debate.graph_extractor import extract_flow_graph_snapshot_treesitter
 
-    code = 'editor = getenv("EDITOR"); execlp(editor, p, tmp_file, NULL);'
+    code = """
+void run_editor(char *p, char *tmp_file) {
+    editor = getenv("EDITOR");
+    execlp(editor, p, tmp_file, NULL);
+}
+"""
 
     snap = extract_flow_graph_snapshot_treesitter(
         code_text=code,
@@ -515,7 +520,12 @@ def test_treesitter_corpus_getenv_to_execlp_source_sink_flow():
 
 
 def test_top_level_extraction_falls_back_to_treesitter_for_c_like_empty_ast():
-    code = 'editor = getenv("EDITOR"); execlp(editor, p, tmp_file, NULL);'
+    code = """
+void run_editor(char *p, char *tmp_file) {
+    editor = getenv("EDITOR");
+    execlp(editor, p, tmp_file, NULL);
+}
+"""
 
     snap = extract_flow_graph_snapshot(
         code_text=code,
@@ -529,6 +539,88 @@ def test_top_level_extraction_falls_back_to_treesitter_for_c_like_empty_ast():
     assert len(snap.signatures) == 1
     assert snap.signatures[0].sink_type == "SYSTEM_CALL"
     assert evaluate_graph_reachability(snap) == 1.0
+
+
+def test_treesitter_registers_standalone_read_buffer_source():
+    from scenarios.debate.graph_extractor import extract_flow_graph_snapshot_treesitter
+
+    code = """
+void run_command(int fd) {
+    char buf[256];
+    read(fd, buf, sizeof(buf));
+    system(buf);
+}
+"""
+
+    snap = extract_flow_graph_snapshot_treesitter(
+        code_text=code,
+        scenario_id="sc_read_buf",
+        snapshot_id="snap_read_buf",
+        version=1,
+        created_at=1000.0,
+    )
+
+    assert snap is not None
+    assert len(snap.signatures) == 1
+    sig = snap.signatures[0]
+    assert sig.sink_type == "SYSTEM_CALL"
+    assert snap.nodes[sig.source_id]["target_var"] == "buf"
+    assert snap.nodes[sig.source_id]["source_kind"] == "read"
+    assert snap.nodes[sig.sink_id]["target_var"] == "buf"
+
+
+def test_treesitter_registers_assigned_recv_buffer_source():
+    from scenarios.debate.graph_extractor import extract_flow_graph_snapshot_treesitter
+
+    code = """
+void run_command(int sock) {
+    char buf[256];
+    n = recv(sock, buf, sizeof(buf), 0);
+    system(buf);
+}
+"""
+
+    snap = extract_flow_graph_snapshot_treesitter(
+        code_text=code,
+        scenario_id="sc_recv_buf",
+        snapshot_id="snap_recv_buf",
+        version=1,
+        created_at=1000.0,
+    )
+
+    assert snap is not None
+    assert len(snap.signatures) == 1
+    sig = snap.signatures[0]
+    assert sig.sink_type == "SYSTEM_CALL"
+    assert snap.nodes[sig.source_id]["target_var"] == "buf"
+    assert snap.nodes[sig.source_id]["source_kind"] == "recv"
+
+
+def test_treesitter_registers_fread_first_argument_source():
+    from scenarios.debate.graph_extractor import extract_flow_graph_snapshot_treesitter
+
+    code = """
+void run_command(FILE *fp) {
+    char buf[256];
+    fread(buf, 1, sizeof(buf), fp);
+    system(buf);
+}
+"""
+
+    snap = extract_flow_graph_snapshot_treesitter(
+        code_text=code,
+        scenario_id="sc_fread_buf",
+        snapshot_id="snap_fread_buf",
+        version=1,
+        created_at=1000.0,
+    )
+
+    assert snap is not None
+    assert len(snap.signatures) == 1
+    sig = snap.signatures[0]
+    assert sig.sink_type == "SYSTEM_CALL"
+    assert snap.nodes[sig.source_id]["target_var"] == "buf"
+    assert snap.nodes[sig.source_id]["source_kind"] == "fread"
 
 
 def test_treesitter_rejects_benchmark_specific_sink_names():
