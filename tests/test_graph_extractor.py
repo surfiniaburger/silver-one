@@ -488,3 +488,78 @@ void copy_buffer(char *dest, char *src, int n) {
         created_at=1000.0,
     )
     assert snap_non_c is None
+
+
+def test_treesitter_corpus_getenv_to_execlp_source_sink_flow():
+    from scenarios.debate.graph_extractor import extract_flow_graph_snapshot_treesitter
+
+    code = 'editor = getenv("EDITOR"); execlp(editor, p, tmp_file, NULL);'
+
+    snap = extract_flow_graph_snapshot_treesitter(
+        code_text=code,
+        scenario_id="HASH-6fa94f75c2",
+        snapshot_id="snap_getenv_execlp",
+        version=1,
+        created_at=1000.0,
+    )
+
+    assert snap is not None
+    assert snap.is_complete is True
+    assert len(snap.signatures) == 1
+    sig = snap.signatures[0]
+    assert sig.sink_type == "SYSTEM_CALL"
+    assert sig.sanitizer_type is None
+    assert snap.nodes[sig.source_id]["target_var"] == "editor"
+    assert snap.nodes[sig.source_id]["source_kind"] == "getenv"
+    assert snap.nodes[sig.sink_id]["target_var"] == "editor"
+
+
+def test_top_level_extraction_falls_back_to_treesitter_for_c_like_empty_ast():
+    code = 'editor = getenv("EDITOR"); execlp(editor, p, tmp_file, NULL);'
+
+    snap = extract_flow_graph_snapshot(
+        code_text=code,
+        scenario_id="HASH-6fa94f75c2",
+        snapshot_id="snap_top_getenv_execlp",
+        version=1,
+        created_at=1000.0,
+    )
+
+    assert snap.is_complete is True
+    assert len(snap.signatures) == 1
+    assert snap.signatures[0].sink_type == "SYSTEM_CALL"
+    assert evaluate_graph_reachability(snap) == 1.0
+
+
+def test_treesitter_rejects_benchmark_specific_sink_names():
+    from scenarios.debate.graph_extractor import extract_flow_graph_snapshot_treesitter
+
+    code = """
+void f(char *error_log) {
+    fpm_stdio_open_error_log(error_log);
+}
+"""
+
+    snap = extract_flow_graph_snapshot_treesitter(
+        code_text=code,
+        scenario_id="HASH-d01f0f1dd4",
+        snapshot_id="snap_project_specific_sink",
+        version=1,
+        created_at=1000.0,
+    )
+
+    assert snap is None
+
+
+def test_treesitter_rejects_recovery_tree_syntax_errors():
+    from scenarios.debate.graph_extractor import extract_flow_graph_snapshot_treesitter
+
+    snap = extract_flow_graph_snapshot_treesitter(
+        code_text="open(error_log, O_WRONLY | O_APPEND | O_CREAT",
+        scenario_id="HASH-d01f0f1dd4",
+        snapshot_id="snap_syntax_error",
+        version=1,
+        created_at=1000.0,
+    )
+
+    assert snap is None
