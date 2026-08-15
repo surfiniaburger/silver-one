@@ -4,7 +4,11 @@ from pathlib import Path
 import pytest
 import joblib
 
-from scripts.train_pre_filter import extract_dataset_from_attempts, train_pre_filter
+from scripts.train_pre_filter import (
+    _compute_graph_fold_diagnostics,
+    extract_dataset_from_attempts,
+    train_pre_filter,
+)
 from scenarios.debate.pre_filter import BarredPreFilter
 
 
@@ -205,5 +209,102 @@ def test_model_manifest_generation_and_validation(tmp_path):
     filter_tampered = BarredPreFilter(model_dir=models_dir)
     assert filter_tampered.vectorizer is None
     assert filter_tampered.xgb is None
+
+
+def test_graph_fold_diagnostics_bucket_parser_and_prediction_errors():
+    texts = [
+        "Predicate: vuln | Code: def f(data, i):\n    buf[i] = data",
+        "Predicate: guarded | Code: def f(data, i):\n    if i < MAX_LEN:\n        buf[i] = data",
+        "Predicate: no sink | Code: def f(data):\n    return data",
+        "Predicate: c syntax | Code: int f(char *s) { return 0; }",
+    ]
+    labels = [1, 1, 0, 0]
+    predictions = [1, 0, 1, 0]
+
+    diagnostics = _compute_graph_fold_diagnostics(texts, labels, predictions)
+
+    assert diagnostics["total_samples"] == 4
+    assert diagnostics["parse_complete_count"] == 3
+    assert diagnostics["parse_failed_count"] == 1
+    assert diagnostics["parser_coverage"] == 0.75
+    assert diagnostics["bucket_counts"]["missing_sanitizer"] == 1
+    assert diagnostics["bucket_counts"]["guarded_or_safe"] == 1
+    assert diagnostics["bucket_counts"]["missing_sink"] == 1
+    assert diagnostics["bucket_counts"]["unsupported_syntax"] == 1
+    assert diagnostics["prediction_error_bucket_counts"]["guarded_or_safe"] == 1
+    assert diagnostics["prediction_error_bucket_counts"]["missing_sink"] == 1
+
+
+def test_evaluate_graph_pre_filter_persisted_report_schema(tmp_path):
+    from scripts.evaluate_graph_pre_filter import run_graph_cv_evaluation
+    attempts_dir = tmp_path / "attempts"
+    attempts_dir.mkdir(parents=True, exist_ok=True)
+    attempt_file = attempts_dir / "attempt_1.jsonl"
+    records = [
+        {
+            "scenario_id": "sc_vuln_1",
+            "attempt_index": 1,
+            "combined_text": "Predicate: vuln | Code: def f(data, i):\n    buf[i] = data",
+            "predicate_label": "VULNERABLE",
+            "accepted": True,
+            "round_index": 0,
+        },
+        {
+            "scenario_id": "sc_vuln_2",
+            "attempt_index": 1,
+            "combined_text": "Predicate: vuln | Code: def g(data, i):\n    buf[i] = data",
+            "predicate_label": "VULNERABLE",
+            "accepted": True,
+            "round_index": 0,
+        },
+        {
+            "scenario_id": "sc_safe_1",
+            "attempt_index": 1,
+            "combined_text": "Predicate: safe | Code: def h(data, i):\n    if i < 10:\n        buf[i] = data",
+            "predicate_label": "SAFE",
+            "accepted": False,
+            "round_index": 0,
+        },
+        {
+            "scenario_id": "sc_safe_2",
+            "attempt_index": 1,
+            "combined_text": "Predicate: safe | Code: def k(data, i):\n    if i < 10:\n        buf[i] = data",
+            "predicate_label": "SAFE",
+            "accepted": False,
+            "round_index": 0,
+        },
+    ]
+    with attempt_file.open("w", encoding="utf-8") as f:
+        for rec in records:
+            f.write(json.dumps(rec) + "\n")
+
+    output_path = tmp_path / "artifacts" / "metrics" / "graph_report.json"
+    report = run_graph_cv_evaluation(
+        attempts_dir=attempts_dir,
+        output_path=output_path,
+        n_splits=2,
+        seeds=[42],
+    )
+
+    assert output_path.exists()
+    persisted_report = json.loads(output_path.read_text(encoding="utf-8"))
+    assert persisted_report == report
+
+    assert persisted_report["schema_version"] == "1.0"
+    assert "dataset_summary" in persisted_report
+    assert "evaluation_protocol" in persisted_report
+    assert "graph_pre_filter_metrics" in persisted_report
+    assert "seed_breakdown" in persisted_report
+
+    assert persisted_report["evaluation_protocol"]["requested_n_splits"] == 2
+    assert persisted_report["evaluation_protocol"]["effective_n_splits"] == 2
+    assert persisted_report["evaluation_protocol"]["seeds"] == [42]
+
+    metrics = persisted_report["graph_pre_filter_metrics"]
+    assert "roc_auc_95_percentile_ci" in metrics
+    assert "pr_auc_95_percentile_ci" in metrics
+
+    assert len(persisted_report["seed_breakdown"]) == 1
+    assert "diagnostics" in persisted_report["seed_breakdown"][0]
 
 
