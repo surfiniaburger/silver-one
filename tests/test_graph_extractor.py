@@ -371,13 +371,15 @@ def test_normalize_code_for_ast_loose_statements_and_markdown_fences():
     assert "def f(s):" in norm_loose
 
     snap = extract_flow_graph_snapshot(
-        code_text="buf[i] = data",
+        code_text="def store(data, i):\n    buf[i] = data",
         scenario_id="sc_loose",
         snapshot_id="snap_loose",
         version=1,
         created_at=1000.0,
     )
     assert snap.is_complete is True
+    assert len(snap.signatures) == 1
+    assert snap.signatures[0].sink_type == "MEMORY_WRITE"
 
 
 def test_normalize_code_quote_awareness_and_multiline_braces():
@@ -401,7 +403,15 @@ int process_data(char *data, int len) {
 }
 """
     norm_multi = normalize_code_for_ast(c_multiline)
-    ast.parse(norm_multi)
-    assert "def process_data(data, len):" in norm_multi
-    assert "if ptr is None:" in norm_multi or "if ptr == None:" in norm_multi
-    assert "pass" in norm_multi
+    tree = ast.parse(norm_multi)
+    process_data = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "process_data"
+    )
+    empty_guard, bounds_guard, return_stmt = process_data.body[-3:]
+    assert isinstance(empty_guard, ast.If)
+    assert isinstance(empty_guard.body[0], ast.Pass)
+    assert isinstance(bounds_guard, ast.If)
+    assert isinstance(bounds_guard.body[0], ast.Assign)
+    assert isinstance(return_stmt, ast.Return)
