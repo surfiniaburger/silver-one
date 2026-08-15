@@ -596,10 +596,10 @@ def _repair_c_fragment_statement_separators(text: str) -> str:
 
 
 def _should_insert_c_fragment_separator(match: re.Match[str], repaired: List[str]) -> bool:
-    next_token = match.group(1)
+    next_identifier = match.group(1)
     next_operator = match.group(2)
     return (
-        next_token == "if"
+        next_identifier == "if"  # noqa: S105
         or next_operator == "="
         or (next_operator == "(" and _current_c_fragment_statement_is_assignment(repaired))
     )
@@ -877,10 +877,10 @@ class TreeSitterFlowVisitor:
 
         if target_var and source_func in C_RETURN_VALUE_SOURCE_FUNCTIONS:
             self._register_source(target_var, source_func, node)
-        elif target_var and self._is_fragment_derived_source(right_node):
-            self._register_source(target_var, "fragment_derived_value", node)
         elif target_var and self._is_size_calculation_expression(right_node):
             self.size_expr_by_var[target_var] = self._get_node_text(right_node)
+        elif target_var and self._is_fragment_derived_source(right_node):
+            self._register_source(target_var, "fragment_derived_value", node)
 
         if target_var and source_func in C_ALLOCATION_FUNCTIONS:
             self._track_allocation_size(target_var, right_node)
@@ -949,8 +949,8 @@ class TreeSitterFlowVisitor:
             "col_offset": node.start_point[1],
         }
 
-        sanitizer_type, guarded_target = self._resolve_sanitizer("MEMORY_WRITE", target_var)
         for source_var in source_vars:
+            sanitizer_type, guarded_target = self._resolve_sanitizer("MEMORY_WRITE", source_var)
             _add_signature(
                 self.signatures,
                 source_id=self.source_by_var[source_var],
@@ -1080,31 +1080,19 @@ class TreeSitterFlowVisitor:
         return arg_vars
 
     def _extract_subscript_index_vars(self, node: tree_sitter.Node) -> List[str]:
-        expr_text = self._get_node_text(node)
-        if "[" not in expr_text or "]" not in expr_text:
+        index_node = node.child_by_field_name("index")
+        if index_node is None:
             return []
+        vars_set: Set[str] = set()
+        self._collect_index_vars(index_node, vars_set)
+        return sorted(vars_set)
 
-        index_text = expr_text.split("[", 1)[1].rsplit("]", 1)[0].strip()
-        if not index_text:
-            return []
-        if index_text in self.source_by_var:
-            return [index_text]
-
-        wrapped = f"void f(void){{ value = {index_text}; }}"
-        tree = C_PARSER.parse(wrapped.encode("utf-8"))
-        if tree.root_node.has_error:
-            return [index_text] if index_text in self.source_by_var else []
-
-        identifiers: List[str] = []
-
-        def collect_identifiers(child: tree_sitter.Node):
-            if child.type == "identifier":
-                identifiers.append(wrapped.encode("utf-8")[child.start_byte : child.end_byte].decode("utf-8"))
-            for grandchild in child.children:
-                collect_identifiers(grandchild)
-
-        collect_identifiers(tree.root_node)
-        return [identifier for identifier in identifiers if identifier != "value"]
+    def _collect_index_vars(self, node: tree_sitter.Node, out: Set[str]):
+        if node.type in {"identifier", "field_expression"}:
+            out.add(self._get_node_text(node))
+            return
+        for child in node.children:
+            self._collect_index_vars(child, out)
 
     def _active_guards_for(self, target_var: str) -> Set[str]:
         active: Set[str] = set()

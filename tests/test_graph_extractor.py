@@ -3,6 +3,8 @@ Contract tests for scenarios/debate/graph_extractor.py.
 Verifies AST extraction accuracy, sink/sanitizer mapping, operand identity, and fail-closed behavior across all verification vectors.
 """
 
+import pytest
+
 from scenarios.debate.graph_dataflow import evaluate_graph_reachability, is_graph_candidate_rejected
 from scenarios.debate.graph_extractor import extract_flow_graph_snapshot
 
@@ -704,8 +706,9 @@ def test_corpus_unsupported_positive_output_index_write_from_derived_offset():
     assert evaluate_graph_reachability(snap) == 1.0
 
 
-def test_corpus_unsupported_positive_selected_copy_fragments_remain_unproven_without_source():
-    cases = [
+@pytest.mark.parametrize(
+    ("scenario_id", "code"),
+    [
         (
             "HASH-db77a7663a",
             "item_len = btrfs_item_size_nr(leaf, i); memcpy(tmp_buf, &sh, sizeof(sh));",
@@ -714,18 +717,18 @@ def test_corpus_unsupported_positive_selected_copy_fragments_remain_unproven_wit
             "HASH-c153a60648",
             "if (pos > dp->realSize) memcpy((void *)(tmp + (dp->pos)), src, size) dp->pos = pos;",
         ),
-    ]
-
-    for scenario_id, code in cases:
-        snap = extract_flow_graph_snapshot(
-            code_text=code,
-            scenario_id=scenario_id,
-            snapshot_id=f"snap_{scenario_id}",
-            version=1,
-            created_at=1000.0,
-        )
-        assert evaluate_graph_reachability(snap) == 1.0
-        assert not snap.signatures
+    ],
+)
+def test_corpus_unsupported_positive_selected_copy_fragments_remain_unproven_without_source(scenario_id, code):
+    snap = extract_flow_graph_snapshot(
+        code_text=code,
+        scenario_id=scenario_id,
+        snapshot_id=f"snap_{scenario_id}",
+        version=1,
+        created_at=1000.0,
+    )
+    assert evaluate_graph_reachability(snap) == 1.0
+    assert not snap.signatures
 
 
 def test_corpus_unsupported_positive_sprintf_from_underallocated_buffer():
@@ -902,3 +905,37 @@ void run_read_literal_fd() {
     sig = snap.signatures[0]
     assert snap.nodes[sig.source_id]["target_var"] == "buf"
     assert snap.nodes[sig.source_id]["source_kind"] == "read"
+
+
+def test_treesitter_size_calculation_on_struct_field_is_not_fragment_derived_source():
+    from scenarios.debate.graph_extractor import extract_flow_graph_snapshot_treesitter
+
+    matching_code = """
+len = strlen(hdr->name) + 1;
+buf = malloc(len);
+sprintf(buf, "%s", hdr->name);
+"""
+    snap_matching = extract_flow_graph_snapshot_treesitter(
+        code_text=matching_code,
+        scenario_id="sc_hdr_len_safe",
+        snapshot_id="snap_hdr_len_safe",
+        version=1,
+        created_at=1000.0,
+    )
+    assert snap_matching is None
+
+    underallocated_code = """
+len = strlen(hdr->name) + 1;
+buf = malloc(len);
+sprintf(buf, "%s%s", hdr->name, hdr->extra);
+"""
+    snap_underallocated = extract_flow_graph_snapshot_treesitter(
+        code_text=underallocated_code,
+        scenario_id="sc_hdr_len_vuln",
+        snapshot_id="snap_hdr_len_vuln",
+        version=1,
+        created_at=1000.0,
+    )
+    assert snap_underallocated is not None
+    assert len(snap_underallocated.signatures) == 1
+    assert snap_underallocated.nodes[snap_underallocated.signatures[0].source_id]["source_kind"] == "underallocated_format_buffer"
