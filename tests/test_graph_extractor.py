@@ -378,3 +378,30 @@ def test_normalize_code_for_ast_loose_statements_and_markdown_fences():
         created_at=1000.0,
     )
     assert snap.is_complete is True
+
+
+def test_normalize_code_quote_awareness_and_multiline_braces():
+    import ast
+    from scenarios.debate.graph_extractor import normalize_code_for_ast
+
+    # 1. Quote awareness: URLs and string literals containing //, NULL, true are preserved
+    c_quotes = 'char *url = "http://example.com/api?val=NULL&flag=true";'
+    norm_quotes = normalize_code_for_ast(c_quotes)
+    assert '"http://example.com/api?val=NULL&flag=true"' in norm_quotes
+    ast.parse(norm_quotes)
+
+    # 2. Multiline C block brace structure and indentation
+    c_multiline = """
+int process_data(char *data, int len) {
+    if (ptr == NULL);
+    if (len > 0) {
+        buf[i] = data;
+    }
+    return 0;
+}
+"""
+    norm_multi = normalize_code_for_ast(c_multiline)
+    ast.parse(norm_multi)
+    assert "def process_data(data, len):" in norm_multi
+    assert "if ptr is None:" in norm_multi or "if ptr == None:" in norm_multi
+    assert "pass" in norm_multi

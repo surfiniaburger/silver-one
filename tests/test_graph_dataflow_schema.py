@@ -185,11 +185,11 @@ def test_time_aware_invalidation():
     # Evaluation at t=50.0 (before invalidation): Signature active -> Vulnerable (1.0)
     assert evaluate_graph_reachability(snap, as_of=50.0) == 1.0
 
-    # Evaluation at t=100.0 (exact invalidation): Signature skipped -> Guarded/Safe (0.05)
-    assert evaluate_graph_reachability(snap, as_of=100.0) == 0.05
+    # Evaluation at t=100.0 (exact invalidation): All signatures inactive -> Fail Closed (1.0)
+    assert evaluate_graph_reachability(snap, as_of=100.0) == 1.0
 
-    # Evaluation at t=150.0 (after invalidation): Signature skipped -> Guarded/Safe (0.05)
-    assert evaluate_graph_reachability(snap, as_of=150.0) == 0.05
+    # Evaluation at t=150.0 (after invalidation): All signatures inactive -> Fail Closed (1.0)
+    assert evaluate_graph_reachability(snap, as_of=150.0) == 1.0
 
 
 def test_non_finite_and_malformed_timestamps_fail_closed():

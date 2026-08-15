@@ -493,6 +493,9 @@ class SecurityFlowVisitor(ast.NodeVisitor):
         )
 
 
+import re
+
+
 def _strip_markdown_fences(text: str) -> str:
     if not text.startswith("```"):
         return text
@@ -512,9 +515,64 @@ def _is_parseable(text: str) -> bool:
         return False
 
 
-def _transform_c_function_header(l: str) -> str:
-    if l.startswith(("int ", "void ", "char ")) and "(" in l and ")" in l:
-        header, rest = l.split(")", 1)
+def _replace_c_keywords_outside_quotes(text: str) -> str:
+    parts = re.split(r'("(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\')', text)
+    transformed_parts = []
+    for part in parts:
+        if part.startswith(('"', "'")):
+            transformed_parts.append(part)
+        else:
+            w_sub = re.sub(r"\bNULL\b", "None", part)
+            w_sub = re.sub(r"\btrue\b", "True", w_sub)
+            w_sub = re.sub(r"\bfalse\b", "False", w_sub)
+            transformed_parts.append(w_sub)
+    return "".join(transformed_parts)
+
+
+def _advance_quote_state(char: str, in_quote: Optional[str], escaped: bool) -> Tuple[Optional[str], bool]:
+    if escaped:
+        return in_quote, False
+    if char == "\\":
+        return in_quote, True
+    if in_quote:
+        return (None, False) if char == in_quote else (in_quote, False)
+    if char in ("'", '"'):
+        return char, False
+    return None, False
+
+
+def _split_c_comment_quote_aware(line_str: str) -> Tuple[str, Optional[str]]:
+    in_quote = None
+    escaped = False
+    n = len(line_str)
+
+    for i in range(n):
+        char = line_str[i]
+        if not in_quote and not escaped and char == "/" and i + 1 < n and line_str[i + 1] == "/":
+            return line_str[:i], line_str[i + 2 :]
+        in_quote, escaped = _advance_quote_state(char, in_quote, escaped)
+
+    return line_str, None
+
+
+def _transform_tokens_outside_quotes(line_str: str) -> str:
+    """
+    Strips C-style line comments (//) and replaces C keywords (NULL, true, false)
+    strictly outside single/double-quoted string literals.
+    """
+    code_part, comment_part = _split_c_comment_quote_aware(line_str)
+    unquoted_code = _replace_c_keywords_outside_quotes(code_part.rstrip())
+
+    if comment_part is not None:
+        comment_prefix = "  # " if unquoted_code else "# "
+        return unquoted_code + comment_prefix + comment_part
+
+    return unquoted_code
+
+
+def _transform_c_function_header(line_str: str) -> str:
+    if line_str.startswith(("int ", "void ", "char ")) and "(" in line_str and ")" in line_str:
+        header, rest = line_str.split(")", 1)
         parts = header.split("(", 1)
         func_name = parts[0].split()[-1].replace("*", "")
         args_str = parts[1]
@@ -525,31 +583,72 @@ def _transform_c_function_header(l: str) -> str:
         ]
         body_part = rest.strip()
         return f"def {func_name}({', '.join(clean_args)}):" + (f" {body_part}" if body_part else "")
-    return l
+    return line_str
+
+
+def _transform_c_if_condition(line_str: str) -> str:
+    if line_str.startswith("if (") and line_str.endswith(")"):
+        return "if " + line_str[4:-1] + ":"
+    if line_str.startswith("if (") and ")" in line_str and line_str.endswith("):"):
+        return "if " + line_str[4:-2] + ":"
+    return line_str
+
+
+def _transform_c_var_declaration(line_str: str) -> str:
+    c_types = ("char ", "int ", "float ", "double ", "void ", "const ")
+    if line_str.startswith(c_types) and "=" in line_str and not line_str.startswith(("if ", "def ")):
+        parts = line_str.split("=", 1)
+        var_token = parts[0].strip().split()[-1].replace("*", "")
+        return f"{var_token} = {parts[1].strip()}"
+    return line_str
+
+
+def _transform_single_c_line(stripped: str) -> Tuple[str, bool, bool]:
+    has_open_brace = "{" in stripped
+    line_str = _transform_tokens_outside_quotes(stripped)
+    line_str = line_str.replace("{", "").replace("}", "").strip()
+
+    had_semicolon = line_str.endswith(";")
+    if had_semicolon:
+        line_str = line_str[:-1].strip()
+
+    line_str = _transform_c_if_condition(line_str)
+    line_str = _transform_c_function_header(line_str)
+    line_str = _transform_c_var_declaration(line_str)
+    return line_str, had_semicolon, has_open_brace
 
 
 def _apply_c_syntax_transformations(text: str) -> str:
     lines = text.splitlines()
-    norm_lines = []
-    for line in lines:
-        l = line.strip()
-        if "//" in l:
-            parts = l.split("//", 1)
-            l = parts[0].rstrip() + ("  # " + parts[1] if parts[0].rstrip() else "# " + parts[1])
-        l = l.replace("NULL", "None").replace("true", "True").replace("false", "False")
-        l = l.replace("{", "").replace("}", "").strip()
-        if l.endswith(";"):
-            l = l[:-1].strip()
-        if l.startswith("if (") and l.endswith(")"):
-            l = "if " + l[4:-1] + ":"
-        l = _transform_c_function_header(l)
-        norm_lines.append(l)
+    norm_lines: List[str] = []
+    indent_level = 0
+
+    for raw_line in lines:
+        stripped = raw_line.strip()
+        if not stripped:
+            norm_lines.append("")
+            continue
+
+        if stripped.startswith("}"):
+            indent_level = max(0, indent_level - 1)
+
+        line_str, had_semicolon, has_open_brace = _transform_single_c_line(stripped)
+
+        indent = "    " * indent_level
+        norm_lines.append(f"{indent}{line_str}" if line_str else "")
+
+        if line_str.endswith(":") and had_semicolon:
+            norm_lines.append(f"{indent}    pass")
+
+        if has_open_brace and not stripped.startswith("}"):
+            indent_level += 1
+
     return "\n".join(norm_lines)
 
 
 def _wrap_in_candidate_wrapper(text: str) -> str:
     lines = text.splitlines()
-    wrapped = ["def candidate_wrapper():"] + [f"    {l}" if l else "" for l in lines]
+    wrapped = ["def candidate_wrapper():"] + [f"    {line_str}" if line_str else "" for line_str in lines]
     wrapped_text = "\n".join(wrapped)
     return wrapped_text if _is_parseable(wrapped_text) else text
 
