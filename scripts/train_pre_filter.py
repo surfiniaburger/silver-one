@@ -90,9 +90,9 @@ def _validate_safe_path(target_path: Path, *, allow_outside_project: bool = True
     project_root = Path(__file__).resolve().parent.parent
     try:
         resolved.relative_to(project_root)
-    except ValueError:
+    except ValueError as exc:
         if not allow_outside_project:
-            raise ValueError(f"Path '{target_path}' points outside project root '{project_root}'")
+            raise ValueError(f"Path '{target_path}' points outside project root '{project_root}'") from exc
         logger.warning("Path '%s' points outside project root '%s'. Resolving safely.", target_path, project_root)
     return resolved
 

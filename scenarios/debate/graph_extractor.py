@@ -783,11 +783,14 @@ class TreeSitterFlowVisitor:
             return
 
         arg_list = node.child_by_field_name("arguments") or self._find_child_of_type(node, "argument_list")
-        arg_vars = self._extract_arg_vars(arg_list) if arg_list else []
-        if len(arg_vars) <= source_arg_index:
+        if not arg_list:
             return
 
-        self._register_source(arg_vars[source_arg_index], func_name, node)
+        arg_vars = self._extract_arg_vars(arg_list)
+        if 0 <= source_arg_index < len(arg_vars):
+            target_var = arg_vars[source_arg_index]
+            if target_var:
+                self._register_source(target_var, func_name, node)
 
     def _extract_func_name(self, node: tree_sitter.Node) -> Optional[str]:
         first_child = node.child_by_field_name("function") or (node.children[0] if node.children else None)
@@ -815,8 +818,12 @@ class TreeSitterFlowVisitor:
         flow_type = "COMMAND_EXECUTION" if sink_type == "SYSTEM_CALL" else "MEMORY_COPY_CALL"
         sanitizer_type, guarded_target = self._resolve_sanitizer(sink_type, target_var)
 
-        arg_vars = self._extract_identifiers_from_node(arg_list) if arg_list else set()
-        source_vars = {target_var} if sink_type == "SYSTEM_CALL" and target_var else arg_vars
+        all_arg_vars = {v for v in self._extract_arg_vars(arg_list) if v} if arg_list else set()
+        if sink_type == "SYSTEM_CALL" and func_name in {"system", "popen", "open", "fopen"} and target_var:
+            source_vars = {target_var}
+        else:
+            source_vars = all_arg_vars
+
         for src_id, src in self.nodes.items():
             if src.get("kind") == "source" and src.get("target_var") in source_vars:
                 _add_signature(
@@ -844,17 +851,19 @@ class TreeSitterFlowVisitor:
 
     def _extract_first_arg_var(self, arg_list: tree_sitter.Node) -> Optional[str]:
         arg_vars = self._extract_arg_vars(arg_list)
-        return arg_vars[0] if arg_vars else None
+        for var in arg_vars:
+            if var:
+                return var
+        return None
 
-    def _extract_arg_vars(self, arg_list: tree_sitter.Node) -> List[str]:
-        arg_vars: List[str] = []
+    def _extract_arg_vars(self, arg_list: tree_sitter.Node) -> List[Optional[str]]:
+        arg_vars: List[Optional[str]] = []
         for child in arg_list.named_children:
             if child.type == "identifier":
                 arg_vars.append(self._get_node_text(child))
-                continue
-            id_text = self._find_first_identifier(child)
-            if id_text:
-                arg_vars.append(id_text)
+            else:
+                id_text = self._find_first_identifier(child)
+                arg_vars.append(id_text if id_text else None)
         return arg_vars
 
     def _active_guards_for(self, target_var: str) -> Set[str]:

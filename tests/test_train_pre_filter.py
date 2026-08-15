@@ -318,7 +318,8 @@ def test_evaluate_graph_pre_filter_persisted_report_schema(tmp_path):
             f.write(json.dumps(rec) + "\n")
 
     output_path = tmp_path / "artifacts" / "metrics" / "graph_report.json"
-    examples_path = Path("artifacts/metrics/test_graph_examples_schema.json")
+    project_root = Path(__file__).resolve().parent.parent
+    examples_path = project_root / "artifacts" / "metrics" / "test_graph_examples_schema.json"
     try:
         report = run_graph_cv_evaluation(
             attempts_dir=attempts_dir,
@@ -380,7 +381,8 @@ def test_evaluate_graph_pre_filter_rejects_external_bucket_examples_path(tmp_pat
     )
 
     output_path = tmp_path / "graph_report.json"
-    bucket_examples_path = Path.home() / "graph_examples_outside_project.json"
+    project_root = Path(__file__).resolve().parent.parent
+    bucket_examples_path = project_root.parent / "graph_examples_outside_project.json"
 
     with pytest.raises(ValueError, match="outside project root"):
         run_graph_cv_evaluation(

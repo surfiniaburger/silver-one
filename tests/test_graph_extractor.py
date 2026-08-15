@@ -494,9 +494,9 @@ def test_treesitter_corpus_getenv_to_execlp_source_sink_flow():
     from scenarios.debate.graph_extractor import extract_flow_graph_snapshot_treesitter
 
     code = """
-void run_editor(char *p, char *tmp_file) {
+void run_editor() {
     editor = getenv("EDITOR");
-    execlp(editor, p, tmp_file, NULL);
+    execlp(editor, "sh", "-c", NULL);
 }
 """
 
@@ -521,9 +521,9 @@ void run_editor(char *p, char *tmp_file) {
 
 def test_top_level_extraction_falls_back_to_treesitter_for_c_like_empty_ast():
     code = """
-void run_editor(char *p, char *tmp_file) {
+void run_editor() {
     editor = getenv("EDITOR");
-    execlp(editor, p, tmp_file, NULL);
+    execlp(editor, "sh", "-c", NULL);
 }
 """
 
@@ -655,3 +655,49 @@ def test_treesitter_rejects_recovery_tree_syntax_errors():
     )
 
     assert snap is None
+
+
+def test_treesitter_registers_execv_tainted_argv_argument():
+    from scenarios.debate.graph_extractor import extract_flow_graph_snapshot_treesitter
+
+    code = """
+void run_exec(char **argv) {
+    execv("/bin/sh", argv);
+}
+"""
+    snap = extract_flow_graph_snapshot_treesitter(
+        code_text=code,
+        scenario_id="sc_execv",
+        snapshot_id="snap_execv",
+        version=1,
+        created_at=1000.0,
+    )
+    assert snap is not None
+    assert len(snap.signatures) == 1
+    sig = snap.signatures[0]
+    assert sig.sink_type == "SYSTEM_CALL"
+    assert snap.nodes[sig.source_id]["target_var"] == "argv"
+
+
+def test_treesitter_preserves_positional_arguments_with_literals():
+    from scenarios.debate.graph_extractor import extract_flow_graph_snapshot_treesitter
+
+    code = """
+void run_read_literal_fd() {
+    char buf[128];
+    read(0, buf, 128);
+    system(buf);
+}
+"""
+    snap = extract_flow_graph_snapshot_treesitter(
+        code_text=code,
+        scenario_id="sc_literal_read",
+        snapshot_id="snap_literal_read",
+        version=1,
+        created_at=1000.0,
+    )
+    assert snap is not None
+    assert len(snap.signatures) == 1
+    sig = snap.signatures[0]
+    assert snap.nodes[sig.source_id]["target_var"] == "buf"
+    assert snap.nodes[sig.source_id]["source_kind"] == "read"
