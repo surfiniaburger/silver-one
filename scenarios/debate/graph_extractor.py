@@ -23,6 +23,14 @@ SYSTEM_CALL_FUNCTIONS = {"os.system", "subprocess.Popen", "subprocess.run", "eva
 MEMORY_FUNCTIONS = {"memcpy", "strcpy", "memset", "memmove"}
 EXPLICIT_INPUT_SOURCES = {"input", "sys.argv", "request.args", "request.get_json", "socket.recv", "file.read"}
 COMMAND_SANITIZER_FUNCTIONS = {"shlex.quote", "quote"}
+C_CHAR_TYPE = "char "
+C_INT_TYPE = "int "
+C_FLOAT_TYPE = "float "
+C_DOUBLE_TYPE = "double "
+C_VOID_TYPE = "void "
+C_CONST_TYPE = "const "
+C_FUNCTION_HEADER_PREFIXES = (C_INT_TYPE, C_VOID_TYPE, C_CHAR_TYPE)
+C_DECLARATION_PREFIXES = (C_CHAR_TYPE, C_INT_TYPE, C_FLOAT_TYPE, C_DOUBLE_TYPE, C_VOID_TYPE, C_CONST_TYPE)
 
 
 def _is_finite_numeric(val: float) -> bool:
@@ -579,7 +587,7 @@ def _transform_tokens_outside_quotes(line_str: str) -> str:
 
 
 def _transform_c_function_header(line_str: str) -> str:
-    if line_str.startswith(("int ", "void ", "char ")) and "(" in line_str and ")" in line_str:
+    if line_str.startswith(C_FUNCTION_HEADER_PREFIXES) and "(" in line_str and ")" in line_str:
         header, rest = line_str.split(")", 1)
         parts = header.split("(", 1)
         func_name = parts[0].split()[-1].replace("*", "")
@@ -603,8 +611,7 @@ def _transform_c_if_condition(line_str: str) -> str:
 
 
 def _transform_c_var_declaration(line_str: str) -> str:
-    c_types = ("char ", "int ", "float ", "double ", "void ", "const ")
-    if line_str.startswith(c_types) and "=" in line_str and not line_str.startswith(("if ", "def ")):
+    if line_str.startswith(C_DECLARATION_PREFIXES) and "=" in line_str and not line_str.startswith(("if ", "def ")):
         parts = line_str.split("=", 1)
         var_token = parts[0].strip().split()[-1].replace("*", "")
         return f"{var_token} = {parts[1].strip()}"
@@ -683,6 +690,10 @@ def normalize_code_for_ast(code_text: str) -> str:
 
 C_LANGUAGE = tree_sitter.Language(tree_sitter_c.language())
 C_PARSER = tree_sitter.Parser(C_LANGUAGE)
+C_RETURN_VALUE_SOURCE_FUNCTIONS = {"getenv"}
+C_BUFFER_SOURCE_ARG_INDEX = {"read": 1, "recv": 1, "fread": 0}
+C_SYSTEM_CALL_FUNCTIONS = {"open", "fopen", "system", "popen", "execl", "execlp", "execle", "execv", "execve", "execvp"}
+C_MEMORY_FUNCTIONS = {"memcpy", "memmove", "memset", "strcpy", "strncpy", "strcat", "sprintf", "snprintf"}
 
 
 class TreeSitterFlowVisitor:
@@ -696,6 +707,7 @@ class TreeSitterFlowVisitor:
         self.signatures: List[FlowSignature] = []
         self.node_counter = 0
         self.guard_stack: List[Dict[str, Set[str]]] = []
+        self.source_by_var: Dict[str, str] = {}
 
     def _gen_id(self, prefix: str) -> str:
         self.node_counter += 1
@@ -716,19 +728,27 @@ class TreeSitterFlowVisitor:
     def visit_parameter_declaration(self, node: tree_sitter.Node):
         param_name = self._find_first_identifier(node)
         if param_name:
-            param_id = self._gen_id(f"src_ts_{param_name}")
-            if param_id not in self.nodes:
-                self.nodes[param_id] = {
-                    "id": param_id,
-                    "kind": "source",
-                    "label": f"Param({param_name})",
-                    "type": "UNTRUSTED_INPUT",
-                    "target_var": param_name,
-                    "source_kind": "function_parameter",
-                    "lineno": node.start_point[0] + 1,
-                    "col_offset": node.start_point[1],
-                }
+            self._register_source(param_name, "function_parameter", node)
         self.generic_visit(node)
+
+    def _register_source(self, var_name: str, source_kind: str, node: tree_sitter.Node) -> str:
+        existing_id = self.source_by_var.get(var_name)
+        if existing_id:
+            return existing_id
+
+        source_id = self._gen_id(f"src_ts_{var_name}")
+        self.nodes[source_id] = {
+            "id": source_id,
+            "kind": "source",
+            "label": f"Source({var_name})",
+            "type": "UNTRUSTED_INPUT",
+            "target_var": var_name,
+            "source_kind": source_kind,
+            "lineno": node.start_point[0] + 1,
+            "col_offset": node.start_point[1],
+        }
+        self.source_by_var[var_name] = source_id
+        return source_id
 
     def _find_first_identifier(self, node: tree_sitter.Node) -> Optional[str]:
         if node.type == "identifier":
@@ -742,8 +762,35 @@ class TreeSitterFlowVisitor:
     def visit_call_expression(self, node: tree_sitter.Node):
         func_name = self._extract_func_name(node)
         if func_name:
+            self._handle_call_source(node, func_name)
             self._handle_call_sink(node, func_name)
         self.generic_visit(node)
+
+    def visit_assignment_expression(self, node: tree_sitter.Node):
+        left_node = node.child_by_field_name("left") or (node.children[0] if node.children else None)
+        right_node = node.child_by_field_name("right") or (node.children[2] if len(node.children) > 2 else None)
+        target_var = self._find_first_identifier(left_node) if left_node else None
+        source_func = self._extract_func_name(right_node) if right_node and right_node.type == "call_expression" else None
+
+        if target_var and source_func in C_RETURN_VALUE_SOURCE_FUNCTIONS:
+            self._register_source(target_var, source_func, node)
+
+        self.generic_visit(node)
+
+    def _handle_call_source(self, node: tree_sitter.Node, func_name: str):
+        source_arg_index = C_BUFFER_SOURCE_ARG_INDEX.get(func_name)
+        if source_arg_index is None:
+            return
+
+        arg_list = node.child_by_field_name("arguments") or self._find_child_of_type(node, "argument_list")
+        if not arg_list:
+            return
+
+        arg_vars = self._extract_arg_vars(arg_list)
+        if 0 <= source_arg_index < len(arg_vars):
+            target_var = arg_vars[source_arg_index]
+            if target_var:
+                self._register_source(target_var, func_name, node)
 
     def _extract_func_name(self, node: tree_sitter.Node) -> Optional[str]:
         first_child = node.child_by_field_name("function") or (node.children[0] if node.children else None)
@@ -771,9 +818,14 @@ class TreeSitterFlowVisitor:
         flow_type = "COMMAND_EXECUTION" if sink_type == "SYSTEM_CALL" else "MEMORY_COPY_CALL"
         sanitizer_type, guarded_target = self._resolve_sanitizer(sink_type, target_var)
 
-        arg_vars = self._extract_identifiers_from_node(arg_list) if arg_list else set()
+        all_arg_vars = {v for v in self._extract_arg_vars(arg_list) if v} if arg_list else set()
+        if sink_type == "SYSTEM_CALL" and func_name in {"system", "popen", "open", "fopen"} and target_var:
+            source_vars = {target_var}
+        else:
+            source_vars = all_arg_vars
+
         for src_id, src in self.nodes.items():
-            if src.get("kind") == "source" and src.get("target_var") in arg_vars:
+            if src.get("kind") == "source" and src.get("target_var") in source_vars:
                 _add_signature(
                     self.signatures,
                     source_id=src_id,
@@ -785,9 +837,9 @@ class TreeSitterFlowVisitor:
                 )
 
     def _determine_sink_type(self, func_name: str) -> Optional[str]:
-        if func_name in {"open", "fopen", "system", "popen", "execl", "execv", "execve", "execvp"}:
+        if func_name in C_SYSTEM_CALL_FUNCTIONS:
             return "SYSTEM_CALL"
-        if func_name in {"memcpy", "memmove", "memset", "strcpy", "strcat", "sprintf"}:
+        if func_name in C_MEMORY_FUNCTIONS:
             return "MEMORY_WRITE"
         return None
 
@@ -798,13 +850,21 @@ class TreeSitterFlowVisitor:
         return None
 
     def _extract_first_arg_var(self, arg_list: tree_sitter.Node) -> Optional[str]:
-        for child in arg_list.children:
-            if child.type in ("identifier", "field_expression", "pointer_declarator"):
-                return self._get_node_text(child)
-            id_text = self._find_first_identifier(child)
-            if id_text and id_text not in ("(", ")", ","):
-                return id_text
+        arg_vars = self._extract_arg_vars(arg_list)
+        for var in arg_vars:
+            if var:
+                return var
         return None
+
+    def _extract_arg_vars(self, arg_list: tree_sitter.Node) -> List[Optional[str]]:
+        arg_vars: List[Optional[str]] = []
+        for child in arg_list.named_children:
+            if child.type == "identifier":
+                arg_vars.append(self._get_node_text(child))
+            else:
+                id_text = self._find_first_identifier(child)
+                arg_vars.append(id_text if id_text else None)
+        return arg_vars
 
     def _active_guards_for(self, target_var: str) -> Set[str]:
         active: Set[str] = set()
@@ -927,6 +987,11 @@ def extract_flow_graph_snapshot_treesitter(
         return None
 
 
+def _looks_like_c_fragment(code_text: str) -> bool:
+    c_markers = (";", "->", "NULL", "#include", "sizeof", "char ", "int ", "void ", "struct ", "return ")
+    return any(marker in code_text for marker in c_markers)
+
+
 def extract_flow_graph_snapshot(
     code_text: str,
     scenario_id: str,
@@ -956,6 +1021,17 @@ def extract_flow_graph_snapshot(
         tree = ast.parse(normalized_text)
         visitor = SecurityFlowVisitor()
         visitor.visit(tree)
+
+        if not visitor.signatures and _looks_like_c_fragment(code_text):
+            ts_snapshot = extract_flow_graph_snapshot_treesitter(
+                code_text=code_text,
+                scenario_id=scenario_id,
+                snapshot_id=snapshot_id,
+                version=version,
+                created_at=created_at,
+            )
+            if ts_snapshot is not None and ts_snapshot.is_complete:
+                return ts_snapshot
 
         for sig in visitor.signatures:
             if sig.source_id not in visitor.nodes or sig.sink_id not in visitor.nodes:

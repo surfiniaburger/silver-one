@@ -5,8 +5,10 @@ import pytest
 import joblib
 
 from scripts.train_pre_filter import (
+    collect_graph_bucket_examples,
     _compute_graph_fold_diagnostics,
     extract_dataset_from_attempts,
+    graph_acceptance_probability_from_bucket,
     train_pre_filter,
 )
 from scenarios.debate.pre_filter import BarredPreFilter
@@ -231,8 +233,45 @@ def test_graph_fold_diagnostics_bucket_parser_and_prediction_errors():
     assert diagnostics["bucket_counts"]["guarded_or_safe"] == 1
     assert diagnostics["bucket_counts"]["missing_sink"] == 1
     assert diagnostics["bucket_counts"]["unsupported_syntax"] == 1
+    assert diagnostics["graph_positive_evidence_count"] == 1
+    assert diagnostics["graph_no_positive_evidence_count"] == 3
+    assert diagnostics["proof_state_counts"]["proven_unsafe"] == 1
+    assert diagnostics["proof_state_counts"]["proven_safe"] == 1
+    assert diagnostics["proof_state_counts"]["unsupported_or_unproven"] == 2
     assert diagnostics["prediction_error_bucket_counts"]["guarded_or_safe"] == 1
     assert diagnostics["prediction_error_bucket_counts"]["missing_sink"] == 1
+
+
+def test_graph_acceptance_probability_only_accepts_proven_unsafe():
+    assert graph_acceptance_probability_from_bucket("missing_sanitizer") == 0.95
+    assert graph_acceptance_probability_from_bucket("wrong_sanitizer") == 0.95
+    assert graph_acceptance_probability_from_bucket("graph_high_risk") == 0.95
+    assert graph_acceptance_probability_from_bucket("guarded_or_safe") == 0.0
+    assert graph_acceptance_probability_from_bucket("unsupported_syntax") == 0.0
+    assert graph_acceptance_probability_from_bucket("missing_source") == 0.0
+    assert graph_acceptance_probability_from_bucket("missing_sink") == 0.0
+
+
+def test_collect_graph_bucket_examples_limits_and_metadata():
+    texts = [
+        "Predicate: vuln | Code: def f(data, i):\n    buf[i] = data",
+        "Predicate: guarded | Code: def f(data, i):\n    if i < MAX_LEN:\n        buf[i] = data",
+        "Predicate: no sink | Code: def f(data):\n    return data",
+        "Predicate: c syntax | Code: : : invalid {{{ syntax",
+    ]
+    labels = [1, 1, 0, 0]
+    scenario_ids = ["sc_1", "sc_2", "sc_3", "sc_4"]
+
+    examples = collect_graph_bucket_examples(texts, labels, scenario_ids, limit_per_bucket=1)
+
+    assert set(examples) == {"guarded_or_safe", "missing_sanitizer", "missing_sink", "unsupported_syntax"}
+    guarded = examples["guarded_or_safe"][0]
+    assert guarded["sample_idx"] == 1
+    assert guarded["label"] == 1
+    assert guarded["scenario_id"] == "sc_2"
+    assert guarded["proof_state"] == "proven_safe"
+    assert guarded["risk_score"] == 0.05
+    assert "if i < MAX_LEN" in guarded["code_text"]
 
 
 def test_evaluate_graph_pre_filter_persisted_report_schema(tmp_path):
@@ -279,16 +318,28 @@ def test_evaluate_graph_pre_filter_persisted_report_schema(tmp_path):
             f.write(json.dumps(rec) + "\n")
 
     output_path = tmp_path / "artifacts" / "metrics" / "graph_report.json"
-    report = run_graph_cv_evaluation(
-        attempts_dir=attempts_dir,
-        output_path=output_path,
-        n_splits=2,
-        seeds=[42],
-    )
+    project_root = Path(__file__).resolve().parent.parent
+    examples_path = project_root / "artifacts" / "metrics" / "test_graph_examples_schema.json"
+    try:
+        report = run_graph_cv_evaluation(
+            attempts_dir=attempts_dir,
+            output_path=output_path,
+            n_splits=2,
+            seeds=[42],
+            bucket_examples_path=examples_path,
+            bucket_example_limit=1,
+        )
+        assert examples_path.exists()
+        persisted_examples = json.loads(examples_path.read_text(encoding="utf-8"))
+    finally:
+        if examples_path.exists():
+            examples_path.unlink()
 
     assert output_path.exists()
     persisted_report = json.loads(output_path.read_text(encoding="utf-8"))
     assert persisted_report == report
+    assert persisted_examples
+    assert all(len(rows) <= 1 for rows in persisted_examples.values())
 
     assert persisted_report["schema_version"] == "1.0"
     assert "dataset_summary" in persisted_report
@@ -308,3 +359,36 @@ def test_evaluate_graph_pre_filter_persisted_report_schema(tmp_path):
     assert "diagnostics" in persisted_report["seed_breakdown"][0]
 
 
+def test_evaluate_graph_pre_filter_rejects_external_bucket_examples_path(tmp_path):
+    from scripts.evaluate_graph_pre_filter import run_graph_cv_evaluation
+
+    attempts_dir = tmp_path / "attempts"
+    attempts_dir.mkdir(parents=True, exist_ok=True)
+    attempt_file = attempts_dir / "attempt_1.jsonl"
+    attempt_file.write_text(
+        json.dumps(
+            {
+                "scenario_id": "sc_vuln_1",
+                "attempt_index": 1,
+                "combined_text": "Predicate: vuln | Code: def f(data, i):\n    buf[i] = data",
+                "predicate_label": "VULNERABLE",
+                "accepted": True,
+                "round_index": 0,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    output_path = tmp_path / "graph_report.json"
+    project_root = Path(__file__).resolve().parent.parent
+    bucket_examples_path = project_root.parent / "graph_examples_outside_project.json"
+
+    with pytest.raises(ValueError, match="outside project root"):
+        run_graph_cv_evaluation(
+            attempts_dir=attempts_dir,
+            output_path=output_path,
+            n_splits=2,
+            seeds=[42],
+            bucket_examples_path=bucket_examples_path,
+        )

@@ -84,13 +84,15 @@ SYNTHETIC_DATA = [
 ]
 
 
-def _validate_safe_path(target_path: Path) -> Path:
+def _validate_safe_path(target_path: Path, *, allow_outside_project: bool = True) -> Path:
     """Sanitize target path to ensure it is contained within project directory tree."""
     resolved = target_path.resolve()
     project_root = Path(__file__).resolve().parent.parent
     try:
         resolved.relative_to(project_root)
-    except ValueError:
+    except ValueError as exc:
+        if not allow_outside_project:
+            raise ValueError(f"Path '{target_path}' points outside project root '{project_root}'") from exc
         logger.warning("Path '%s' points outside project root '%s'. Resolving safely.", target_path, project_root)
     return resolved
 
@@ -801,6 +803,23 @@ def _extract_code_from_combined_text(text: str) -> str:
     return text.split(CODE_DELIMITER, 1)[1]
 
 
+def _graph_proof_state(bucket: str) -> str:
+    """Map extraction buckets to proof states without changing fail-closed decisions."""
+    if bucket == "guarded_or_safe":
+        return "proven_safe"
+    if bucket in {"missing_sanitizer", "wrong_sanitizer", "graph_high_risk"}:
+        return "proven_unsafe"
+    return "unsupported_or_unproven"
+
+
+def graph_acceptance_probability_from_bucket(bucket: str) -> float:
+    """Map graph proof state to vulnerability-candidate acceptance probability."""
+    proof_state = _graph_proof_state(bucket)
+    if proof_state == "proven_unsafe":
+        return 0.95
+    return 0.0
+
+
 def _classify_graph_extraction_bucket(text: str, sample_idx: int) -> Tuple[str, float]:
     """Classify graph extraction outcome for fold diagnostics without changing model decisions."""
     code_text = _extract_code_from_combined_text(text)
@@ -841,6 +860,36 @@ def _classify_graph_extraction_bucket(text: str, sample_idx: int) -> Tuple[str, 
     return "graph_high_risk", risk_score
 
 
+def collect_graph_bucket_examples(
+    texts: List[str],
+    labels: List[int],
+    scenario_ids: List[str],
+    limit_per_bucket: int = 5,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Collect representative graph diagnostic examples for corpus-driven extractor work."""
+    examples: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+
+    for idx, (text, label, scenario_id) in enumerate(zip(texts, labels, scenario_ids, strict=True)):
+        bucket, risk_score = _classify_graph_extraction_bucket(text, idx)
+        if len(examples[bucket]) >= limit_per_bucket:
+            continue
+
+        code_text = _extract_code_from_combined_text(text)
+        examples[bucket].append(
+            {
+                "sample_idx": idx,
+                "label": int(label),
+                "scenario_id": scenario_id,
+                "bucket": bucket,
+                "proof_state": _graph_proof_state(bucket),
+                "risk_score": risk_score,
+                "code_text": code_text,
+            }
+        )
+
+    return dict(sorted(examples.items()))
+
+
 def _compute_graph_fold_diagnostics(
     texts: List[str],
     labels: List[int],
@@ -849,13 +898,21 @@ def _compute_graph_fold_diagnostics(
     """Compute graph parser coverage and error buckets for fold reports."""
     bucket_counts: Counter[str] = Counter()
     error_bucket_counts: Counter[str] = Counter()
+    proof_state_counts: Counter[str] = Counter()
     high_risk_count = 0
     low_risk_count = 0
+    positive_evidence_count = 0
+    no_positive_evidence_count = 0
     parse_complete_count = 0
 
     for idx, (text, label, prediction) in enumerate(zip(texts, labels, predictions, strict=True)):
         bucket, risk_score = _classify_graph_extraction_bucket(text, idx)
         bucket_counts[bucket] += 1
+        proof_state_counts[_graph_proof_state(bucket)] += 1
+        if graph_acceptance_probability_from_bucket(bucket) >= 0.90:
+            positive_evidence_count += 1
+        else:
+            no_positive_evidence_count += 1
         if bucket != "unsupported_syntax":
             parse_complete_count += 1
         if risk_score >= 0.10:
@@ -873,7 +930,10 @@ def _compute_graph_fold_diagnostics(
         "parser_coverage": round(float(parse_complete_count / total), 4) if total else 0.0,
         "graph_high_risk_count": high_risk_count,
         "graph_low_risk_count": low_risk_count,
+        "graph_positive_evidence_count": positive_evidence_count,
+        "graph_no_positive_evidence_count": no_positive_evidence_count,
         "bucket_counts": dict(sorted(bucket_counts.items())),
+        "proof_state_counts": dict(sorted(proof_state_counts.items())),
         "prediction_error_bucket_counts": dict(sorted(error_bucket_counts.items())),
         "accepted_logic_error_rate": None,
         "accepted_logic_error_note": "not_computed_from_fold_texts_only",

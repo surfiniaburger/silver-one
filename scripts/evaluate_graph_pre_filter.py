@@ -20,40 +20,22 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from sklearn.metrics import average_precision_score, confusion_matrix, roc_auc_score
 
-from scenarios.debate.graph_dataflow import evaluate_graph_reachability
-from scenarios.debate.graph_extractor import extract_flow_graph_snapshot
-from scenarios.debate.pre_filter import (
-    CODE_DELIMITER,
-    _parse_attempt_record,
-    partition_dataset_by_scenario_stratified,
-)
+from scenarios.debate.pre_filter import partition_dataset_by_scenario_stratified
 from scripts.train_pre_filter import (
     _classify_graph_extraction_bucket,
     _compute_graph_fold_diagnostics,
     _validate_safe_path,
+    collect_graph_bucket_examples,
     extract_dataset_from_attempts,
+    graph_acceptance_probability_from_bucket,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-
-def _extract_code_text(text: str) -> str:
-    if CODE_DELIMITER in text:
-        return text.split(CODE_DELIMITER, 1)[1]
-    return text
-
-
 def evaluate_graph_on_sample(text: str, idx: int) -> float:
-    code_text = _extract_code_text(text)
-    snapshot = extract_flow_graph_snapshot(
-        code_text=code_text,
-        scenario_id=f"eval_scenario_{idx}",
-        snapshot_id=f"eval_snap_{idx}",
-        version=1,
-        created_at=0.0,
-    )
-    return evaluate_graph_reachability(snapshot)
+    bucket, _ = _classify_graph_extraction_bucket(text, idx)
+    return graph_acceptance_probability_from_bucket(bucket)
 
 
 def compute_seed_percentile_ci(values: np.ndarray, alpha: float = 0.05) -> Tuple[float, float, float]:
@@ -85,8 +67,7 @@ def _evaluate_single_seed(
 
     for fold in folds:
         for idx, (txt, lbl) in enumerate(zip(fold["test_texts"], fold["test_labels"], strict=True)):
-            risk_score = evaluate_graph_on_sample(txt, idx)
-            accepted_probability = 1.0 - risk_score
+            accepted_probability = evaluate_graph_on_sample(txt, idx)
             pred = 1 if accepted_probability >= 0.90 else 0
 
             oof_y_true.append(lbl)
@@ -139,6 +120,8 @@ def run_graph_cv_evaluation(
     output_path: Path,
     n_splits: int = 5,
     seeds: Optional[List[int]] = None,
+    bucket_examples_path: Optional[Path] = None,
+    bucket_example_limit: int = 5,
 ) -> Dict[str, Any]:
     """Runs 5-fold Stratified Scenario-Grouped CV across seeds for Graph Data-Flow Pre-Filter."""
     safe_output_path = _validate_safe_path(output_path)
@@ -151,6 +134,13 @@ def run_graph_cv_evaluation(
     )
 
     logger.info("Dataset loaded: %d deduplicated samples across %d unique scenarios", len(texts), len(set(scenario_ids)))
+
+    if bucket_examples_path is not None:
+        safe_examples_path = _validate_safe_path(bucket_examples_path, allow_outside_project=False)
+        examples = collect_graph_bucket_examples(texts, labels, scenario_ids, limit_per_bucket=bucket_example_limit)
+        safe_examples_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(safe_examples_path, "w", encoding="utf-8") as f:
+            json.dump(examples, f, indent=2)
 
     seed_results = []
     effective_splits = n_splits
@@ -206,12 +196,16 @@ def main():
     parser.add_argument("--attempts-dir", type=str, default="artifacts/attempts", help="Directory containing attempt log files.")
     parser.add_argument("--output-file", type=str, default="artifacts/metrics/graph_pre_filter_cv_report.json", help="Path to save evaluation JSON report.")
     parser.add_argument("--k-folds", type=int, default=5, help="Number of CV folds.")
+    parser.add_argument("--bucket-examples-file", type=str, default=None, help="Optional path to save graph bucket example JSON.")
+    parser.add_argument("--bucket-example-limit", type=int, default=5, help="Maximum examples to save per graph bucket.")
     args = parser.parse_args()
 
     run_graph_cv_evaluation(
         attempts_dir=Path(args.attempts_dir),
         output_path=Path(args.output_file),
         n_splits=args.k_folds,
+        bucket_examples_path=Path(args.bucket_examples_file) if args.bucket_examples_file else None,
+        bucket_example_limit=args.bucket_example_limit,
     )
 
 
