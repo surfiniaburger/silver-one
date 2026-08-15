@@ -307,6 +307,16 @@ uv run python3 scripts/debate_telemetry.py \
   --baseline-json artifacts/metrics/debate_benchmark-pilot-v1-calibrated-i.json \
   --output-markdown reports/debate_benchmark_comparison_i_vs_l.md
 
+
+# Empirical 5-Fold Stratified Grouped CV Benchmark Results
+
+PYTHONPATH=. .venv/bin/python scripts/evaluate_graph_pre_filter.py \
+  --attempts-dir artifacts/attempts \
+  --output-file artifacts/metrics/graph_pre_filter_cv_report_step2_sources.json \
+  --bucket-examples-file artifacts/metrics/graph_pre_filter_bucket_examples_step2.json \
+  --bucket-example-limit 3
+
+
 ```
 
 ## Determinism and Replay
