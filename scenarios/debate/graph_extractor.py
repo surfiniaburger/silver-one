@@ -19,7 +19,7 @@ from scenarios.debate.graph_dataflow import (
 )
 
 
-SYSTEM_CALL_FUNCTIONS = {"os.system", "subprocess.Popen", "subprocess.run", "eval", "exec", "system", "Popen", "run", "open"}
+SYSTEM_CALL_FUNCTIONS = {"os.system", "subprocess.Popen", "subprocess.run", "eval", "exec", "system", "Popen", "run"}
 MEMORY_FUNCTIONS = {"memcpy", "strcpy", "memset", "memmove"}
 EXPLICIT_INPUT_SOURCES = {"input", "sys.argv", "request.args", "request.get_json", "socket.recv", "file.read"}
 COMMAND_SANITIZER_FUNCTIONS = {"shlex.quote", "quote"}
@@ -228,7 +228,8 @@ class SecurityFlowVisitor(ast.NodeVisitor):
                 **self._location_metadata(node),
             }
             sanitizer_type, guarded_target = self._resolve_sanitizer("ARRAY_INDEX", idx_var)
-            self._add_signature(
+            _add_signature(
+                self.signatures,
                 source_id=source_id,
                 sink_id=sink_id,
                 sink_type="ARRAY_INDEX",
@@ -253,7 +254,8 @@ class SecurityFlowVisitor(ast.NodeVisitor):
                 **self._location_metadata(node),
             }
             sanitizer_type, guarded_target = self._resolve_sanitizer("POINTER_DEREF", base_var)
-            self._add_signature(
+            _add_signature(
+                self.signatures,
                 source_id=source_id,
                 sink_id=sink_id,
                 sink_type="POINTER_DEREF",
@@ -288,7 +290,8 @@ class SecurityFlowVisitor(ast.NodeVisitor):
                     **self._location_metadata(node),
                 }
                 sanitizer_type, guarded_target = self._resolve_sanitizer("SYSTEM_CALL", cmd_var)
-                self._add_signature(
+                _add_signature(
+                    self.signatures,
                     source_id=source_id,
                     sink_id=sink_id,
                     sink_type="SYSTEM_CALL",
@@ -321,7 +324,8 @@ class SecurityFlowVisitor(ast.NodeVisitor):
                 **self._location_metadata(node),
             }
             sanitizer_type, guarded_target = self._resolve_sanitizer("MEMORY_WRITE", target_var)
-            self._add_signature(
+            _add_signature(
+                self.signatures,
                 source_id=source_id,
                 sink_id=sink_id,
                 sink_type="MEMORY_WRITE",
@@ -360,7 +364,8 @@ class SecurityFlowVisitor(ast.NodeVisitor):
                 **self._location_metadata(target),
             }
             sanitizer_type, guarded_target = self._resolve_sanitizer("MEMORY_WRITE", target_var)
-            self._add_signature(
+            _add_signature(
+                self.signatures,
                 source_id=source_id,
                 sink_id=sink_id,
                 sink_type="MEMORY_WRITE",
@@ -469,31 +474,31 @@ class SecurityFlowVisitor(ast.NodeVisitor):
 
         return None, None
 
-    def _add_signature(
-        self,
-        source_id: str,
-        sink_id: str,
-        sink_type: str,
-        flow_type: str,
-        sanitizer_type: Optional[str] = None,
-        guarded_target: Optional[str] = None,
-    ):
-        if sink_type not in SUPPORTED_SINKS:
-            raise ValueError(f"Emitted sink_type '{sink_type}' is not in SUPPORTED_SINKS")
-        if sanitizer_type and sanitizer_type not in VALID_SANITIZERS:
-            raise ValueError(f"Emitted sanitizer_type '{sanitizer_type}' is not in VALID_SANITIZERS")
+def _add_signature(
+    signatures: List[FlowSignature],
+    source_id: str,
+    sink_id: str,
+    sink_type: str,
+    flow_type: str,
+    sanitizer_type: Optional[str] = None,
+    guarded_target: Optional[str] = None,
+):
+    if sink_type not in SUPPORTED_SINKS:
+        raise ValueError(f"Emitted sink_type '{sink_type}' is not in SUPPORTED_SINKS")
+    if sanitizer_type and sanitizer_type not in VALID_SANITIZERS:
+        raise ValueError(f"Emitted sanitizer_type '{sanitizer_type}' is not in VALID_SANITIZERS")
 
-        self.signatures.append(
-            FlowSignature(
-                source_id=source_id,
-                sink_id=sink_id,
-                source_type="UNTRUSTED_INPUT",
-                sink_type=sink_type,
-                flow_type=flow_type,
-                sanitizer_type=sanitizer_type,
-                guarded_target=guarded_target,
-            )
+    signatures.append(
+        FlowSignature(
+            source_id=source_id,
+            sink_id=sink_id,
+            source_type="UNTRUSTED_INPUT",
+            sink_type=sink_type,
+            flow_type=flow_type,
+            sanitizer_type=sanitizer_type,
+            guarded_target=guarded_target,
         )
+    )
 
 
 import re
@@ -676,6 +681,10 @@ def normalize_code_for_ast(code_text: str) -> str:
     return _wrap_in_candidate_wrapper(processed_text)
 
 
+C_LANGUAGE = tree_sitter.Language(tree_sitter_c.language())
+C_PARSER = tree_sitter.Parser(C_LANGUAGE)
+
+
 class TreeSitterFlowVisitor:
     """
     Traverses Tree-Sitter C AST nodes and extracts sources, sinks, and flow signatures.
@@ -706,14 +715,19 @@ class TreeSitterFlowVisitor:
 
     def visit_parameter_declaration(self, node: tree_sitter.Node):
         param_name = self._find_first_identifier(node)
-        if param_name and not param_name.startswith("src_ts_"):
+        if param_name:
             param_id = self._gen_id(f"src_ts_{param_name}")
-            self.nodes[param_id] = {
-                "id": param_id,
-                "kind": "source",
-                "name": param_name,
-                "type": "UNTRUSTED_INPUT",
-            }
+            if param_id not in self.nodes:
+                self.nodes[param_id] = {
+                    "id": param_id,
+                    "kind": "source",
+                    "label": f"Param({param_name})",
+                    "type": "UNTRUSTED_INPUT",
+                    "target_var": param_name,
+                    "source_kind": "function_parameter",
+                    "lineno": node.start_point[0] + 1,
+                    "col_offset": node.start_point[1],
+                }
         self.generic_visit(node)
 
     def _find_first_identifier(self, node: tree_sitter.Node) -> Optional[str]:
@@ -754,26 +768,26 @@ class TreeSitterFlowVisitor:
             "sink_expr_kind": "call_expression",
         }
 
-        sanitizer_type, guarded_target = self._check_active_guards(target_var)
+        flow_type = "COMMAND_EXECUTION" if sink_type == "SYSTEM_CALL" else "MEMORY_COPY_CALL"
+        sanitizer_type, guarded_target = self._resolve_sanitizer(sink_type, target_var)
 
-        sources = [n for n in self.nodes.values() if n.get("kind") == "source"]
-        for src in sources:
-            self.signatures.append(
-                FlowSignature(
-                    source_id=src["id"],
+        arg_vars = self._extract_identifiers_from_node(arg_list) if arg_list else set()
+        for src_id, src in self.nodes.items():
+            if src.get("kind") == "source" and src.get("target_var") in arg_vars:
+                _add_signature(
+                    self.signatures,
+                    source_id=src_id,
                     sink_id=sink_id,
-                    source_type="UNTRUSTED_INPUT",
                     sink_type=sink_type,
-                    flow_type="DIRECT_ASSIGN",
+                    flow_type=flow_type,
                     sanitizer_type=sanitizer_type,
                     guarded_target=guarded_target,
                 )
-            )
 
     def _determine_sink_type(self, func_name: str) -> Optional[str]:
-        if func_name in {"open", "system", "popen", "exec", "execve", "run", "fpm_stdio_open_error_log", "eval"}:
+        if func_name in {"open", "fopen", "system", "popen", "execl", "execv", "execve", "execvp"}:
             return "SYSTEM_CALL"
-        if func_name in {"memcpy", "strcpy", "memset", "memmove"}:
+        if func_name in {"memcpy", "memmove", "memset", "strcpy", "strcat", "sprintf"}:
             return "MEMORY_WRITE"
         return None
 
@@ -792,26 +806,51 @@ class TreeSitterFlowVisitor:
                 return id_text
         return None
 
-    def _check_active_guards(self, target_var: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
-        if not target_var or not self.guard_stack:
-            return None, None
+    def _active_guards_for(self, target_var: str) -> Set[str]:
+        active: Set[str] = set()
         for frame in reversed(self.guard_stack):
-            for guard_kind, targets in frame.items():
-                if target_var in targets:
-                    return guard_kind, target_var
+            if target_var in frame:
+                active.update(frame[target_var])
+        return active
+
+    def _resolve_sanitizer(self, sink_type: str, target_var: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+        if not target_var:
+            return None, None
+
+        guards = self._active_guards_for(target_var)
+
+        if sink_type in ("MEMORY_WRITE", "ARRAY_INDEX"):
+            if "RANGE_VALIDATION" in guards:
+                return "RANGE_VALIDATION", target_var
+            if "BOUNDS_CHECK" in guards:
+                return "BOUNDS_CHECK", target_var
+
+        if sink_type in ("POINTER_DEREF", "SYSTEM_CALL"):
+            if "COMMAND_SANITIZATION" in guards:
+                return "COMMAND_SANITIZATION", target_var
+            if "ALLOWLIST_CHECK" in guards:
+                return "ALLOWLIST_CHECK", target_var
+            if "NULL_CHECK" in guards:
+                return "NULL_CHECK", target_var
+
         return None, None
 
     def _build_if_guard_map(self, cond_node: Optional[tree_sitter.Node]) -> Dict[str, Set[str]]:
         guard_map: Dict[str, Set[str]] = {}
         if not cond_node:
             return guard_map
+
         cond_text = self._get_node_text(cond_node)
-        for var_name in self._extract_identifiers_from_node(cond_node):
-            if any(op in cond_text for op in ("<", ">", "<=", ">=")):
-                guard_map.setdefault("BOUNDS_CHECK", set()).add(var_name)
-                guard_map.setdefault("COMMAND_SANITIZATION", set()).add(var_name)
-            if any(term in cond_text for term in ("NULL", "None", "0")):
-                guard_map.setdefault("NULL_CHECK", set()).add(var_name)
+        identifiers = self._extract_identifiers_from_node(cond_node)
+
+        if any(op in cond_text for op in ("<", ">", "<=", ">=")):
+            for var_name in identifiers:
+                guard_map.setdefault(var_name, set()).add("BOUNDS_CHECK")
+
+        if "NULL" in cond_text or "== 0" in cond_text or "!= 0" in cond_text or "None" in cond_text:
+            for var_name in identifiers:
+                guard_map.setdefault(var_name, set()).add("NULL_CHECK")
+
         return guard_map
 
     def visit_if_statement(self, node: tree_sitter.Node):
@@ -864,14 +903,14 @@ def extract_flow_graph_snapshot_treesitter(
     code_bytes = clean_text.encode("utf-8")
 
     try:
-        lang_c = tree_sitter.Language(tree_sitter_c.language())
-        parser = tree_sitter.Parser(lang_c)
-        tree = parser.parse(code_bytes)
+        tree = C_PARSER.parse(code_bytes)
+        if tree.root_node.has_error:
+            return None
 
         visitor = TreeSitterFlowVisitor(code_bytes)
         visitor.visit(tree.root_node)
 
-        if not visitor.nodes and not visitor.signatures:
+        if not visitor.signatures:
             return None
 
         return FlowGraphSnapshot(
@@ -942,8 +981,10 @@ def extract_flow_graph_snapshot(
             parse_error=None,
         )
 
-    except Exception:
-        # Fallback to Tree-Sitter Multi-Language Extractor
+    except ValueError:
+        raise
+
+    except Exception as exc:
         ts_snapshot = extract_flow_graph_snapshot_treesitter(
             code_text=code_text,
             scenario_id=scenario_id,
@@ -962,5 +1003,5 @@ def extract_flow_graph_snapshot(
             nodes={},
             signatures=[],
             is_complete=False,
-            parse_error="AST and Tree-Sitter extraction error",
+            parse_error=f"AST and Tree-Sitter extraction error: {type(exc).__name__}: {exc}",
         )

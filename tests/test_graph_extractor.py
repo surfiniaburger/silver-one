@@ -420,30 +420,71 @@ int process_data(char *data, int len) {
 def test_treesitter_c_extraction_sources_sinks_and_guards():
     from scenarios.debate.graph_extractor import extract_flow_graph_snapshot_treesitter
 
-    c_code = """
-int fpm_stdio_open_error_log(char *error_log, int len) {
+    # 1. Guarded C open call: error_log parameter paired with open(error_log)
+    c_guarded = """
+int process_c_file(char *error_log, int len) {
     if (error_log != NULL) {
         open(error_log, O_WRONLY | O_CREAT);
     }
 }
 """
-    snap = extract_flow_graph_snapshot_treesitter(
-        code_text=c_code,
+    snap_guarded = extract_flow_graph_snapshot_treesitter(
+        code_text=c_guarded,
         scenario_id="sc_c_open",
         snapshot_id="snap_c_open",
         version=1,
         created_at=1000.0,
     )
 
-    assert snap is not None
-    assert snap.is_complete is True
-    assert len(snap.signatures) > 0
-    sources = [n for n in snap.nodes.values() if n.get("kind") == "source"]
-    sinks = [n for n in snap.nodes.values() if n.get("kind") == "sink"]
-    assert len(sources) >= 1
-    assert len(sinks) >= 1
-    assert any(s["type"] == "SYSTEM_CALL" for s in sinks)
-    sig = snap.signatures[0]
+    assert snap_guarded is not None
+    assert snap_guarded.is_complete is True
+    assert len(snap_guarded.signatures) == 1
+    sig = snap_guarded.signatures[0]
     assert sig.sink_type == "SYSTEM_CALL"
+    assert sig.flow_type == "COMMAND_EXECUTION"
     assert sig.sanitizer_type == "NULL_CHECK"
     assert sig.guarded_target == "error_log"
+    assert snap_guarded.nodes[sig.source_id]["target_var"] == "error_log"
+
+    # 2. Unguarded C open call: sanitizer_type is None
+    c_unguarded = """
+int process_c_file(char *error_log, int len) {
+    open(error_log, O_WRONLY);
+}
+"""
+    snap_unguarded = extract_flow_graph_snapshot_treesitter(
+        code_text=c_unguarded,
+        scenario_id="sc_c_un",
+        snapshot_id="snap_c_un",
+        version=1,
+        created_at=1000.0,
+    )
+    assert snap_unguarded is not None
+    assert len(snap_unguarded.signatures) == 1
+    assert snap_unguarded.signatures[0].sanitizer_type is None
+
+    # 3. C memcpy sample: MEMORY_WRITE sink with MEMORY_COPY_CALL flow type
+    c_memcpy = """
+void copy_buffer(char *dest, char *src, int n) {
+    memcpy(dest, src, n);
+}
+"""
+    snap_memcpy = extract_flow_graph_snapshot_treesitter(
+        code_text=c_memcpy,
+        scenario_id="sc_memcpy",
+        snapshot_id="snap_memcpy",
+        version=1,
+        created_at=1000.0,
+    )
+    assert snap_memcpy is not None
+    assert any(sig.sink_type == "MEMORY_WRITE" for sig in snap_memcpy.signatures)
+
+    # 4. Non-C Python input: returns None
+    snap_non_c = extract_flow_graph_snapshot_treesitter(
+        code_text="def foo(): pass",
+        scenario_id="sc_non_c",
+        snapshot_id="snap_non_c",
+        version=1,
+        created_at=1000.0,
+    )
+    assert snap_non_c is None
