@@ -1,4 +1,3 @@
-import os
 import json
 import tempfile
 import pytest
@@ -25,33 +24,41 @@ int unimac_mdio_write(struct mii_bus *bus, int phy_id, int reg, u16 val) {
 }
 """
 
-SAMPLE_CODE_DUPLICATE_COMMENTS = """
-// Broadcom UniMAC MDIO bus controller driver
-/* Copyright Broadcom */
-int unimac_mdio_read(struct mii_bus *bus, int phy_id, int reg) {
-    u32 cmd = MDIO_RD | (phy_id << MDIO_PMD_SHIFT) | (reg << MDIO_REG_SHIFT);
-    unimac_mdio_writel(bus->priv, cmd, MDIO_CMD);
-    return cmd;
-}
+SAMPLE_CODE_DUPLICATE_COMMENTS = (
+    "// Broadcom UniMAC MDIO bus controller driver\n"
+    "/* Copyright Broadcom */\n"
+    + SAMPLE_VALID_CODE
+)
 
-int unimac_mdio_write(struct mii_bus *bus, int phy_id, int reg, u16 val) {
-    u32 cmd = MDIO_WR | (phy_id << MDIO_PMD_SHIFT) | (reg << MDIO_REG_SHIFT) | val;
-    unimac_mdio_writel(bus->priv, cmd, MDIO_CMD);
-    return 0;
-}
-"""
+
+def _init_test_loader(run_id: str, eval_path: str, src_path: str) -> CVESeedLoader:
+    """Initialize a deterministic CVESeedLoader instance for testing."""
+    replay_mgr = ReplayManager.from_config(run_id, 42, "artifacts/cassettes/test.json", "record")
+    return CVESeedLoader(eval_path, src_path, replay_mgr)
+
+
+def _write_csv_rows(file_obj, rows: list[str]) -> None:
+    """Write header and candidate code rows into a test CSV file."""
+    file_obj.write("code,language,safety\n")
+    for r in rows:
+        file_obj.write(f'"{r}",c,vulnerable\n')
+    file_obj.flush()
+
+
+def _generate_synthetic_candidates(count: int) -> list[str]:
+    """Generate n distinct C function snippets for stop rule validation."""
+    return [
+        f"int fn_{i}(int a) {{ int b_{i}[10]; return b_{i}[a]; /* ovfl */ }}\nint cl_{i}(int b) {{ return fn_{i}(b); }}"
+        for i in range(count)
+    ]
 
 
 def test_3tier_deduplication():
     with tempfile.NamedTemporaryFile("w", delete=False) as eval_f, \
          tempfile.NamedTemporaryFile("w", delete=False) as src_f:
-        eval_f.write("code,language,safety\n")
-        eval_f.flush()
-        src_f.write("code,language,safety\n")
-        src_f.flush()
-        
-        replay_mgr = ReplayManager.from_config("test-dedup", 42, "artifacts/cassettes/test.json", "record")
-        loader = CVESeedLoader(eval_f.name, src_f.name, replay_mgr)
+        _write_csv_rows(eval_f, [])
+        _write_csv_rows(src_f, [])
+        loader = _init_test_loader("test-dedup", eval_f.name, src_f.name)
         
         # 1. Register base snippet
         assert not loader.is_duplicate(SAMPLE_VALID_CODE)
@@ -93,8 +100,7 @@ def test_untrusted_predicate_quality_gate():
 def test_anchor_extraction_and_generic_filtering():
     with tempfile.NamedTemporaryFile("w", delete=False) as eval_f, \
          tempfile.NamedTemporaryFile("w", delete=False) as src_f:
-        replay_mgr = ReplayManager.from_config("test-anchors", 42, "artifacts/cassettes/test.json", "record")
-        loader = CVESeedLoader(eval_f.name, src_f.name, replay_mgr)
+        loader = _init_test_loader("test-anchors", eval_f.name, src_f.name)
 
         # Generic anchors must be detected
         assert _is_generic_anchor("missing bounds check")
@@ -133,8 +139,7 @@ def test_existing_seeds_prefix_and_dedup_loading():
         exist_f.write(json.dumps(seed_record) + "\n")
         exist_f.flush()
 
-        replay_mgr = ReplayManager.from_config("test-existing", 42, "artifacts/cassettes/test.json", "record")
-        loader = CVESeedLoader(eval_f.name, src_f.name, replay_mgr)
+        loader = _init_test_loader("test-existing", eval_f.name, src_f.name)
         loaded = loader.load_existing_seeds(exist_f.name)
         
         assert len(loaded) == 1
@@ -162,21 +167,13 @@ async def test_expand_seeds_stop_rules_and_telemetry():
         exist_f.write(json.dumps(seed_record) + "\n")
         exist_f.flush()
 
-        # Write source CSV with multiple candidates
-        src_f.write("code,language,safety\n")
         code_cand_1 = "int foo(int x) { int arr[10]; return arr[x]; /* buffer overflow */ }\nint bar(int y) { return foo(y); }"
         code_cand_2 = "int baz(int a) { int buffer[5]; return buffer[a]; /* out-of-bounds read */ }\nint qux(int b) { return baz(b); }"
-        src_f.write(f'"{code_cand_1}",c,vulnerable\n')
-        src_f.write(f'"{code_cand_2}",c,vulnerable\n')
-        src_f.flush()
+        _write_csv_rows(src_f, [code_cand_1, code_cand_2])
+        _write_csv_rows(eval_f, [])
 
-        eval_f.write("code,language,safety\n")
-        eval_f.flush()
+        loader = _init_test_loader("test-expand", eval_f.name, src_f.name)
 
-        replay_mgr = ReplayManager.from_config("test-expand", 42, "artifacts/cassettes/test.json", "record")
-        loader = CVESeedLoader(eval_f.name, src_f.name, replay_mgr)
-
-        # Mock gepa_explain_with_retry
         mock_gepa = {
             "predicate": "The code is vulnerable to a buffer overflow in foo when indexing arr.",
             "evidence_hooks": ["int arr[10]", "return arr[x]"],
@@ -194,14 +191,12 @@ async def test_expand_seeds_stop_rules_and_telemetry():
             )
 
         assert len(seeds) == 2
-        # Check output file has exactly 2 records
         with open(out_f.name, "r") as f:
             lines = [json.loads(line) for line in f if line.strip()]
         assert len(lines) == 2
         assert lines[0]["topic"] == SAMPLE_VALID_CODE
         assert lines[1]["topic"] == code_cand_1
 
-        # Check telemetry file
         with open(telem_f.name, "r") as f:
             telemetry = json.load(f)
         assert telemetry["target_total"] == 2
@@ -218,19 +213,10 @@ async def test_stop_rule_on_marginal_yield_decay():
          tempfile.NamedTemporaryFile("w", delete=False, suffix=".jsonl") as out_f, \
          tempfile.NamedTemporaryFile("w", delete=False, suffix=".json") as telem_f:
 
-        src_f.write("code,language,safety\n")
-        # Write 10 valid candidates
-        for i in range(10):
-            code_c = f"int func_{i}(int a) {{ int buf_{i}[10]; return buf_{i}[a]; /* buffer overflow */ }}\nint call_{i}(int b) {{ return func_{i}(b); }}"
-            src_f.write(f'"{code_c}",c,vulnerable\n')
-        src_f.flush()
-        eval_f.write("code,language,safety\n")
-        eval_f.flush()
+        _write_csv_rows(src_f, _generate_synthetic_candidates(10))
+        _write_csv_rows(eval_f, [])
+        loader = _init_test_loader("test-yield-decay", eval_f.name, src_f.name)
 
-        replay_mgr = ReplayManager.from_config("test-yield-decay", 42, "artifacts/cassettes/test.json", "record")
-        loader = CVESeedLoader(eval_f.name, src_f.name, replay_mgr)
-
-        # Mock GEPA returning poor quality / rejected predicates
         mock_bad_gepa = {
             "predicate": "Vulnerability suspected.",
             "evidence_hooks": [],
@@ -244,7 +230,6 @@ async def test_stop_rule_on_marginal_yield_decay():
                 window_size=3, # Will check after 3 consecutive failures
             )
 
-        # Should halt early on marginal yield drop
         assert len(seeds) == 0
         with open(telem_f.name, "r") as f:
             telemetry = json.load(f)
@@ -260,16 +245,9 @@ async def test_stop_rule_on_max_calls_budget():
          tempfile.NamedTemporaryFile("w", delete=False, suffix=".jsonl") as out_f, \
          tempfile.NamedTemporaryFile("w", delete=False, suffix=".json") as telem_f:
 
-        src_f.write("code,language,safety\n")
-        for i in range(10):
-            code_c = f"int func_{i}(int a) {{ int buf_{i}[10]; return buf_{i}[a]; /* buffer overflow */ }}\nint call_{i}(int b) {{ return func_{i}(b); }}"
-            src_f.write(f'"{code_c}",c,vulnerable\n')
-        src_f.flush()
-        eval_f.write("code,language,safety\n")
-        eval_f.flush()
-
-        replay_mgr = ReplayManager.from_config("test-max-calls", 42, "artifacts/cassettes/test.json", "record")
-        loader = CVESeedLoader(eval_f.name, src_f.name, replay_mgr)
+        _write_csv_rows(src_f, _generate_synthetic_candidates(10))
+        _write_csv_rows(eval_f, [])
+        loader = _init_test_loader("test-max-calls", eval_f.name, src_f.name)
 
         mock_gepa = {
             "predicate": "The code is vulnerable to a buffer overflow in func_0 when indexing buf_0.",
@@ -295,15 +273,12 @@ async def test_legacy_get_seeds_compatibility():
     with tempfile.NamedTemporaryFile("w", delete=False, suffix=".csv") as src_f, \
          tempfile.NamedTemporaryFile("w", delete=False, suffix=".csv") as eval_f:
 
-        src_f.write("code,language,safety\n")
         code_c = "int test_func(int a) { return a * 2; /* safe computation */ }\nint test_call(int b) { return test_func(b); }"
-        src_f.write(f'"{code_c}",c,safe\n')
+        src_f.write(f"code,language,safety\n\"{code_c}\",c,safe\n")
         src_f.flush()
-        eval_f.write("code,language,safety\n")
-        eval_f.flush()
+        _write_csv_rows(eval_f, [])
 
-        replay_mgr = ReplayManager.from_config("test-legacy", 42, "artifacts/cassettes/test.json", "record")
-        loader = CVESeedLoader(eval_f.name, src_f.name, replay_mgr)
+        loader = _init_test_loader("test-legacy", eval_f.name, src_f.name)
 
         mock_gepa = {
             "predicate": "The function test_func is verified safe.",
@@ -316,3 +291,4 @@ async def test_legacy_get_seeds_compatibility():
         assert seeds[0]["topic"] == code_c
         assert seeds[0]["predicate"] == "The function test_func is verified safe."
         assert seeds[0]["original_safety"] == "safe"
+
