@@ -8,9 +8,10 @@ import logging
 import argparse
 from collections import deque, defaultdict
 from dataclasses import dataclass
-from typing import Set, List, Dict, Optional, Tuple, Any
+from typing import Set, List, Dict, Optional, Tuple, Any, Iterator
 from pathlib import Path
 import sys
+from pydantic import BaseModel
 
 # Ensure project root and debate directory are in sys.path
 project_root = str(Path(__file__).resolve().parent.parent.parent)
@@ -23,6 +24,7 @@ if os.getcwd() not in sys.path:
     sys.path.insert(0, os.getcwd())
 
 from agentbeats.replay import ReplayManager
+from agentbeats.structured_output import call_structured
 from adk_debate_judge import _predicate_quality  # type: ignore
 from offline_b_gate import _is_generic_anchor  # type: ignore
 
@@ -37,6 +39,15 @@ STOPWORDS: Set[str] = {
 }
 
 FALLBACK_PREDICATE: str = "Vulnerability suspected."
+DEFAULT_EXPANSION_BATCH_SIZE: int = 200
+
+
+class GepaExplanation(BaseModel):
+    """Structured response schema for GEPA vulnerability analysis."""
+    predicate: str = FALLBACK_PREDICATE
+    evidence_hooks: List[str] = []
+    uncertainty: str = "Medium"
+    proof_requirements: str = ""
 
 
 def _matches_language(language: str, target_lang: str) -> bool:
@@ -56,29 +67,35 @@ def _extract_spans_from_text(text: str) -> List[str]:
     return code_spans
 
 
-def _strip_code_fence(text: str) -> str:
-    """Strip markdown code fence wrappers from JSON response without regex backtracking."""
-    s = text.strip()
-    if "```" not in s:
-        return s
-    first = s.find("```")
-    last = s.rfind("```")
-    if first != -1 and last != -1 and first < last:
-        inner = s[first + 3:last].strip()
-        if inner.lower().startswith("json"):
-            inner = inner[4:].strip()
-        return inner
-    return s.replace("```json", "").replace("```", "").strip()
-
-
-def _read_source_rows(csv_path: str) -> List[Dict[str, str]]:
-    """Synchronously read rows from source CSV file."""
+def _iter_source_rows(csv_path: str) -> Iterator[Dict[str, str]]:
+    """Lazily stream rows from a CSV file without materializing the whole file in memory."""
     import sys
     csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
     if not os.path.exists(csv_path):
-        return []
+        return
     with open(csv_path, 'r', encoding='utf-8', errors='ignore') as f:
-        return list(csv.DictReader(f))
+        reader = csv.DictReader(f)
+        for row in reader:
+            yield row
+
+
+def _get_matching_source_candidates(csv_path: str, target_lang: str) -> Iterator[Tuple[str, str, Any]]:
+    """Stream candidate tuples (code, language, safety) that match the target language."""
+    for row in _iter_source_rows(csv_path):
+        lang = (row.get("language") or "").strip().lower()
+        if not _matches_language(lang, target_lang):
+            continue
+        code = row.get("code", "")
+        if code:
+            yield (code, lang, row.get("safety"))
+
+
+def _append_jsonl(path: str, record: Dict[str, Any]) -> None:
+    """Synchronously append a JSON record line to file."""
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, 'a', encoding='utf-8') as f:
+        f.write(json.dumps(record) + "\n")
+        f.flush()
 
 
 @dataclass
@@ -93,15 +110,18 @@ class SeedExpansionConfig:
     max_tokens: int = 6000000
     target_lang: str = "c"
     telemetry_path: Optional[str] = None
+    attempts_path: Optional[str] = None
     purge_invalid_existing: bool = True
 
     @classmethod
     def from_args(
         cls,
-        config: Optional["SeedExpansionConfig"] = None,
+        config: Optional[Any] = None,
         **kwargs: Any
     ) -> "SeedExpansionConfig":
-        """Resolve config instance from either a config object or keyword arguments."""
+        """Resolve config instance from either a config object, int, or keyword arguments."""
+        if config is None:
+            return cls(**kwargs)
         if isinstance(config, SeedExpansionConfig):
             if kwargs:
                 data = {**config.__dict__, **kwargs}
@@ -109,7 +129,7 @@ class SeedExpansionConfig:
             return config
         if isinstance(config, int):
             return cls(target_total=config, **kwargs)
-        return cls(**kwargs)
+        raise TypeError(f"Unsupported config type: {type(config).__name__}")
 
 
 class SeedExpansionState:
@@ -120,6 +140,7 @@ class SeedExpansionState:
         existing_seeds: List[Dict],
         accepted_seeds: List[Dict],
         window_size: int = 50,
+        attempts_path: Optional[str] = None,
     ):
         self.existing_seeds = existing_seeds
         self.accepted_seeds = accepted_seeds
@@ -128,6 +149,7 @@ class SeedExpansionState:
         self.rejection_counts: Dict[str, int] = defaultdict(int)
         self.sliding_window: deque = deque(maxlen=window_size)
         self.attempts_log: List[Dict] = []
+        self.attempts_path = attempts_path
         self.stop_reason: str = "source_exhausted"
 
     def record_attempt(
@@ -138,28 +160,29 @@ class SeedExpansionState:
         reasons: List[str],
         anchors: List[str],
     ) -> None:
-        """Log metadata for a single explanation and validation attempt."""
-        self.attempts_log.append({
+        """Log metadata for a single explanation and validation attempt, persisting to JSONL if enabled."""
+        attempt_entry = {
             "attempt_idx": self.total_calls,
             "valid": is_valid,
             "reasons": reasons,
             "predicate": predicate,
             "anchors_count": len(anchors),
             "code_len": code_len,
-        })
+        }
+        self.attempts_log.append(attempt_entry)
+        if self.attempts_path:
+            _append_jsonl(self.attempts_path, attempt_entry)
 
-    def record_success(
+    async def record_success(
         self,
         seed_record: Dict[str, Any],
         output_path: str,
         target_total: int,
     ) -> None:
-        """Register an accepted seed, append to file, and update window stats."""
+        """Register an accepted seed, append asynchronously to file, and update window stats."""
         self.accepted_seeds.append(seed_record)
         self.sliding_window.append(1)
-        with open(output_path, 'a', encoding='utf-8') as out_f:
-            out_f.write(json.dumps(seed_record) + "\n")
-            out_f.flush()
+        await asyncio.to_thread(_append_jsonl, output_path, seed_record)
         logger.info(
             f"[Accepted {len(self.accepted_seeds)}/{target_total}] "
             f"Calls: {self.total_calls} | Tokens: ~{self.total_tokens_est}"
@@ -240,20 +263,24 @@ class CVESeedLoader:
         self.explain_timeout_s = float(os.getenv("GEPA_EXPLAIN_TIMEOUT_S", "120"))
         self.explain_retries = int(os.getenv("GEPA_EXPLAIN_RETRIES", "2"))
         self.max_concurrency = int(os.getenv("GEPA_EXPLAIN_CONCURRENCY", "5"))
+
+        # Separate stores: eval exclusion (exact & norm) vs candidate seeds (exact, norm, & fuzzy shingles)
+        self.eval_exact_hashes: Set[str] = set()
+        self.eval_norm_hashes: Set[str] = set()
         self.used_exact_hashes: Set[str] = set()
         self.used_norm_hashes: Set[str] = set()
         self.used_shingles: List[Set[str]] = []
 
     @staticmethod
     def _resolve_path(path: str) -> str:
-        """Resolve path relative to cwd or parent if not found."""
+        """Resolve path directly or relative to project_root if not found."""
         if not path:
             return path
         if os.path.exists(path):
             return path
-        parent_candidate = os.path.join("..", "..", path)
-        if os.path.exists(parent_candidate):
-            return parent_candidate
+        project_candidate = os.path.join(project_root, path)
+        if os.path.exists(project_candidate):
+            return project_candidate
         return path
 
     def _normalize_code(self, code: str) -> str:
@@ -274,7 +301,7 @@ class CVESeedLoader:
         return len(s1.intersection(s2)) / len(s1.union(s2))
 
     def register_code(self, code: str):
-        """Register a code snippet into exact, normalized, and fuzzy shingle dedup sets."""
+        """Register a candidate code snippet into exact, normalized, and fuzzy shingle dedup sets."""
         if not code:
             return
         self.used_exact_hashes.add(hashlib.sha256(code.encode()).hexdigest())
@@ -283,21 +310,22 @@ class CVESeedLoader:
         self.used_shingles.append(self._get_shingles(norm))
 
     def load_eval_exclusion_set(self):
+        """Load evaluation set hashes for exclusion without polluting fuzzy shingle index."""
         logger.info(f"Loading eval exclusion set from {self.eval_csv_path}...")
         if not os.path.exists(self.eval_csv_path):
             logger.warning(f"Eval CSV not found at {self.eval_csv_path}. Skipping exclusion.")
             return
 
-        import sys
-        csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
-        with open(self.eval_csv_path, 'r', encoding='utf-8', errors='ignore') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                code = row.get("code", "")
-                if not code:
-                    continue
-                self.register_code(code)
-        logger.info(f"Loaded {len(self.used_exact_hashes)} eval samples for exclusion.")
+        count = 0
+        for row in _iter_source_rows(self.eval_csv_path):
+            code = row.get("code", "")
+            if not code:
+                continue
+            self.eval_exact_hashes.add(hashlib.sha256(code.encode()).hexdigest())
+            norm = self._normalize_code(code)
+            self.eval_norm_hashes.add(hashlib.sha256(norm.encode()).hexdigest())
+            count += 1
+        logger.info(f"Loaded {count} eval samples for exclusion.")
 
     def _process_seed_line(
         self,
@@ -355,13 +383,14 @@ class CVESeedLoader:
         return records
 
     def is_duplicate(self, code: str) -> bool:
+        """Check if code is duplicate against evaluation benchmarks or already registered candidate seeds."""
         h1 = hashlib.sha256(code.encode()).hexdigest()
-        if h1 in self.used_exact_hashes:
+        if h1 in self.eval_exact_hashes or h1 in self.used_exact_hashes:
             return True
 
         norm = self._normalize_code(code)
         h2 = hashlib.sha256(norm.encode()).hexdigest()
-        if h2 in self.used_norm_hashes:
+        if h2 in self.eval_norm_hashes or h2 in self.used_norm_hashes:
             return True
 
         s = self._get_shingles(norm)
@@ -458,7 +487,8 @@ class CVESeedLoader:
         is_valid = len(reasons) == 0
         return is_valid, reasons, anchors
 
-    async def gepa_explain(self, code: str, language: str) -> Dict:
+    async def gepa_explain(self, code: str, language: str) -> Dict[str, Any]:
+        """Generate structured vulnerability analysis via call_structured."""
         system_prompt = """
 <role>You are a Senior Vulnerability Researcher (GEPA Explainer).</role>
 <task>Analyze the provided code snippet and generate a specific, falsifiable technical predicate about its security status.</task>
@@ -475,24 +505,33 @@ Return a JSON object:
         user_prompt = f"Language: {language}\n\nCode:\n{code}"
 
         try:
-            response = await self.replay_manager.acompletion(
+            explanation: GepaExplanation = await call_structured(
+                replay_manager=self.replay_manager,
                 model=self.explainer_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                response_format={"type": "json_object"},
+                schema_name="gepa_explanation",
+                schema_model=GepaExplanation,
+                stage="gepa_explanation",
             )
-            res_content = response.choices[0].message.content.strip()
-            if "```" in res_content:
-                res_content = _strip_code_fence(res_content)
-
-            return json.loads(res_content)
+            return explanation.model_dump()
         except Exception as e:
-            logger.error(f"GEPA Explainer failed: {e}")
-            return {"predicate": FALLBACK_PREDICATE, "evidence_hooks": []}
+            mode = getattr(getattr(self.replay_manager, "cassette", None), "mode", "record")
+            if mode == "replay":
+                logger.error(f"GEPA Explainer failed in replay mode: {e}")
+                raise
+            logger.warning(f"GEPA Explainer failed: {e}")
+            return {
+                "predicate": FALLBACK_PREDICATE,
+                "evidence_hooks": [],
+                "uncertainty": "High",
+                "proof_requirements": f"Error: {e}",
+            }
 
     async def gepa_explain_with_retry(self, code: str, language: str, item_idx: int, total: int) -> Dict:
+        """Retry wrapper for GEPA explanation with exponential backoff."""
         last_err: Optional[Exception] = None
         for attempt in range(1, self.explain_retries + 2):
             try:
@@ -503,6 +542,9 @@ Return a JSON object:
                 )
             except Exception as e:
                 last_err = e
+                mode = getattr(getattr(self.replay_manager, "cassette", None), "mode", "record")
+                if mode == "replay":
+                    raise
                 logger.warning(
                     f"[GEPA] item {item_idx}/{total} attempt {attempt} failed: {e}"
                 )
@@ -519,31 +561,25 @@ Return a JSON object:
         }
 
     def _sample_reservoir(self, n: int, target_lang: str) -> List[Tuple[str, str, Any]]:
-        """Collect n candidates via reservoir sampling from source CSV."""
+        """Collect n candidates via reservoir sampling using lazy CSV streaming."""
         reservoir: List[Tuple[str, str, Any]] = []
         count = 0
-        for row in _read_source_rows(self.source_csv_path):
-            lang = (row.get("language") or "").strip().lower()
-            if not _matches_language(lang, target_lang):
-                continue
-
-            code = row.get("code", "")
-            if not code or len(code) < 50 or self.is_duplicate(code):
+        dummy_rejections: Dict[str, int] = defaultdict(int)
+        for code, lang, safety in _get_matching_source_candidates(self.source_csv_path, target_lang):
+            if not self._is_valid_expansion_snippet(code, dummy_rejections):
                 continue
 
             count += 1
             if len(reservoir) < n:
-                reservoir.append((code, lang, row.get("safety")))
+                reservoir.append((code, lang, safety))
             else:
                 j = self.replay_manager.rng.randint(0, count - 1)
                 if j < n:
-                    reservoir[j] = (code, lang, row.get("safety"))
+                    reservoir[j] = (code, lang, safety)
         return reservoir
 
     async def get_seeds(self, n: int, target_lang: str = "c") -> List[Dict]:
         """Deterministic Reservoir Sampling from CSV (Legacy Compatibility Path)."""
-        import sys
-        csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
         logger.info(f"Scanning {self.source_csv_path} with Reservoir Sampling (n={n})...")
 
         reservoir = self._sample_reservoir(n, target_lang)
@@ -569,8 +605,12 @@ Return a JSON object:
         return await asyncio.gather(*tasks)
 
     def _is_valid_expansion_snippet(self, code: str, rejection_counts: Dict[str, int]) -> bool:
-        """Check snippet length limits and duplicate status."""
-        if not code or len(code) < 50 or len(code) > 12000:
+        """Check snippet length limits and duplicate status with full telemetry breakdown."""
+        if not code:
+            rejection_counts["empty_snippet"] += 1
+            return False
+        if len(code) < 50 or len(code) > 12000:
+            rejection_counts["snippet_length_out_of_range"] += 1
             return False
         if self.is_duplicate(code):
             rejection_counts["duplicate_snippet"] += 1
@@ -608,34 +648,43 @@ Return a JSON object:
                 "anchors": anchors,
             }
             self.register_code(code)
-            state.record_success(seed_record, config.output_path, config.target_total)
+            await state.record_success(seed_record, config.output_path, config.target_total)
         else:
             state.record_rejection(reasons)
+
+    async def _process_candidate_batch(
+        self,
+        batch: List[Tuple[str, str, Any]],
+        config: SeedExpansionConfig,
+        state: SeedExpansionState,
+    ) -> bool:
+        """Process a batch of candidates. Returns True if a stop rule was triggered."""
+        for code, lang, safety in batch:
+            if not self._is_valid_expansion_snippet(code, state.rejection_counts):
+                continue
+
+            await self._process_expansion_candidate(code, lang, safety, config, state)
+
+            stop_reason = state.evaluate_stop_rules(config)
+            if stop_reason:
+                state.stop_reason = stop_reason
+                return True
+        return False
 
     async def _run_expansion_loop(
         self,
         config: SeedExpansionConfig,
         state: SeedExpansionState,
     ) -> None:
-        """Stream candidates from source CSV and process until target is met or a stop rule triggers."""
+        """Stream candidates from source CSV lazily and process until target is met or stop rule triggers."""
         logger.info(f"Streaming candidates from {self.source_csv_path}...")
-        rows = await asyncio.to_thread(_read_source_rows, self.source_csv_path)
-        for row in rows:
-            lang = (row.get("language") or "").strip().lower()
-            if not _matches_language(lang, config.target_lang):
-                continue
-
-            code = row.get("code", "")
-            if not self._is_valid_expansion_snippet(code, state.rejection_counts):
-                continue
-
-            await self._process_expansion_candidate(
-                code, lang, row.get("safety"), config, state
-            )
-
-            stop_reason = state.evaluate_stop_rules(config)
-            if stop_reason:
-                state.stop_reason = stop_reason
+        candidate_iter = _get_matching_source_candidates(self.source_csv_path, config.target_lang)
+        while True:
+            batch = await asyncio.to_thread(_load_candidate_batch, candidate_iter, 50)
+            if not batch:
+                break
+            should_stop = await self._process_candidate_batch(batch, config, state)
+            if should_stop:
                 break
 
     def _init_expansion_seeds(
@@ -685,15 +734,35 @@ Return a JSON object:
             existing_seeds=existing_seeds,
             accepted_seeds=accepted_seeds,
             window_size=cfg.window_size,
+            attempts_path=cfg.attempts_path,
         )
-        await self._run_expansion_loop(cfg, state)
-        state.save_telemetry(cfg)
+        try:
+            await self._run_expansion_loop(cfg, state)
+        except Exception:
+            state.stop_reason = "expansion_error"
+            raise
+        finally:
+            state.save_telemetry(cfg)
 
         logger.info(
             f"Expansion finished. Final clean count: {len(state.accepted_seeds)} seeds. "
             f"Reason: {state.stop_reason}."
         )
         return state.accepted_seeds
+
+
+def _load_candidate_batch(
+    cand_iter: Iterator[Tuple[str, str, Any]],
+    batch_size: int = 50,
+) -> List[Tuple[str, str, Any]]:
+    """Fetch next chunk of candidates from iterator."""
+    batch: List[Tuple[str, str, Any]] = []
+    for _ in range(batch_size):
+        try:
+            batch.append(next(cand_iter))
+        except StopIteration:
+            break
+    return batch
 
 
 def _export_seeds_to_jsonl(output_path: str, seeds: List[Dict]) -> None:
@@ -725,6 +794,7 @@ async def main():
     parser.add_argument("--max-calls", type=int, default=1500, help="Maximum LLM API calls before halting")
     parser.add_argument("--max-tokens", type=int, default=6000000, help="Maximum token budget before halting")
     parser.add_argument("--telemetry-out", default="artifacts/telemetry/seed_expansion_summary.json", help="Path to write expansion telemetry JSON")
+    parser.add_argument("--attempts-out", default="artifacts/attempts/seed_expansion_attempts.jsonl", help="Path to write append-only attempts JSONL")
     parser.add_argument("--no-purge-invalid", dest="purge_invalid", action="store_false", default=True, help="Disable purging invalid baseline seeds")
     args = parser.parse_args()
 
@@ -738,7 +808,7 @@ async def main():
     loader.load_eval_exclusion_set()
 
     if args.existing_seeds or args.target_total > 0:
-        target_total = args.target_total if args.target_total > 0 else (200 + args.n)
+        target_total = args.target_total if args.target_total > 0 else (DEFAULT_EXPANSION_BATCH_SIZE + args.n)
         config = SeedExpansionConfig(
             target_total=target_total,
             existing_seeds_path=args.existing_seeds or None,
@@ -749,6 +819,7 @@ async def main():
             max_tokens=args.max_tokens,
             target_lang=args.lang,
             telemetry_path=args.telemetry_out,
+            attempts_path=args.attempts_out,
             purge_invalid_existing=args.purge_invalid,
         )
         await loader.expand_seeds(config)
@@ -759,4 +830,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
