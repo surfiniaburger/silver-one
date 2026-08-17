@@ -1,3 +1,4 @@
+import csv
 import json
 import pytest
 from unittest.mock import AsyncMock, patch
@@ -30,6 +31,20 @@ SAMPLE_CODE_DUPLICATE_COMMENTS = (
     + SAMPLE_VALID_CODE
 )
 
+SAMPLE_CODE_NEAR_DUPLICATE = """
+int unimac_mdio_read(struct mii_bus *bus, int phy_id, int reg) {
+    u32 cmd = MDIO_RD | (phy_id << MDIO_PMD_SHIFT) | (reg << MDIO_REG_SHIFT);
+    unimac_mdio_writel(bus->priv, cmd, MDIO_CMD);
+    return cmd;
+}
+
+int unimac_mdio_write(struct mii_bus *bus, int phy_id, int reg, u16 val) {
+    u32 cmd = MDIO_WR | (phy_id << MDIO_PMD_SHIFT) | (reg << MDIO_REG_SHIFT) | val;
+    unimac_mdio_writel(bus->priv, cmd, MDIO_CMD);
+    return 1;
+}
+"""
+
 
 def _init_test_loader(run_id: str, eval_path: str, src_path: str, mode: str = "record") -> CVESeedLoader:
     """Initialize a deterministic CVESeedLoader instance for testing."""
@@ -37,12 +52,13 @@ def _init_test_loader(run_id: str, eval_path: str, src_path: str, mode: str = "r
     return CVESeedLoader(eval_path, src_path, replay_mgr)
 
 
-def _write_csv_rows(file_path, rows: list[str]) -> None:
-    """Write header and candidate code rows into a test CSV file."""
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write("code,language,safety\n")
+def _write_csv_rows(file_path, rows: list[str], safety: str = "vulnerable") -> None:
+    """Write header and candidate code rows into a test CSV file using csv.writer."""
+    with open(file_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["code", "language", "safety"])
         for r in rows:
-            f.write(f'"{r}",c,vulnerable\n')
+            writer.writerow([r, "c", safety])
 
 
 def _generate_synthetic_candidates(count: int) -> list[str]:
@@ -70,7 +86,11 @@ def test_3tier_deduplication(tmp_path):
     # 3. Normalized match (comments & whitespace stripped)
     assert loader.is_duplicate(SAMPLE_CODE_DUPLICATE_COMMENTS)
     
-    # 4. Completely different code is NOT duplicate
+    # 4. Fuzzy shingle match (>0.85 Jaccard similarity, normalized code is distinct)
+    assert loader._normalize_code(SAMPLE_VALID_CODE) != loader._normalize_code(SAMPLE_CODE_NEAR_DUPLICATE)
+    assert loader.is_duplicate(SAMPLE_CODE_NEAR_DUPLICATE)
+
+    # 5. Completely different code is NOT duplicate
     diff_code = "int calculate_sum(int a, int b) { return a + b; }"
     assert not loader.is_duplicate(diff_code)
 
@@ -257,6 +277,45 @@ async def test_expand_seeds_stop_rules_and_telemetry(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_expand_seeds_noop_telemetry_saved(tmp_path):
+    eval_path = tmp_path / "eval.csv"
+    src_path = tmp_path / "src.csv"
+    exist_path = tmp_path / "exist.jsonl"
+    out_path = tmp_path / "out.jsonl"
+    telem_path = tmp_path / "telem.json"
+
+    _write_csv_rows(eval_path, [])
+    _write_csv_rows(src_path, [])
+
+    # Write 1 existing seed
+    seed_record = {
+        "topic": SAMPLE_VALID_CODE,
+        "predicate": "The driver is vulnerable to out-of-bounds MDIO register access in unimac_mdio_read.",
+        "gepa_info": {"evidence_hooks": ["unimac_mdio_read"]},
+        "language": "c",
+        "original_safety": "vulnerable",
+        "anchors": ["unimac_mdio_read", "unimac_mdio_writel"],
+    }
+    with open(exist_path, "w", encoding="utf-8") as f:
+        f.write(json.dumps(seed_record) + "\n")
+
+    loader = _init_test_loader("test-noop-expand", str(eval_path), str(src_path))
+    seeds = await loader.expand_seeds(
+        target_total=1, # Target already satisfied
+        existing_seeds_path=str(exist_path),
+        output_path=str(out_path),
+        telemetry_path=str(telem_path),
+    )
+
+    assert len(seeds) == 1
+    with open(telem_path, "r", encoding="utf-8") as f:
+        telemetry = json.load(f)
+    assert telemetry["stop_reason"] == "target_total_reached"
+    assert telemetry["final_accepted_count"] == 1
+    assert telemetry["new_accepted_count"] == 0
+
+
+@pytest.mark.asyncio
 async def test_stop_rule_on_marginal_yield_decay(tmp_path):
     src_path = tmp_path / "src.csv"
     eval_path = tmp_path / "eval.csv"
@@ -321,6 +380,37 @@ async def test_stop_rule_on_max_calls_budget(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_stop_rule_on_max_tokens_budget(tmp_path):
+    src_path = tmp_path / "src.csv"
+    eval_path = tmp_path / "eval.csv"
+    out_path = tmp_path / "out.jsonl"
+    telem_path = tmp_path / "telem.json"
+
+    _write_csv_rows(src_path, _generate_synthetic_candidates(10))
+    _write_csv_rows(eval_path, [])
+    loader = _init_test_loader("test-max-tokens", str(eval_path), str(src_path))
+
+    mock_gepa = {
+        "predicate": "The code is vulnerable to a buffer overflow in func_0 when indexing buf_0.",
+        "evidence_hooks": ["int buf_0[10]", "return buf_0[a]"],
+    }
+    with patch.object(loader, "gepa_explain_with_retry", new=AsyncMock(return_value=mock_gepa)):
+        seeds = await loader.expand_seeds(
+            target_total=10,
+            output_path=str(out_path),
+            telemetry_path=str(telem_path),
+            max_tokens=300, # Very low token budget
+            window_size=10,
+        )
+
+    with open(telem_path, "r", encoding="utf-8") as f:
+        telemetry = json.load(f)
+    assert telemetry["stop_reason"] == "max_tokens_budget_reached"
+    assert telemetry["total_tokens_est"] >= 300
+    assert len(seeds) == telemetry["final_accepted_count"]
+
+
+@pytest.mark.asyncio
 async def test_replay_mode_cache_miss_raises(tmp_path):
     eval_path = tmp_path / "eval.csv"
     src_path = tmp_path / "src.csv"
@@ -339,8 +429,7 @@ async def test_legacy_get_seeds_compatibility(tmp_path):
     eval_path = tmp_path / "eval.csv"
 
     code_c = "int test_func(int a) { return a * 2; /* safe computation */ }\nint test_call(int b) { return test_func(b); }"
-    with open(src_path, "w", encoding="utf-8") as f:
-        f.write(f"code,language,safety\n\"{code_c}\",c,safe\n")
+    _write_csv_rows(src_path, [code_c], safety="safe")
     _write_csv_rows(eval_path, [])
 
     loader = _init_test_loader("test-legacy", str(eval_path), str(src_path))

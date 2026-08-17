@@ -660,6 +660,11 @@ Return a JSON object:
     ) -> bool:
         """Process a batch of candidates. Returns True if a stop rule was triggered."""
         for code, lang, safety in batch:
+            stop_reason = state.evaluate_stop_rules(config)
+            if stop_reason:
+                state.stop_reason = stop_reason
+                return True
+
             if not self._is_valid_expansion_snippet(code, state.rejection_counts):
                 continue
 
@@ -726,16 +731,19 @@ Return a JSON object:
         cfg = SeedExpansionConfig.from_args(config, **kwargs)
         existing_seeds, accepted_seeds = self._init_expansion_seeds(cfg)
 
-        if len(accepted_seeds) >= cfg.target_total:
-            logger.info("Target total already reached with verified existing seeds.")
-            return accepted_seeds
-
         state = SeedExpansionState(
             existing_seeds=existing_seeds,
             accepted_seeds=accepted_seeds,
             window_size=cfg.window_size,
             attempts_path=cfg.attempts_path,
         )
+
+        if len(accepted_seeds) >= cfg.target_total:
+            logger.info("Target total already reached with verified existing seeds.")
+            state.stop_reason = "target_total_reached"
+            state.save_telemetry(cfg)
+            return accepted_seeds
+
         try:
             await self._run_expansion_loop(cfg, state)
         except Exception:
