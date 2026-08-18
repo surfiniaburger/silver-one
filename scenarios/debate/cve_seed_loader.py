@@ -520,9 +520,9 @@ Return a JSON object:
         except Exception as e:
             mode = getattr(getattr(self.replay_manager, "cassette", None), "mode", "record")
             if mode == "replay":
-                logger.error(f"GEPA Explainer failed in replay mode: {e}")
+                logger.exception("GEPA Explainer failed in replay mode: %s", e)
                 raise
-            logger.warning(f"GEPA Explainer failed: {e}")
+            logger.warning("GEPA Explainer failed: %s", e)
             return {
                 "predicate": FALLBACK_PREDICATE,
                 "evidence_hooks": [],
