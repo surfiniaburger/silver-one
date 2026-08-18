@@ -35,3 +35,32 @@ When we fine-tune a 7B model on this data, it doesn't just learn to guess "Vulne
 
 ### Goal 3: Teacher-Student Capacity Alignment
 By using a **Frontier Teacher** for the "Predicate Discovery" but a **Mid-Tier/Local Teacher** for the "Variant Generation," we ensure the student model learns patterns it can actually replicate without being overwhelmed by frontier-level abstraction.
+
+## 3. Seed Dataset Schema
+
+Each entry in the generated JSONL seed dataset conforms to the following schema:
+
+```json
+{
+  "topic": "int func(int a) { ... }",
+  "predicate": "The code is vulnerable to an out-of-bounds write in `func`...",
+  "gepa_info": {
+    "predicate": "The code is vulnerable to an out-of-bounds write in `func`...",
+    "evidence_hooks": ["`func`", "`arr[idx]`"],
+    "uncertainty": "Low",
+    "proof_requirements": "Provide idx >= size"
+  },
+  "language": "c",
+  "original_safety": "vulnerable",
+  "anchors": ["func", "arr[idx]"]
+}
+```
+
+### Schema Fields
+- **`topic`** (`str`): The verbatim source code snippet under investigation.
+- **`predicate`** (`str`): The primary falsifiable claim about the snippet's vulnerability or safety mechanism.
+- **`gepa_info`** (`dict`): Structured payload containing the model explanation, evidence hooks, uncertainty rating, and proof requirements.
+- **`language`** (`str`): Source programming language identifier (`c`, `cpp`, etc.).
+- **`original_safety`** (`str`): Ground-truth baseline label (`vulnerable` or `safe`).
+- **`anchors`** (`list[str]`): List of verified, non-generic identifier tokens and verbatim code spans used by the B-gate verifier to audit debate groundedness.
+
