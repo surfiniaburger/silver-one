@@ -98,13 +98,14 @@ def evaluate_viable_yield_routing(
     valid_accepts_baseline_c1: int,
     valid_accepts_per_1m_candidate: float,
     ppv_candidate: float,
-    has_logic_error: bool,
+    anti_gaming_valid: bool = True,
+    has_logic_error: bool = False,
     min_yield_fraction: float = 0.50,
     min_rate_threshold: float = 10.0,
 ) -> str:
-    """Determines whether candidate strategy is primary acceptance gate or routed to advisory triage lane."""
-    if has_logic_error:
-        return "REJECTED_LOGIC_ERROR"
+    """Determines whether candidate strategy is primary acceptance gate, routed to advisory triage lane, or rejected."""
+    if has_logic_error or not anti_gaming_valid:
+        return "REJECTED_ANTI_GAMING_INVARIANT"
     if is_viable_yield(
         valid_accepts_candidate=valid_accepts_candidate,
         valid_accepts_baseline_c1=valid_accepts_baseline_c1,
@@ -210,24 +211,24 @@ def test_verifier_contradiction_count():
 
 
 def test_viable_yield_routing_positive_and_zero_baseline():
-    """Verify precision gate vs acceptance lane routing with positive and zero baselines."""
+    """Verify precision gate vs acceptance lane routing with positive, zero, and invariant-failing baselines."""
     # Positive baseline: High yield (80 >= 50) and valid -> primary gate
     res = evaluate_viable_yield_routing(
         valid_accepts_candidate=80,
         valid_accepts_baseline_c1=100,
         valid_accepts_per_1m_candidate=80.0,
         ppv_candidate=0.85,
-        has_logic_error=False,
+        anti_gaming_valid=True,
     )
     assert res == "PRIMARY_ACCEPTANCE_GATE"
 
-    # Positive baseline: Low yield (30 < 50) but high precision -> secondary advisory triage lane
+    # Positive baseline: Low yield (30 < 50) but high precision and valid invariants -> secondary advisory triage lane
     res_triage = evaluate_viable_yield_routing(
         valid_accepts_candidate=30,
         valid_accepts_baseline_c1=100,
         valid_accepts_per_1m_candidate=30.0,
         ppv_candidate=0.85,
-        has_logic_error=False,
+        anti_gaming_valid=True,
     )
     assert res_triage == "SECONDARY_ADVISORY_TRIAGE_LANE"
 
@@ -237,7 +238,7 @@ def test_viable_yield_routing_positive_and_zero_baseline():
         valid_accepts_baseline_c1=100,
         valid_accepts_per_1m_candidate=30.0,
         ppv_candidate=0.60,
-        has_logic_error=False,
+        anti_gaming_valid=True,
     )
     assert res_rej == "REJECTED_LOW_PRECISION_AND_YIELD"
 
@@ -247,21 +248,31 @@ def test_viable_yield_routing_positive_and_zero_baseline():
         valid_accepts_baseline_c1=0,
         valid_accepts_per_1m_candidate=15.0,
         ppv_candidate=0.90,
-        has_logic_error=False,
+        anti_gaming_valid=True,
     )
     assert res_zero_base_pass == "PRIMARY_ACCEPTANCE_GATE"
 
-    # Zero baseline (C1 count == 0): Candidate rate < 10.0 but PPV >= 80% -> secondary triage
+    # Zero baseline (C1 count == 0): Candidate rate < 10.0 but PPV >= 80% and valid invariants -> secondary triage
     res_zero_base_triage = evaluate_viable_yield_routing(
         valid_accepts_candidate=5,
         valid_accepts_baseline_c1=0,
         valid_accepts_per_1m_candidate=5.0,
         ppv_candidate=0.85,
-        has_logic_error=False,
+        anti_gaming_valid=True,
     )
     assert res_zero_base_triage == "SECONDARY_ADVISORY_TRIAGE_LANE"
 
-    # Any logic error -> rejected immediately
+    # Invariant failure (e.g. anchor grounding or verifier parse fail) -> rejected immediately even with 100% precision
+    res_inv_fail = evaluate_viable_yield_routing(
+        valid_accepts_candidate=30,
+        valid_accepts_baseline_c1=100,
+        valid_accepts_per_1m_candidate=30.0,
+        ppv_candidate=1.0,
+        anti_gaming_valid=False,
+    )
+    assert res_inv_fail == "REJECTED_ANTI_GAMING_INVARIANT"
+
+    # Logic error -> rejected immediately
     res_err = evaluate_viable_yield_routing(
         valid_accepts_candidate=80,
         valid_accepts_baseline_c1=100,
@@ -269,7 +280,7 @@ def test_viable_yield_routing_positive_and_zero_baseline():
         ppv_candidate=0.95,
         has_logic_error=True,
     )
-    assert res_err == "REJECTED_LOGIC_ERROR"
+    assert res_err == "REJECTED_ANTI_GAMING_INVARIANT"
 
 
 def test_anti_gaming_invariants_zero_yield_gate():

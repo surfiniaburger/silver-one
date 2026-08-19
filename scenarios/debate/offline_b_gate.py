@@ -119,6 +119,7 @@ def _is_generic_anchor(anchor: str) -> bool:
 
 @dataclass
 class BGateThresholds:
+    min_accepted_rows: int = 1
     max_unsupported_in_accepted_rate: float = 0.05
     max_inconclusive_in_accepted_rate: float = 0.20
     min_anchor_match_rate: float = 0.80
@@ -602,6 +603,7 @@ def _evaluate_threshold_checks(
     }
 
     thresholds_dict = {
+        "min_accepted_rows": thresholds.min_accepted_rows,
         "max_unsupported_in_accepted_rate": thresholds.max_unsupported_in_accepted_rate,
         "max_inconclusive_in_accepted_rate": thresholds.max_inconclusive_in_accepted_rate,
         "min_anchor_match_rate": thresholds.min_anchor_match_rate,
@@ -766,6 +768,7 @@ def compute_b_metrics(
             min_anchor_match_rate=config.thresholds.min_anchor_match_rate,
             min_verifier_parse_ok_rate=config.thresholds.min_verifier_parse_ok_rate,
             max_accepted_logic_error_rate=config.thresholds.max_accepted_logic_error_rate,
+            min_accepted_rows=config.thresholds.min_accepted_rows,
         )
         metrics["anti_gaming_valid"] = is_anti_gaming_valid
         metrics["anti_gaming_violations"] = anti_gaming_violations
@@ -837,6 +840,7 @@ def main() -> int:
     p.add_argument("--require-anchor-match", action="store_true", default=True)
     p.add_argument("--no-require-anchor-match", action="store_true", default=False)
 
+    p.add_argument("--min-accepted-rows", type=int, default=1)
     p.add_argument("--max-unsupported-rate", type=float, default=0.05)
     p.add_argument("--max-inconclusive-rate", type=float, default=0.20)
     p.add_argument("--min-anchor-match-rate", type=float, default=0.80)
@@ -851,6 +855,7 @@ def main() -> int:
     require_anchor_match = args.require_anchor_match and not args.no_require_anchor_match
 
     thresholds = BGateThresholds(
+        min_accepted_rows=args.min_accepted_rows,
         max_unsupported_in_accepted_rate=args.max_unsupported_rate,
         max_inconclusive_in_accepted_rate=args.max_inconclusive_rate,
         min_anchor_match_rate=args.min_anchor_match_rate,
@@ -858,10 +863,10 @@ def main() -> int:
         min_verifier_parse_ok_rate=args.min_verifier_parse_ok_rate,
         max_accepted_logic_error_rate=args.max_accepted_logic_error_rate,
         max_cost_per_accepted_row=(
-            None if args.max_cost_per_accepted_row < 0 else args.max_cost_per_accepted_row
+            args.max_cost_per_accepted_row if args.max_cost_per_accepted_row >= 0.0 else None
         ),
         max_tokens_per_accepted_row=(
-            None if args.max_tokens_per_accepted_row < 0 else args.max_tokens_per_accepted_row
+            args.max_tokens_per_accepted_row if args.max_tokens_per_accepted_row >= 0.0 else None
         ),
     )
     config = BGateConfig(

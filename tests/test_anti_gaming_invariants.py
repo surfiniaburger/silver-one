@@ -72,3 +72,23 @@ def test_anti_gaming_invariants_anchor_match_violation():
     assert is_valid is False
     assert len(violations) == 1
     assert "b2_anchor_match_rate (0.7500) < min (0.8000)" in violations[0]
+
+
+def test_anti_gaming_invariants_custom_min_accepted_rows():
+    """Verify non-default min_accepted_rows rejects metrics with fewer accepted rows."""
+    metrics = {
+        "accepted_rows": 3,
+        "accepted_corpus_logic_error_rate": 0.0,
+        "verifier_parse_ok_rate": 1.0,
+        "b2_anchor_match_rate": 1.0,
+    }
+    # Passes with default min_accepted_rows=1
+    is_valid_default, violations_default = check_anti_gaming_invariants(metrics, min_accepted_rows=1)
+    assert is_valid_default is True
+    assert len(violations_default) == 0
+
+    # Fails with custom min_accepted_rows=5
+    is_valid_custom, violations_custom = check_anti_gaming_invariants(metrics, min_accepted_rows=5)
+    assert is_valid_custom is False
+    assert len(violations_custom) == 1
+    assert "accepted_rows (3) < min (5) [zero-yield collapse]" in violations_custom[0]
