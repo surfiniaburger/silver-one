@@ -8,6 +8,7 @@ from scenarios.debate.offline_b_gate import check_anti_gaming_invariants
 def test_anti_gaming_invariants_pass():
     """Verify clean passing metrics produce True and no violations."""
     metrics = {
+        "accepted_rows": 10,
         "accepted_corpus_logic_error_rate": 0.0,
         "verifier_parse_ok_rate": 1.0,
         "b2_anchor_match_rate": 1.0,
@@ -17,9 +18,24 @@ def test_anti_gaming_invariants_pass():
     assert len(violations) == 0
 
 
+def test_anti_gaming_invariants_zero_yield_collapse_violation():
+    """Verify accepted_rows == 0 triggers anti-gaming violation even when rates pass."""
+    metrics = {
+        "accepted_rows": 0,
+        "accepted_corpus_logic_error_rate": 0.0,
+        "verifier_parse_ok_rate": 1.0,
+        "b2_anchor_match_rate": 1.0,
+    }
+    is_valid, violations = check_anti_gaming_invariants(metrics)
+    assert is_valid is False
+    assert len(violations) == 1
+    assert "accepted_rows (0) < min (1) [zero-yield collapse]" in violations[0]
+
+
 def test_anti_gaming_invariants_logic_error_violation():
     """Verify logic error rate > 0.0 triggers anti-gaming violation."""
     metrics = {
+        "accepted_rows": 10,
         "accepted_corpus_logic_error_rate": 0.05,
         "verifier_parse_ok_rate": 1.0,
         "b2_anchor_match_rate": 1.0,
@@ -33,6 +49,7 @@ def test_anti_gaming_invariants_logic_error_violation():
 def test_anti_gaming_invariants_parse_ok_violation():
     """Verify verifier_parse_ok_rate < 0.95 triggers anti-gaming violation."""
     metrics = {
+        "accepted_rows": 10,
         "accepted_corpus_logic_error_rate": 0.0,
         "verifier_parse_ok_rate": 0.90,
         "b2_anchor_match_rate": 1.0,
@@ -46,6 +63,7 @@ def test_anti_gaming_invariants_parse_ok_violation():
 def test_anti_gaming_invariants_anchor_match_violation():
     """Verify b2_anchor_match_rate < 0.80 triggers anti-gaming violation."""
     metrics = {
+        "accepted_rows": 10,
         "accepted_corpus_logic_error_rate": 0.0,
         "verifier_parse_ok_rate": 1.0,
         "b2_anchor_match_rate": 0.75,

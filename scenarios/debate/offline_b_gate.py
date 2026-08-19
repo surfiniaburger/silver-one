@@ -781,12 +781,23 @@ def check_anti_gaming_invariants(
     min_anchor_match_rate: float = 0.80,
     min_verifier_parse_ok_rate: float = 0.95,
     max_accepted_logic_error_rate: float = 0.0,
+    min_accepted_rows: int = 1,
 ) -> Tuple[bool, List[str]]:
     """
     Evaluates strict anti-gaming invariants against a B-gate metrics dictionary.
+    Rejects zero-yield collapses (accepted_rows < min_accepted_rows) and rate threshold violations.
     Returns (is_valid, list_of_violation_reasons).
     """
     violations = []
+
+    # Check for zero-yield collapse
+    accepted_rows = metrics.get("accepted_rows")
+    if accepted_rows is None:
+        accepted_rows = metrics.get("total_accepted_rows")
+    if accepted_rows is not None and accepted_rows < min_accepted_rows:
+        violations.append(
+            f"Anti-gaming violation: accepted_rows ({accepted_rows}) < min ({min_accepted_rows}) [zero-yield collapse]"
+        )
 
     logic_error_rate = metrics.get("accepted_corpus_logic_error_rate")
     if logic_error_rate is None:

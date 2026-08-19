@@ -76,17 +76,42 @@ def compute_verifier_contradiction_count(
     )
 
 
+def is_viable_yield(
+    valid_accepts_candidate: int,
+    valid_accepts_baseline_c1: int,
+    valid_accepts_per_1m_candidate: float,
+    min_yield_fraction: float = 0.50,
+    min_rate_threshold: float = 10.0,
+) -> bool:
+    """
+    Non-vacuous viable yield predicate:
+    - If C1 baseline count is positive (> 0), requires candidate count >= min_yield_fraction * C1 count.
+    - If C1 baseline count is zero (0), requires candidate valid_accepts_per_1m_tokens >= min_rate_threshold.
+    """
+    if valid_accepts_baseline_c1 > 0:
+        return valid_accepts_candidate >= (valid_accepts_baseline_c1 * min_yield_fraction)
+    return valid_accepts_per_1m_candidate >= min_rate_threshold
+
+
 def evaluate_viable_yield_routing(
     valid_accepts_candidate: int,
-    valid_accepts_baseline: int,
+    valid_accepts_baseline_c1: int,
+    valid_accepts_per_1m_candidate: float,
     ppv_candidate: float,
     has_logic_error: bool,
     min_yield_fraction: float = 0.50,
+    min_rate_threshold: float = 10.0,
 ) -> str:
     """Determines whether candidate strategy is primary acceptance gate or routed to advisory triage lane."""
     if has_logic_error:
         return "REJECTED_LOGIC_ERROR"
-    if valid_accepts_candidate >= (valid_accepts_baseline * min_yield_fraction):
+    if is_viable_yield(
+        valid_accepts_candidate=valid_accepts_candidate,
+        valid_accepts_baseline_c1=valid_accepts_baseline_c1,
+        valid_accepts_per_1m_candidate=valid_accepts_per_1m_candidate,
+        min_yield_fraction=min_yield_fraction,
+        min_rate_threshold=min_rate_threshold,
+    ):
         return "PRIMARY_ACCEPTANCE_GATE"
     if ppv_candidate >= 0.80:
         return "SECONDARY_ADVISORY_TRIAGE_LANE"
@@ -184,40 +209,110 @@ def test_verifier_contradiction_count():
     assert count_zero == 0
 
 
-def test_viable_yield_routing():
-    """Verify precision gate vs acceptance lane routing decisions."""
-    # High yield and valid -> primary gate
-    res = evaluate_viable_yield_routing(valid_accepts_candidate=80, valid_accepts_baseline=100, ppv_candidate=0.85, has_logic_error=False)
+def test_viable_yield_routing_positive_and_zero_baseline():
+    """Verify precision gate vs acceptance lane routing with positive and zero baselines."""
+    # Positive baseline: High yield (80 >= 50) and valid -> primary gate
+    res = evaluate_viable_yield_routing(
+        valid_accepts_candidate=80,
+        valid_accepts_baseline_c1=100,
+        valid_accepts_per_1m_candidate=80.0,
+        ppv_candidate=0.85,
+        has_logic_error=False,
+    )
     assert res == "PRIMARY_ACCEPTANCE_GATE"
 
-    # Low yield (< 50%) but high precision -> secondary advisory triage lane
-    res_triage = evaluate_viable_yield_routing(valid_accepts_candidate=30, valid_accepts_baseline=100, ppv_candidate=0.85, has_logic_error=False)
+    # Positive baseline: Low yield (30 < 50) but high precision -> secondary advisory triage lane
+    res_triage = evaluate_viable_yield_routing(
+        valid_accepts_candidate=30,
+        valid_accepts_baseline_c1=100,
+        valid_accepts_per_1m_candidate=30.0,
+        ppv_candidate=0.85,
+        has_logic_error=False,
+    )
     assert res_triage == "SECONDARY_ADVISORY_TRIAGE_LANE"
 
-    # Low yield (< 50%) and low precision (< 80%) -> rejected
-    res_rej = evaluate_viable_yield_routing(valid_accepts_candidate=30, valid_accepts_baseline=100, ppv_candidate=0.60, has_logic_error=False)
+    # Positive baseline: Low yield (< 50%) and low precision (< 80%) -> rejected
+    res_rej = evaluate_viable_yield_routing(
+        valid_accepts_candidate=30,
+        valid_accepts_baseline_c1=100,
+        valid_accepts_per_1m_candidate=30.0,
+        ppv_candidate=0.60,
+        has_logic_error=False,
+    )
     assert res_rej == "REJECTED_LOW_PRECISION_AND_YIELD"
 
+    # Zero baseline (C1 count == 0): Candidate rate >= 10.0 -> primary gate
+    res_zero_base_pass = evaluate_viable_yield_routing(
+        valid_accepts_candidate=15,
+        valid_accepts_baseline_c1=0,
+        valid_accepts_per_1m_candidate=15.0,
+        ppv_candidate=0.90,
+        has_logic_error=False,
+    )
+    assert res_zero_base_pass == "PRIMARY_ACCEPTANCE_GATE"
+
+    # Zero baseline (C1 count == 0): Candidate rate < 10.0 but PPV >= 80% -> secondary triage
+    res_zero_base_triage = evaluate_viable_yield_routing(
+        valid_accepts_candidate=5,
+        valid_accepts_baseline_c1=0,
+        valid_accepts_per_1m_candidate=5.0,
+        ppv_candidate=0.85,
+        has_logic_error=False,
+    )
+    assert res_zero_base_triage == "SECONDARY_ADVISORY_TRIAGE_LANE"
+
     # Any logic error -> rejected immediately
-    res_err = evaluate_viable_yield_routing(valid_accepts_candidate=80, valid_accepts_baseline=100, ppv_candidate=0.95, has_logic_error=True)
+    res_err = evaluate_viable_yield_routing(
+        valid_accepts_candidate=80,
+        valid_accepts_baseline_c1=100,
+        valid_accepts_per_1m_candidate=80.0,
+        ppv_candidate=0.95,
+        has_logic_error=True,
+    )
     assert res_err == "REJECTED_LOGIC_ERROR"
 
 
-def test_holm_step_down_8_metrics():
-    """Verify Holm step-down procedure over M=8 primary endpoint family."""
-    # 8 p-values
+def test_anti_gaming_invariants_zero_yield_gate():
+    """Verify check_anti_gaming_invariants rejects zero-row metrics."""
+    metrics_zero = {
+        "accepted_rows": 0,
+        "accepted_corpus_logic_error_rate": 0.0,
+        "verifier_parse_ok_rate": 1.0,
+        "b2_anchor_match_rate": 1.0,
+    }
+    is_valid, violations = check_anti_gaming_invariants(metrics_zero)
+    assert is_valid is False
+    assert len(violations) == 1
+    assert "accepted_rows (0) < min (1) [zero-yield collapse]" in violations[0]
+
+
+def test_holm_step_down_8_metrics_full_ranks_and_boundary():
+    """Verify Holm step-down procedure over M=8 primary endpoint family including equality boundary and stopping rule."""
+    # 8 p-values with rank 4 on equality boundary: p = 0.010 == 0.05 / 5
     p_vals = [0.001, 0.003, 0.005, 0.010, 0.015, 0.020, 0.030, 0.040]
     results = apply_holm_step_down(p_vals, alpha=0.05)
     assert len(results) == 8
 
     # Rank 1: p=0.001 < 0.05/8 (0.00625) -> True
+    assert results[0]["rank"] == 1
     assert results[0]["is_significant"] is True
     assert math.isclose(results[0]["alpha_k"], 0.05 / 8, abs_tol=1e-5)
 
     # Rank 2: p=0.003 < 0.05/7 (0.00714) -> True
+    assert results[1]["rank"] == 2
     assert results[1]["is_significant"] is True
     assert math.isclose(results[1]["alpha_k"], 0.05 / 7, abs_tol=1e-5)
 
     # Rank 3: p=0.005 < 0.05/6 (0.00833) -> True
+    assert results[2]["rank"] == 3
     assert results[2]["is_significant"] is True
     assert math.isclose(results[2]["alpha_k"], 0.05 / 6, abs_tol=1e-5)
+
+    # Rank 4: p=0.010 == 0.05/5 (0.01000) -> False (strict inequality p < alpha_k fails at boundary)
+    assert results[3]["rank"] == 4
+    assert math.isclose(results[3]["alpha_k"], 0.05 / 5, abs_tol=1e-5)
+    assert results[3]["is_significant"] is False
+
+    # Ranks 5-8: Stopped by step-down rule -> False
+    for r in range(4, 8):
+        assert results[r]["is_significant"] is False
