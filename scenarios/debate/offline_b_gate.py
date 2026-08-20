@@ -119,6 +119,7 @@ def _is_generic_anchor(anchor: str) -> bool:
 
 @dataclass
 class BGateThresholds:
+    min_accepted_rows: int = 1
     max_unsupported_in_accepted_rate: float = 0.05
     max_inconclusive_in_accepted_rate: float = 0.20
     min_anchor_match_rate: float = 0.80
@@ -127,6 +128,10 @@ class BGateThresholds:
     max_accepted_logic_error_rate: float = 0.0
     max_cost_per_accepted_row: Optional[float] = None
     max_tokens_per_accepted_row: Optional[float] = None
+
+    def __post_init__(self) -> None:
+        if self.min_accepted_rows < 1:
+            raise ValueError(f"min_accepted_rows must be >= 1, got {self.min_accepted_rows}")
 
 
 @dataclass
@@ -602,6 +607,7 @@ def _evaluate_threshold_checks(
     }
 
     thresholds_dict = {
+        "min_accepted_rows": thresholds.min_accepted_rows,
         "max_unsupported_in_accepted_rate": thresholds.max_unsupported_in_accepted_rate,
         "max_inconclusive_in_accepted_rate": thresholds.max_inconclusive_in_accepted_rate,
         "min_anchor_match_rate": thresholds.min_anchor_match_rate,
@@ -766,6 +772,7 @@ def compute_b_metrics(
             min_anchor_match_rate=config.thresholds.min_anchor_match_rate,
             min_verifier_parse_ok_rate=config.thresholds.min_verifier_parse_ok_rate,
             max_accepted_logic_error_rate=config.thresholds.max_accepted_logic_error_rate,
+            min_accepted_rows=config.thresholds.min_accepted_rows,
         )
         metrics["anti_gaming_valid"] = is_anti_gaming_valid
         metrics["anti_gaming_violations"] = anti_gaming_violations
@@ -781,12 +788,26 @@ def check_anti_gaming_invariants(
     min_anchor_match_rate: float = 0.80,
     min_verifier_parse_ok_rate: float = 0.95,
     max_accepted_logic_error_rate: float = 0.0,
+    min_accepted_rows: int = 1,
 ) -> Tuple[bool, List[str]]:
     """
     Evaluates strict anti-gaming invariants against a B-gate metrics dictionary.
+    Rejects zero-yield collapses (accepted_rows < min_accepted_rows) and rate threshold violations.
     Returns (is_valid, list_of_violation_reasons).
     """
+    if min_accepted_rows < 1:
+        raise ValueError(f"min_accepted_rows must be >= 1, got {min_accepted_rows}")
+
     violations = []
+
+    # Check for zero-yield collapse
+    accepted_rows = metrics.get("accepted_rows")
+    if accepted_rows is None:
+        accepted_rows = metrics.get("total_accepted_rows")
+    if accepted_rows is not None and accepted_rows < min_accepted_rows:
+        violations.append(
+            f"Anti-gaming violation: accepted_rows ({accepted_rows}) < min ({min_accepted_rows}) [zero-yield collapse]"
+        )
 
     logic_error_rate = metrics.get("accepted_corpus_logic_error_rate")
     if logic_error_rate is None:
@@ -826,6 +847,7 @@ def main() -> int:
     p.add_argument("--require-anchor-match", action="store_true", default=True)
     p.add_argument("--no-require-anchor-match", action="store_true", default=False)
 
+    p.add_argument("--min-accepted-rows", type=int, default=1)
     p.add_argument("--max-unsupported-rate", type=float, default=0.05)
     p.add_argument("--max-inconclusive-rate", type=float, default=0.20)
     p.add_argument("--min-anchor-match-rate", type=float, default=0.80)
@@ -836,10 +858,14 @@ def main() -> int:
     p.add_argument("--max-tokens-per-accepted-row", type=float, default=-1.0)
     args = p.parse_args()
 
+    if args.min_accepted_rows < 1:
+        p.error(f"--min-accepted-rows must be >= 1, got {args.min_accepted_rows}")
+
     case_insensitive = args.case_insensitive_anchor_match and not args.case_sensitive_anchor_match
     require_anchor_match = args.require_anchor_match and not args.no_require_anchor_match
 
     thresholds = BGateThresholds(
+        min_accepted_rows=args.min_accepted_rows,
         max_unsupported_in_accepted_rate=args.max_unsupported_rate,
         max_inconclusive_in_accepted_rate=args.max_inconclusive_rate,
         min_anchor_match_rate=args.min_anchor_match_rate,
@@ -847,10 +873,10 @@ def main() -> int:
         min_verifier_parse_ok_rate=args.min_verifier_parse_ok_rate,
         max_accepted_logic_error_rate=args.max_accepted_logic_error_rate,
         max_cost_per_accepted_row=(
-            None if args.max_cost_per_accepted_row < 0 else args.max_cost_per_accepted_row
+            args.max_cost_per_accepted_row if args.max_cost_per_accepted_row >= 0.0 else None
         ),
         max_tokens_per_accepted_row=(
-            None if args.max_tokens_per_accepted_row < 0 else args.max_tokens_per_accepted_row
+            args.max_tokens_per_accepted_row if args.max_tokens_per_accepted_row >= 0.0 else None
         ),
     )
     config = BGateConfig(
