@@ -129,6 +129,10 @@ class BGateThresholds:
     max_cost_per_accepted_row: Optional[float] = None
     max_tokens_per_accepted_row: Optional[float] = None
 
+    def __post_init__(self) -> None:
+        if self.min_accepted_rows < 1:
+            raise ValueError(f"min_accepted_rows must be >= 1, got {self.min_accepted_rows}")
+
 
 @dataclass
 class BGateConfig:
@@ -791,6 +795,9 @@ def check_anti_gaming_invariants(
     Rejects zero-yield collapses (accepted_rows < min_accepted_rows) and rate threshold violations.
     Returns (is_valid, list_of_violation_reasons).
     """
+    if min_accepted_rows < 1:
+        raise ValueError(f"min_accepted_rows must be >= 1, got {min_accepted_rows}")
+
     violations = []
 
     # Check for zero-yield collapse
@@ -850,6 +857,9 @@ def main() -> int:
     p.add_argument("--max-cost-per-accepted-row", type=float, default=-1.0)
     p.add_argument("--max-tokens-per-accepted-row", type=float, default=-1.0)
     args = p.parse_args()
+
+    if args.min_accepted_rows < 1:
+        p.error(f"--min-accepted-rows must be >= 1, got {args.min_accepted_rows}")
 
     case_insensitive = args.case_insensitive_anchor_match and not args.case_sensitive_anchor_match
     require_anchor_match = args.require_anchor_match and not args.no_require_anchor_match

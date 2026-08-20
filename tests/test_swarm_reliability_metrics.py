@@ -327,3 +327,59 @@ def test_holm_step_down_8_metrics_full_ranks_and_boundary():
     # Ranks 5-8: Stopped by step-down rule -> False
     for r in range(4, 8):
         assert results[r]["is_significant"] is False
+
+
+def test_confirmatory_margin_deltas_and_5_endpoint_holm():
+    """Verify endpoint margin delta computations and Holm step-down over M=5 confirmatory family."""
+    # 1. Token efficiency margin delta: RelImp - 0.25
+    baseline_tok = 100_000.0
+    cand_tok = 70_000.0  # 30% improvement
+    rel_imp = compute_relative_token_improvement(baseline_tok, cand_tok)
+    assert rel_imp is not None
+    margin_delta_tok = rel_imp - 0.25
+    assert math.isclose(margin_delta_tok, 0.05, abs_tol=1e-5)  # 5% above 25% floor
+
+    # 2. Duplicate suppression margin delta: 0.20 - dup_rate
+    dup_rate = 0.12
+    margin_delta_dup = 0.20 - dup_rate
+    assert math.isclose(margin_delta_dup, 0.08, abs_tol=1e-5)  # 8% below 20% ceiling
+
+    # 3. Holdout ROC-AUC margin delta: ROC_AUC - 0.7000
+    roc_auc = 0.7850
+    margin_delta_roc = roc_auc - 0.7000
+    assert math.isclose(margin_delta_roc, 0.0850, abs_tol=1e-5)
+
+    # 4. Holdout PR-AUC margin delta: PR_AUC - 0.6000
+    pr_auc = 0.6650
+    margin_delta_pr = pr_auc - 0.6000
+    assert math.isclose(margin_delta_pr, 0.0650, abs_tol=1e-5)
+
+    # 5. Holm step-down across M=5 confirmatory margin endpoints
+    p_vals_5 = [0.002, 0.008, 0.012, 0.024, 0.048]
+    results_5 = apply_holm_step_down(p_vals_5, alpha=0.05)
+    assert len(results_5) == 5
+
+    # Rank 1: p=0.002 < 0.05/5 (0.010) -> True
+    assert results_5[0]["rank"] == 1
+    assert results_5[0]["is_significant"] is True
+    assert math.isclose(results_5[0]["alpha_k"], 0.05 / 5, abs_tol=1e-5)
+
+    # Rank 2: p=0.008 < 0.05/4 (0.0125) -> True
+    assert results_5[1]["rank"] == 2
+    assert results_5[1]["is_significant"] is True
+    assert math.isclose(results_5[1]["alpha_k"], 0.05 / 4, abs_tol=1e-5)
+
+    # Rank 3: p=0.012 < 0.05/3 (0.01667) -> True
+    assert results_5[2]["rank"] == 3
+    assert results_5[2]["is_significant"] is True
+    assert math.isclose(results_5[2]["alpha_k"], 0.05 / 3, abs_tol=1e-5)
+
+    # Rank 4: p=0.024 < 0.05/2 (0.025) -> True
+    assert results_5[3]["rank"] == 4
+    assert results_5[3]["is_significant"] is True
+    assert math.isclose(results_5[3]["alpha_k"], 0.05 / 2, abs_tol=1e-5)
+
+    # Rank 5: p=0.048 < 0.05/1 (0.050) -> True
+    assert results_5[4]["rank"] == 5
+    assert results_5[4]["is_significant"] is True
+    assert math.isclose(results_5[4]["alpha_k"], 0.05 / 1, abs_tol=1e-5)

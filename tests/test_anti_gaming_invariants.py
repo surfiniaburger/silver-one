@@ -92,3 +92,22 @@ def test_anti_gaming_invariants_custom_min_accepted_rows():
     assert is_valid_custom is False
     assert len(violations_custom) == 1
     assert "accepted_rows (3) < min (5) [zero-yield collapse]" in violations_custom[0]
+
+
+def test_anti_gaming_invariants_invalid_min_accepted_rows_raises():
+    """Verify zero or negative min_accepted_rows raises ValueError."""
+    import pytest
+    from scenarios.debate.offline_b_gate import BGateThresholds
+
+    metrics = {"accepted_rows": 5}
+    with pytest.raises(ValueError, match="min_accepted_rows must be >= 1"):
+        check_anti_gaming_invariants(metrics, min_accepted_rows=0)
+
+    with pytest.raises(ValueError, match="min_accepted_rows must be >= 1"):
+        check_anti_gaming_invariants(metrics, min_accepted_rows=-2)
+
+    with pytest.raises(ValueError, match="min_accepted_rows must be >= 1"):
+        BGateThresholds(min_accepted_rows=0)
+
+    with pytest.raises(ValueError, match="min_accepted_rows must be >= 1"):
+        BGateThresholds(min_accepted_rows=-1)
