@@ -5,9 +5,10 @@
 - **Status:** Draft / Proposed Specification
 - **Target Implementation:**
   - `scenarios/debate/reflector_agent.py` (A2A Reflector Service on Port `8004`)
-  - `scenarios/debate/graph_extractor.py` (Tree-sitter AST & Graphify Flow Extractor)
+  - `scenarios/debate/graphify_flow_extractor.py` (Tree-sitter AST & Graphify Flow Extractor)
   - `scenarios/debate/graph_dataflow.py` (Stage B Graph Reachability & Proof Evaluator)
   - `scenarios/debate/run_batch.py` (Debate Harness Integration & Feedback Hook)
+  - `scripts/evaluate_graphify_cv.py` (5-Fold Stratified Scenario-Grouped CV Benchmark)
   - `artifacts/gepa/` (Concurrency-Safe Pareto Frontier & Mutation History)
 - **Primary References:**
   - [MULTIAGENT_VULNERABILITY_SWARM_HYPOTHESES.md](MULTIAGENT_VULNERABILITY_SWARM_HYPOTHESES.md) (Swarm Hypotheses, 4 Anti-Gaming Invariants, Diagnostic Buckets)
@@ -30,8 +31,8 @@ The [GEPA Proposal](GEPA_PROPOSAL_BARRED_OPTIMIZATION.md) (based on Agrawal et a
 
 ### 1.2 The Graph-Powered GEPA Solution
 This specification establishes a **Graph-Powered GEPA Reflector**:
-- **Graphify Multi-Language Tree-sitter Extraction:** Replaces narrow regex parsing with robust Tree-sitter grammar AST extraction, elevating parser coverage from **$14.8\%$ to $>90\%$**.
-- **Structured Topological Feedback ($\mu_f^{\text{graph}}$):** Replaces ambiguous text with deterministic graph diagnostic signatures: `(failure_bucket, source_id, sink_id, sink_type, missing_proof, target_var, anchor_line)`.
+- **Graphify Multi-Language Tree-sitter Extraction:** Replaces narrow regex parsing with robust Tree-sitter grammar AST extraction, elevating parser coverage from **$14.8\%$ to $>90\%$** without failing closed on partial snippets.
+- **Structured Topological Feedback ($\mu_f^{\text{graph}}$):** Replaces ambiguous text with deterministic graph diagnostic signatures: `(failure_bucket, source_id, sink_id, sink_type, required_sanitizer, found_sanitizer, target_var, failed_anchor_lines)`.
 - **Deterministic Work Memory Reflection:** Integrates Graphify's `reflect.py` time-decay scoring model to maintain a ledger of preferred vs. dead-end arguments grouped by vulnerability community.
 - **Topology-Indexed Pareto Registry:** Indexes Pareto prompt variants by **Canonical Vulnerability Key $(S, P, K)$** across four vulnerability taxonomies, ensuring optimal specialist prompts are dispatched per vulnerability class.
 
@@ -53,7 +54,7 @@ This specification establishes a **Graph-Powered GEPA Reflector**:
  │                                                                                  │
  │  • Extracts FlowGraphSnapshot (Source ──► Transform ──► Sanitizer ──► Sink)      │
  │  • Evaluates evaluate_graph_reachability() deterministically                     │
- │  • Classifies Graph Failure Bucket (missing_sanitizer, missing_source, etc.)     │
+ │  • Classifies Graph Failure Bucket by strict priority ranking                    │
  │  • Verifies strict anchor lines (b2_anchor_match, b2_strict_fail)                │
  └────────────────────────────────────────┬─────────────────────────────────────────┘
                                           │
@@ -71,7 +72,7 @@ This specification establishes a **Graph-Powered GEPA Reflector**:
  │       (e.g., "Anchor BOUNDS_CHECK on variable 'len' before sink 'memcpy'")       │
  │                                                                                  │
  │  3. Concurrency-Safe Pareto Frontier Update:                                     │
- │     - Atomically updates artifacts/gepa/pareto_frontier.json (fcntl.flock)       │
+ │     - Atomically updates artifacts/gepa/pareto_frontier.json (.lock companion)   │
  │     - Appends trace to artifacts/gepa/mutations.jsonl                            │
  └────────────────────────────────────────┬─────────────────────────────────────────┘
                                           │
@@ -86,32 +87,36 @@ This specification establishes a **Graph-Powered GEPA Reflector**:
 
 ## 3. Data Contracts & Structured Schemas
 
-### 3.1 Graph Failure Bucket Taxonomy
-Every candidate failure is classified into exactly one canonical diagnostic bucket:
+### 3.1 Graph Failure Bucket Taxonomy & Deterministic Precedence
+When a candidate attempt fails adjudication, it is classified into **exactly one** diagnostic bucket using the following strict, top-to-bottom precedence order:
 
-| Bucket ID | Diagnostic Condition | Reflector Prompt Action |
-| :--- | :--- | :--- |
-| `B_SANITIZER_MISMATCH` | Reachable sink exists, but sanitizer type does not match sink requirements (e.g. `NULL_CHECK` on `ARRAY_INDEX`). | Instruct Pro to generate `BOUNDS_CHECK` or `RANGE_VALIDATION` targeting `target_var`. |
-| `B_SANITIZER_TARGET_MISMATCH` | Valid sanitizer type exists, but guards `var_a` while sink dereferences `var_b`. | Instruct Pro to align sanitizer guard variable with sink operand `target_var`. |
-| `B_SOURCE_MISSING` | Sink is reachable, but source parameter is synthetic/untracked. | Instruct Pro to ground untrusted input to genuine entrypoint parameters. |
-| `B_SINK_MISSING` | Predicate claims vulnerability, but AST contains no matching sink operation. | Instruct Pro to synthesize the concrete vulnerable operation (`memcpy`, subscript, etc.). |
-| `B_ANCHOR_UNMATCHED` | Candidate code lines fail case-insensitive substring match against source repo (`b2_strict_fail`). | Instruct Pro to quote exact line anchors directly from repository context. |
-| `B_LOGIC_ERROR` | Verifier detected factual contradiction or self-inconsistent proof chain. | Suppress flawed argument; prompt Con debater with contradiction counter-evidence. |
-| `B_UNSUPPORTED_SYNTAX` | Tree-sitter parse failure on non-standard dialect or macro syntax. | Fallback to sanitized baseline prompt with macro expansion guidance. |
+| Precedence | Bucket ID | Diagnostic Trigger Condition | Reflector Prompt Action |
+| :--- | :--- | :--- | :--- |
+| **1 (Highest)** | `B_UNSUPPORTED_SYNTAX` | Tree-sitter parse failed completely or no AST nodes recovered (`is_complete == False` and `len(nodes) == 0`). | Fallback to sanitized baseline prompt with macro expansion / standard C snippet guidance. |
+| **2** | `B_LOGIC_ERROR` | Verifier detected factual contradiction or self-inconsistent proof chain (`verifier_logic_error == True`). | Suppress flawed argument; prompt Con debater with contradiction counter-evidence. |
+| **3** | `B_ANCHOR_UNMATCHED` | Candidate code lines fail case-insensitive substring match against source repo (`b2_strict_fail == True` or `b2_anchor_match == False`). | Instruct Pro to quote exact line anchors directly from repository context. |
+| **4** | `B_SOURCE_MISSING` | AST contains sink operation, but source parameter is untracked/synthetic (`source_type == "UNKNOWN_ORIGIN"` or missing parameter). | Instruct Pro to ground untrusted input to genuine function entrypoint parameters. |
+| **5** | `B_SINK_MISSING` | Predicate claims vulnerability, but AST contains no matching sink operation (`len(signatures) == 0` or missing call/subscript). | Instruct Pro to synthesize the concrete vulnerable operation (`memcpy`, subscript, etc.). |
+| **6** | `B_SANITIZER_MISMATCH` | Reachable sink exists, but sanitizer type does not match sink requirements (e.g. `NULL_CHECK` on `ARRAY_INDEX` or missing bounds). | Instruct Pro to generate `BOUNDS_CHECK` or `RANGE_VALIDATION` targeting `target_var`. |
+| **7 (Lowest)** | `B_SANITIZER_TARGET_MISMATCH` | Valid sanitizer type exists, but guards `var_a` while sink dereferences `var_b` (`guarded_target != target_var`). | Instruct Pro to align sanitizer guard variable with sink operand `target_var`. |
 
 ---
 
-### 3.2 Graph Diagnostic Signature Schema (`μ_f^graph`)
+### 3.2 Canonical Graph Diagnostic Schema (`μ_f^graph`)
 
 ```python
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 class GraphDiagnosticSignature(BaseModel):
+    """
+    Standardized graph diagnostic feedback emitted by the AST extraction layer.
+    Reconciles FlowSignature fields with upstream debate audit telemetry.
+    """
     scenario_id: str = Field(..., description="Scenario ID or HASH-{sha256[:10]}")
     predicate_family: str = Field(..., description="e.g. BUFFER_OVERFLOW, USE_AFTER_FREE, COMMAND_INJECTION")
-    failure_bucket: str = Field(..., description="B_SANITIZER_MISMATCH, B_SOURCE_MISSING, etc.")
+    failure_bucket: str = Field(..., description="Canonical Bucket ID (B_SANITIZER_MISMATCH, etc.)")
     source_id: Optional[str] = None
     sink_id: Optional[str] = None
     sink_type: Optional[str] = None
@@ -122,11 +127,25 @@ class GraphDiagnosticSignature(BaseModel):
     verifier_logic_error: bool = False
     verifier_report: Dict[str, Any] = Field(default_factory=dict)
     judge_rationale: str = ""
+
+    def to_flow_dict(self) -> Dict[str, Any]:
+        """Adapter for backward compatibility with FlowSignature dict schemas."""
+        return {
+            "source_id": self.source_id,
+            "sink_id": self.sink_id,
+            "sink_type": self.sink_type,
+            "sanitizer_type": self.found_sanitizer,
+            "guarded_target": self.target_var,
+            "failure_bucket": self.failure_bucket,
+            "invalid_at": self.failed_anchor_lines,
+        }
 ```
 
 ---
 
-### 3.3 A2A Reflector API Schema (HTTP Port 8004)
+### 3.3 A2A Reflector API Schema (HTTP Port 8004) & Structured-Output Fallback
+
+All prompt mutation requests are executed via `call_structured(...)` from `agentbeats.structured_output`:
 
 ```python
 class ReflectRequest(BaseModel):
@@ -149,6 +168,11 @@ class ReflectResponse(BaseModel):
     estimated_correction_success_probability: float
 ```
 
+#### Status-Specific Prompt Handling Invariants:
+1. **`SUCCESS`:** `mutated_system_prompt` contains the verified, topologically-constrained prompt variant for the next attempt.
+2. **`FALLBACK_BASELINE`:** When the Reflector LLM output is unrecoverable or schema repairs fail, the Reflector sets `status="FALLBACK_BASELINE"` and populates `mutated_system_prompt` with the static baseline specialist prompt for that taxonomy bucket.
+3. **`NO_MUTATION_NEEDED`:** When the failure was non-prompt-related (e.g. transient network timeout), `mutated_system_prompt` is populated with `current_system_prompt` unchanged. The caller lifecycle is guaranteed never to receive an empty or unassigned prompt.
+
 ---
 
 ## 4. Deterministic Work-Memory & Reflection Engine
@@ -156,6 +180,14 @@ class ReflectResponse(BaseModel):
 Following Graphiti's bi-temporal tracking and Graphify's `reflect.py` architecture, the Reflector maintains an experiential work-memory without relying on ungrounded LLM memory.
 
 ### 4.1 Time-Decayed Lesson Scoring Algorithm
+Every evaluated attempt emits an immutable ledger record containing:
+- `scenario_id`: Unique identifier of the test scenario.
+- `attempt_index`: Attempt number ($1 \le \text{attempt} \le \text{max\_attempts}$).
+- `observed_at`: Epoch timestamp of initial attempt execution.
+- `evaluated_at`: Epoch timestamp of outcome evaluation.
+- `outcome`: One of `VALID_ACCEPT`, `LOGIC_ERROR`, `DEAD_END_CHAIN`, or `RETRYABLE_FAILURE`.
+- `canonical_mutation_id`: Hash of the applied prompt mutation rule.
+
 Each historical attempt record $i$ for a given vulnerability family $(S, P, K)$ contributes a signed, time-decayed score $s_i$:
 
 $$S(n) = \sum_{i \in \text{Traces}(n)} \text{Sign}(\text{Outcome}_i) \cdot 2^{-\frac{\Delta t_i}{\tau_{\text{half\_life}}}}$$
@@ -185,15 +217,28 @@ GEPA maintains distinct Pareto-optimal prompt pools across four structural vulne
 ### 5.2 Concurrency-Safe Ledger Contract
 To support multi-threaded batch runs (`run_batch.py` with concurrency $C=4$):
 
-1. **Read-Modify-Write File Locking:** All reads and updates to `artifacts/gepa/pareto_frontier.json` must be wrapped in a non-blocking `fcntl.flock(fd, fcntl.LOCK_EX)` with exponential backoff retry ($t \in [10\text{ms}, 500\text{ms}]$, max timeout $5.0\text{s}$).
-2. **Atomic Write Publication:** Writes must be staged to a temporary file (`pareto_frontier.json.tmp.<pid>.<uuid>`) and published via `os.replace`.
-3. **Append-Only Audit Log:** Every mutation event is logged unconditionally to `artifacts/gepa/mutations.jsonl` using append-only `a+` file modes.
+1. **Stable Companion Lock:** All reads and updates to `artifacts/gepa/pareto_frontier.json` must acquire a lock on `artifacts/gepa/pareto_frontier.json.lock` using non-blocking `fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)` with exponential backoff retry ($t \in [10\text{ms}, 500\text{ms}]$, max timeout $5.0\text{s}$).
+2. **Atomic Write Publication:** Writes are staged to a temporary file (`pareto_frontier.json.tmp.<pid>.<uuid>`) and published via `os.replace`.
+3. **Append-Only Serialized Audit Log:** Every mutation event is logged unconditionally to `artifacts/gepa/mutations.jsonl` while holding the companion lock.
 
 ---
 
 ## 6. Execution Lifecycle in `run_batch.py`
 
 ```python
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
+from scenarios.debate.graphify_flow_extractor import extract_graphify_flow_snapshot
+from scenarios.debate.graph_dataflow import evaluate_graph_reachability
+
+@dataclass(frozen=True)
+class AttemptResult:
+    status: str  # "ACCEPTED" or "REJECTED"
+    attempts_used: int
+    last_debate_result: Any
+    final_risk_score: float
+    rejection_reason: Optional[str] = None
+
 async def execute_seed_with_graph_gepa(
     scenario_record: Dict[str, Any],
     max_attempts: int = 3,
@@ -201,9 +246,21 @@ async def execute_seed_with_graph_gepa(
 ) -> AttemptResult:
     """
     Executes a multiagent debate with Graph-Powered GEPA prompt adaptation.
+    Guarantees typed return and explicit failure states across all paths.
     """
+    if max_attempts < 1:
+        raise ValueError(f"max_attempts must be >= 1, got {max_attempts}")
+
     taxonomy = classify_taxonomy_bucket(scenario_record["predicate"])
-    current_prompt = await reflector_client.get_pareto_prompt(taxonomy)
+    
+    # Retrieve initial prompt (with baseline fallback if reflector_client is None)
+    if reflector_client is not None:
+        current_prompt = await reflector_client.get_pareto_prompt(taxonomy)
+    else:
+        current_prompt = get_static_baseline_prompt(taxonomy)
+
+    last_debate_result = None
+    last_risk_score = 1.0
 
     for attempt_idx in range(1, max_attempts + 1):
         # 1. Execute Multiagent Debate (Pro, Con, Judge, Verifier)
@@ -212,13 +269,15 @@ async def execute_seed_with_graph_gepa(
             system_prompt=current_prompt,
             attempt_idx=attempt_idx,
         )
+        last_debate_result = debate_result
 
         # 2. Extract Graph Snapshot via Tree-sitter & Evaluate Reachability
-        graph_snapshot = extract_flow_graph_snapshot(
+        graph_snapshot = extract_graphify_flow_snapshot(
             code_text=debate_result.candidate_code,
             scenario_id=scenario_record["scenario_id"],
         )
         risk_score = evaluate_graph_reachability(graph_snapshot)
+        last_risk_score = risk_score
 
         # 3. Check Authoritative 3-Layer Adjudication Contract
         is_valid = (
@@ -229,17 +288,30 @@ async def execute_seed_with_graph_gepa(
             and risk_score < 0.10
         )
 
-        if is_valid:
-            # Register success with Reflector to reinforce Pareto score
+        outcome = "VALID_ACCEPT" if is_valid else (
+            "LOGIC_ERROR" if debate_result.verifier_logic_error else "RETRYABLE_FAILURE"
+        )
+
+        # Record outcome for every attempt in ledger
+        if reflector_client is not None:
             await reflector_client.record_outcome(
                 taxonomy=taxonomy,
                 prompt=current_prompt,
-                outcome="VALID_ACCEPT",
+                outcome=outcome,
+                attempt_index=attempt_idx,
+                scenario_id=scenario_record["scenario_id"],
             )
-            return debate_result
+
+        if is_valid:
+            return AttemptResult(
+                status="ACCEPTED",
+                attempts_used=attempt_idx,
+                last_debate_result=debate_result,
+                final_risk_score=risk_score,
+            )
 
         # 4. If failed and attempts remain: Classify Graph Bucket & Mutate Prompt
-        if attempt_idx < max_attempts:
+        if attempt_idx < max_attempts and reflector_client is not None:
             diag = classify_graph_diagnostic(debate_result, graph_snapshot, risk_score)
             reflect_resp = await reflector_client.reflect(
                 ReflectRequest(
@@ -254,7 +326,13 @@ async def execute_seed_with_graph_gepa(
             )
             current_prompt = reflect_resp.mutated_system_prompt
 
-    return debate_result
+    return AttemptResult(
+        status="REJECTED",
+        attempts_used=max_attempts,
+        last_debate_result=last_debate_result,
+        final_risk_score=last_risk_score,
+        rejection_reason="Exceeded maximum refinement attempts without satisfying 3-layer adjudication",
+    )
 ```
 
 ---
@@ -270,7 +348,7 @@ A candidate Graph-Powered GEPA implementation is approved for production merge i
 2. **Strict Anchor Grounding:** `b2_anchor_match_rate >= 0.80` and `b2_strict_fail_rate <= 0.20`.
 3. **Verifier Parse Reliability:** `verifier_parse_ok_rate >= 0.95`.
 4. **Leak-Proof Partition Audit:** Zero scenario-predicate overlap verified across all 5 folds via SHA-256 partition hashing.
-5. **Token Efficiency Superiority ($H_{1,Y}$):** $\ge 25\%$ reduction in `tokens_per_valid_accept` against un-adapted debate baseline with Holm-adjusted $p < 0.05$ across 10 paired seeds (`42, 1337, 2026, 7, 99, 101, 202, 303, 404, 505`).
+5. **Token Efficiency Superiority ($H_{1,Y}$):** $\ge 25\%$ reduction in `tokens_per_valid_accept` against un-adapted debate baseline with Holm-adjusted $p < 0.05$ across the 5 canonical benchmark seeds (`42, 43, 44, 45, 46`).
 6. **Duplicate Candidate Suppression:** `duplicate_valid_accept_rate <= 0.20`.
 7. **Graph Pre-Filter Generalization ($H_{1,T}$):** Out-of-fold $\text{ROC-AUC} \ge 0.7000$ and $\text{PR-AUC} \ge 0.6000$ on clean near-deduplicated holdouts ($n=247$).
 8. **Refinement Correction Uptake ($H_{1,C}$):** $\text{refinement\_correction\_success\_rate} \ge 0.30$.
@@ -289,8 +367,8 @@ graph TD
     E --> F[Step 6: 5-Fold CV Benchmark & Acceptance Audit]
 ```
 
-1. **`scenarios/debate/graph_extractor.py`:** Replace narrow AST visitor with Graphify's Tree-sitter C/C++/Python extraction engine (`scratch/graphify/graphify/extract.py`).
+1. **`scenarios/debate/graphify_flow_extractor.py`:** Implement Graphify's Tree-sitter C/C++ extraction engine with error-tolerant AST traversal.
 2. **`scenarios/debate/reflector_agent.py`:** Implement FastAPI microservice with Pydantic contracts and Graphify `reflect.py` work-memory scoring.
-3. **`scenarios/debate/pareto_registry.py`:** Implement `fcntl.flock` protected Pareto storage in `artifacts/gepa/`.
+3. **`scenarios/debate/pareto_registry.py`:** Implement `fcntl.flock` companion-lock protected Pareto storage in `artifacts/gepa/`.
 4. **`scenarios/debate/run_batch.py`:** Add Attempt 2+ reflection hooks and `ReplayManager` record/replay integration.
-5. **`scripts/evaluate_graph_gepa.py`:** 5-fold Stratified Scenario-Grouped CV evaluation script to generate authoritative JSON compliance receipts.
+5. **`scripts/evaluate_graphify_cv.py`:** 5-fold Stratified Scenario-Grouped CV evaluation script to generate authoritative JSON compliance receipts.

@@ -15,10 +15,7 @@ import numpy as np
 from sklearn.metrics import average_precision_score, confusion_matrix, roc_auc_score
 
 from scenarios.debate.pre_filter import partition_dataset_by_scenario_stratified
-from scripts.train_pre_filter import (
-    extract_dataset_from_attempts,
-    _extract_code_from_combined_text,
-)
+from scripts.train_pre_filter import extract_dataset_from_attempts
 from scenarios.debate.graph_extractor import extract_flow_graph_snapshot as orig_extract
 from scenarios.debate.graphify_flow_extractor import extract_graphify_flow_snapshot as graphify_extract
 from scenarios.debate.graph_dataflow import evaluate_graph_reachability
@@ -42,22 +39,32 @@ class EvaluationDataset:
 
     @property
     def positive_count(self) -> int:
-        return sum(self.labels)
+        return sum(1 for label in self.labels if label == 1)
 
     @property
     def negative_count(self) -> int:
-        return len(self.labels) - sum(self.labels)
+        return sum(1 for label in self.labels if label == 0)
 
     @property
     def unique_scenarios(self) -> int:
         return len(set(self.scenario_ids))
 
 
+def extract_code_from_sample_text(combined_text: str) -> str:
+    """Extracts the code snippet portion from a formatted candidate attempt text."""
+    if "CODE_DELIMITER:" in combined_text:
+        return combined_text.split("CODE_DELIMITER:", 1)[1].strip()
+    return combined_text.strip()
+
+
 def evaluate_extractor_on_sample(
     extractor_fn: Callable[..., Any], text: str, idx: int
 ) -> Tuple[bool, bool, float]:
-    """Evaluates a code sample through an extractor and returns completeness, signature presence, and acceptance prob."""
-    code = _extract_code_from_combined_text(text)
+    """
+    Evaluates a code sample through an extractor and returns completeness,
+    signature presence, and acceptance probability.
+    """
+    code = extract_code_from_sample_text(text)
     snap = extractor_fn(code, f"cv_s_{idx}", f"snap_{idx}", 1, 0.0)
     is_complete = snap.is_complete and snap.parse_error is None
     has_signatures = bool(snap.signatures)
@@ -110,19 +117,30 @@ def _compute_metrics_for_seed(
     signatures_count: int,
 ) -> Dict[str, Any]:
     """Calculates classification and parser coverage metrics for a single seed run."""
+    evaluated = len(oof_true)
+    if evaluated != total_samples:
+        logger.warning("Fold test sets covered %d of %d samples for seed %d.", evaluated, total_samples, seed)
+
     y_true_arr = np.array(oof_true)
     probs_arr = np.array(oof_probs)
     preds_arr = np.array(oof_preds)
 
+    fallback_metrics_used = False
+
     try:
         roc_auc = float(roc_auc_score(y_true_arr, probs_arr))
-    except ValueError:
+    except ValueError as err:
+        logger.warning("ROC-AUC calculation failed on seed %d (error: %s). Using fallback 0.5.", seed, err)
         roc_auc = 0.5
+        fallback_metrics_used = True
 
     try:
         pr_auc = float(average_precision_score(y_true_arr, probs_arr))
-    except ValueError:
-        pr_auc = float(np.mean(y_true_arr))
+    except ValueError as err:
+        mean_pos = float(np.mean(y_true_arr)) if len(y_true_arr) > 0 else 0.0
+        logger.warning("PR-AUC calculation failed on seed %d (error: %s). Using fallback %f.", seed, err, mean_pos)
+        pr_auc = mean_pos
+        fallback_metrics_used = True
 
     cm = confusion_matrix(y_true_arr, preds_arr, labels=[0, 1])
     tn, fp, fn, tp = (int(x) for x in cm.ravel())
@@ -131,8 +149,9 @@ def _compute_metrics_for_seed(
         "seed": seed,
         "roc_auc": round(roc_auc, 4),
         "pr_auc": round(pr_auc, 4),
-        "parse_coverage": round(parse_complete_count / max(total_samples, 1), 4),
-        "signatures_coverage": round(signatures_count / max(total_samples, 1), 4),
+        "fallback_metrics_used": fallback_metrics_used,
+        "parse_coverage": round(parse_complete_count / max(evaluated, 1), 4),
+        "signatures_coverage": round(signatures_count / max(evaluated, 1), 4),
         "confusion_matrix": {"tn": tn, "fp": fp, "fn": fn, "tp": tp},
     }
 
@@ -178,8 +197,18 @@ def run_5fold_cv_for_extractor(
 ) -> Dict[str, Any]:
     """
     Executes 5-fold Stratified Scenario-Grouped CV across seeds for an extractor.
-    Reduced cognitive complexity and low conditional nesting depth.
     """
+    if dataset.total_samples == 0:
+        logger.warning("Empty dataset passed to run_5fold_cv_for_extractor.")
+        return {
+            "extractor_symbol": f"{extractor_fn.__module__}.{extractor_fn.__qualname__}",
+            "mean_roc_auc": 0.5,
+            "mean_pr_auc": 0.0,
+            "mean_parse_coverage": 0.0,
+            "mean_signatures_coverage": 0.0,
+            "seed_breakdown": [],
+        }
+
     eval_seeds = seeds if seeds is not None else DEFAULT_SEEDS
     seed_results = [_evaluate_single_seed(extractor_fn, dataset, s) for s in eval_seeds]
 
@@ -189,6 +218,7 @@ def run_5fold_cv_for_extractor(
     mean_sig_cov = float(np.mean([r["signatures_coverage"] for r in seed_results]))
 
     return {
+        "extractor_symbol": f"{extractor_fn.__module__}.{extractor_fn.__qualname__}",
         "mean_roc_auc": round(mean_roc, 4),
         "mean_pr_auc": round(mean_pr, 4),
         "mean_parse_coverage": round(mean_cov, 4),
@@ -204,6 +234,10 @@ def main():
         dedup_near_duplicates=True,
         similarity_threshold=0.85,
     )
+    if not texts:
+        logger.error("No attempts extracted from %s. Exiting.", attempts_dir)
+        return
+
     dataset = EvaluationDataset(texts=texts, labels=labels, scenario_ids=scenario_ids)
     logger.info("Extracted %d deduplicated samples across %d scenarios.", dataset.total_samples, dataset.unique_scenarios)
 
@@ -214,6 +248,7 @@ def main():
     graphify_results = run_5fold_cv_for_extractor(graphify_extract, dataset)
 
     comparison_report = {
+        "seeds": DEFAULT_SEEDS,
         "dataset_summary": {
             "total_samples": dataset.total_samples,
             "unique_scenarios": dataset.unique_scenarios,

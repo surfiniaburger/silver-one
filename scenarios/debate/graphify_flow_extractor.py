@@ -6,44 +6,52 @@ to extract sources, sinks, sanitizers, and FlowGraphSnapshots across partial C/C
 
 from __future__ import annotations
 
-import re
+import logging
 from typing import Dict, List, Optional, Set, Tuple
 
 import tree_sitter
 import tree_sitter_c
 
 from scenarios.debate.graph_dataflow import (
-    SUPPORTED_SINKS,
-    VALID_SANITIZERS,
     FlowGraphSnapshot,
     FlowSignature,
-    evaluate_graph_reachability,
     is_sanitizer_valid_for_sink,
 )
 
+logger = logging.getLogger(__name__)
+
 C_LANGUAGE = tree_sitter.Language(tree_sitter_c.language())
-C_PARSER = tree_sitter.Parser(C_LANGUAGE)
 
 # Security-sensitive call sinks
-MEMORY_SINKS = {
+MEMORY_SINKS: Set[str] = {
     "memcpy", "strcpy", "strncpy", "strcat", "strncat", "sprintf", "vsprintf",
     "snprintf", "vsnprintf", "memset", "memmove", "bcopy", "malloc", "calloc",
     "realloc", "pb_realloc", "cJSON_malloc", "kmap", "free", "kfree",
 }
 
-SYSTEM_SINKS = {
+SYSTEM_SINKS: Set[str] = {
     "system", "popen", "exec", "execl", "execlp", "execle", "execv", "execvp",
     "execvpe", "open", "creat", "crypto_unregister_alg", "crypto_unregister_algs",
     "unlink", "remove", "chmod", "chown",
 }
 
-INPUT_SOURCES = {
+INPUT_SOURCES: Set[str] = {
     "read", "recv", "recvfrom", "recvmsg", "fread", "fgets", "gets", "scanf",
     "fscanf", "sscanf", "getenv", "getopt", "gather_time_entropy", "cJSON_Parse",
     "mp_read_unsigned_bin", "copy_from_user", "get_user",
 }
 
-def _strip_markdown_fences(code_text: str) -> str:
+# Ordered sanitizer preferences per sink type
+SANITIZER_PREFERENCES: Dict[str, Tuple[str, ...]] = {
+    "MEMORY_WRITE": ("RANGE_VALIDATION", "BOUNDS_CHECK"),
+    "ARRAY_INDEX": ("RANGE_VALIDATION", "BOUNDS_CHECK"),
+    "POINTER_DEREF": ("NULL_CHECK",),
+    "SYSTEM_CALL": ("COMMAND_SANITIZATION", "ALLOWLIST_CHECK"),
+}
+
+
+def strip_markdown_fences(code_text: str) -> str:
+    """Removes markdown code fences (e.g. ```c ... ```) from snippet text."""
     lines = code_text.splitlines()
     filtered: List[str] = []
     for line in lines:
@@ -53,35 +61,43 @@ def _strip_markdown_fences(code_text: str) -> str:
         filtered.append(line)
     return "\n".join(filtered)
 
-def _wrap_in_function_if_needed(code_text: str) -> List[str]:
+
+def wrap_in_function_if_needed(code_text: str) -> List[str]:
     """Generates candidate code variants to maximize Tree-sitter AST recovery."""
-    clean = _strip_markdown_fences(code_text).strip()
-    candidates = [clean]
-    
-    # Candidate with semicolon line termination
-    lines = [l.strip() for l in clean.splitlines() if l.strip()]
-    terminated_lines = []
-    for l in lines:
-        if not l.endswith(";") and not l.endswith("{") and not l.endswith("}") and not l.startswith("#"):
-            terminated_lines.append(l + ";")
-        else:
-            terminated_lines.append(l)
+    clean = strip_markdown_fences(code_text).strip()
+    if not clean:
+        return []
+
+    candidates: List[str] = [clean]
+
+    # Terminate standalone statements without corrupting control/continuation lines
+    lines = [line.strip() for line in clean.splitlines() if line.strip()]
+    terminated_lines: List[str] = []
+    for line in lines:
+        needs_semi = (
+            not line.endswith((";", "{", "}", ",", "(", "\\"))
+            and not line.startswith("#")
+            and not line.startswith(("if", "for", "while", "else", "switch", "case", "do"))
+        )
+        terminated_lines.append(line + ";" if needs_semi else line)
+
     semi_code = "\n".join(terminated_lines)
+
+    # Add wrapped candidate for untouched clean code
+    candidates.append(f"void __vuln_harness_func() {{\n{clean}\n}}")
+
     if semi_code != clean:
         candidates.append(semi_code)
+        candidates.append(f"void __vuln_harness_func() {{\n{semi_code}\n}}")
 
-    # Candidate wrapped in function block
-    wrapped = f"void __vuln_harness_func() {{\n{semi_code}\n}}"
-    candidates.append(wrapped)
-    
     return candidates
 
 
 class GraphifyFlowVisitor:
     """
     Error-tolerant AST visitor that walks tree-sitter C nodes to extract:
-    1. Sources: function parameters, return values from input functions, field dereferences (e.g. svm->vmcb->save).
-    2. Sinks: memory writes (subscript assignments, memcpy/malloc calls), pointer dereferences, system calls.
+    1. Sources: function parameters, return values from input functions, field dereferences.
+    2. Sinks: memory writes, pointer dereferences, system calls, array index operations.
     3. Guards: enclosing if/while bounds checks and NULL checks.
     """
 
@@ -89,7 +105,7 @@ class GraphifyFlowVisitor:
         self.code_bytes = code_bytes
         self.nodes: Dict[str, dict] = {}
         self.signatures: List[FlowSignature] = []
-        self.sources: Dict[str, str] = {}  # var_name -> source_node_id
+        self.sources: Dict[str, Tuple[str, str]] = {}  # var_name -> (source_node_id, source_type)
         self.guard_stack: List[Dict[str, Set[str]]] = []  # var_name -> set(sanitizer_types)
         self.node_counter = 0
 
@@ -100,25 +116,34 @@ class GraphifyFlowVisitor:
     def _get_node_text(self, node: tree_sitter.Node) -> str:
         return self.code_bytes[node.start_byte : node.end_byte].decode("utf-8", errors="replace").strip()
 
-    def _register_source(self, var_name: str, source_kind: str, node: tree_sitter.Node) -> str:
+    def _register_source(
+        self, var_name: str, source_kind: str, node: tree_sitter.Node, source_type: str = "UNTRUSTED_INPUT"
+    ) -> str:
         if not var_name:
             var_name = "untrusted_input"
         if var_name in self.sources:
-            return self.sources[var_name]
+            return self.sources[var_name][0]
 
         src_id = self._gen_id(f"src_{var_name}")
         self.nodes[src_id] = {
             "id": src_id,
             "kind": "source",
             "label": f"Source({var_name})",
-            "type": "UNTRUSTED_INPUT",
+            "type": source_type,
             "target_var": var_name,
             "source_kind": source_kind,
             "lineno": node.start_point[0] + 1,
             "col_offset": node.start_point[1],
         }
-        self.sources[var_name] = src_id
+        self.sources[var_name] = (src_id, source_type)
         return src_id
+
+    def _get_or_create_source(self, var_name: str, node: tree_sitter.Node) -> Tuple[str, str]:
+        """Returns existing source or registers a structural source."""
+        if var_name in self.sources:
+            return self.sources[var_name]
+        src_id = self._register_source(var_name, "implicit_source", node, source_type="UNTRUSTED_INPUT")
+        return src_id, "UNTRUSTED_INPUT"
 
     def _active_guards_for(self, target_var: str) -> Set[str]:
         guards: Set[str] = set()
@@ -131,29 +156,71 @@ class GraphifyFlowVisitor:
         if not target_var:
             return None, None
         guards = self._active_guards_for(target_var)
-        if sink_type in ("MEMORY_WRITE", "ARRAY_INDEX"):
-            if "RANGE_VALIDATION" in guards:
-                return "RANGE_VALIDATION", target_var
-            if "BOUNDS_CHECK" in guards:
-                return "BOUNDS_CHECK", target_var
-        if sink_type in ("POINTER_DEREF", "SYSTEM_CALL"):
-            if "COMMAND_SANITIZATION" in guards:
-                return "COMMAND_SANITIZATION", target_var
-            if "ALLOWLIST_CHECK" in guards:
-                return "ALLOWLIST_CHECK", target_var
-            if "NULL_CHECK" in guards:
-                return "NULL_CHECK", target_var
+        preferred = SANITIZER_PREFERENCES.get(sink_type, ())
+        for candidate in preferred:
+            if candidate in guards and is_sanitizer_valid_for_sink(sink_type, candidate):
+                return candidate, target_var
         return None, None
 
+    def _resolve_sanitizer_for_vars(
+        self, sink_type: str, candidate_vars: List[str]
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """Resolves active sanitizer across primary target and related call arguments."""
+        for var in candidate_vars:
+            san_type, san_target = self._resolve_sanitizer(sink_type, var)
+            if san_type is not None:
+                return san_type, san_target
+        return None, None
+
+    def _emit_sink(
+        self,
+        node: tree_sitter.Node,
+        sink_type: str,
+        flow_type: str,
+        target_var: str,
+        label: str,
+        id_prefix: str,
+        related_vars: Optional[List[str]] = None,
+    ) -> None:
+        """Unified sink node construction and FlowSignature emission helper."""
+        if not target_var:
+            return
+        src_id, src_type = self._get_or_create_source(target_var, node)
+        sink_id = self._gen_id(id_prefix)
+
+        vars_to_check = [target_var] + (related_vars or [])
+        san_type, san_target = self._resolve_sanitizer_for_vars(sink_type, vars_to_check)
+
+        self.nodes[sink_id] = {
+            "id": sink_id,
+            "kind": "sink",
+            "type": sink_type,
+            "target_var": target_var,
+            "label": label,
+            "lineno": node.start_point[0] + 1,
+            "col_offset": node.start_point[1],
+        }
+        self.signatures.append(
+            FlowSignature(
+                source_id=src_id,
+                sink_id=sink_id,
+                source_type=src_type,
+                sink_type=sink_type,
+                flow_type=flow_type,
+                sanitizer_type=san_type,
+                guarded_target=san_target,
+            )
+        )
+
     def visit(self, node: tree_sitter.Node):
-        """Recursively visit all AST nodes regardless of parsing errors."""
+        """Recursively visit AST nodes."""
         node_type = node.type
 
         if node_type == "parameter_declaration":
             self._handle_parameter(node)
         elif node_type == "if_statement":
             self._handle_if_statement(node)
-            return  # _handle_if_statement manages child recursion with guard frames
+            return  # Managed recursion within guard frame
         elif node_type == "call_expression":
             self._handle_call(node)
         elif node_type == "assignment_expression":
@@ -169,7 +236,38 @@ class GraphifyFlowVisitor:
     def _handle_parameter(self, node: tree_sitter.Node):
         ident = self._find_first_identifier(node)
         if ident:
-            self._register_source(ident, "function_parameter", node)
+            self._register_source(ident, "function_parameter", node, source_type="UNTRUSTED_INPUT")
+
+    def _extract_null_checked_idents(self, cond_node: tree_sitter.Node) -> Set[str]:
+        """Extracts identifiers checked against NULL or 0 in a condition node."""
+        null_idents: Set[str] = set()
+
+        # Unary negation: if (!ptr)
+        if cond_node.type == "unary_expression":
+            op_node = cond_node.child_by_field_name("operator")
+            arg_node = cond_node.child_by_field_name("argument")
+            if op_node and self._get_node_text(op_node) == "!" and arg_node:
+                null_idents.update(self._extract_all_identifiers(arg_node))
+            return null_idents
+
+        # Binary comparison: if (ptr == NULL) or if (ptr != 0)
+        if cond_node.type == "binary_expression":
+            left = cond_node.child_by_field_name("left")
+            right = cond_node.child_by_field_name("right")
+            if left and right:
+                left_txt = self._get_node_text(left)
+                right_txt = self._get_node_text(right)
+                if right_txt in ("NULL", "0", "nullptr", "NULL_PTR"):
+                    null_idents.update(self._extract_all_identifiers(left))
+                elif left_txt in ("NULL", "0", "nullptr", "NULL_PTR"):
+                    null_idents.update(self._extract_all_identifiers(right))
+            return null_idents
+
+        # Parenthesized or compound expressions
+        for child in cond_node.named_children:
+            null_idents.update(self._extract_null_checked_idents(child))
+
+        return null_idents
 
     def _handle_if_statement(self, node: tree_sitter.Node):
         cond_node = node.child_by_field_name("condition")
@@ -177,12 +275,16 @@ class GraphifyFlowVisitor:
         if cond_node:
             cond_text = self._get_node_text(cond_node)
             idents = self._extract_all_identifiers(cond_node)
+
+            # Range/Bounds check on relational operations
             if any(op in cond_text for op in ("<", ">", "<=", ">=")):
                 for id_name in idents:
                     guard_map.setdefault(id_name, set()).add("BOUNDS_CHECK")
-            if "NULL" in cond_text or "== 0" in cond_text or "!= 0" in cond_text or "!" in cond_text:
-                for id_name in idents:
-                    guard_map.setdefault(id_name, set()).add("NULL_CHECK")
+
+            # Precise NULL checks on operands
+            null_checked = self._extract_null_checked_idents(cond_node)
+            for id_name in null_checked:
+                guard_map.setdefault(id_name, set()).add("NULL_CHECK")
 
         self.guard_stack.append(guard_map)
         try:
@@ -201,68 +303,37 @@ class GraphifyFlowVisitor:
         if not func_name:
             return
 
+        arg_idents = self._extract_call_arg_idents(node)
+
         # Check if call is an input source
         if func_name in INPUT_SOURCES:
-            arg_idents = self._extract_call_arg_idents(node)
             target = arg_idents[0] if arg_idents else "input_data"
-            self._register_source(target, f"call_{func_name}", node)
+            self._register_source(target, f"call_{func_name}", node, source_type="UNTRUSTED_INPUT")
 
         # Check if call is a memory sink
         if func_name in MEMORY_SINKS:
-            arg_idents = self._extract_call_arg_idents(node)
             target_var = arg_idents[0] if arg_idents else "dest_buf"
-            src_id = self._get_or_create_source(target_var, node)
-            sink_id = self._gen_id(f"sink_mem_{func_name}")
-            
-            san_type, san_target = self._resolve_sanitizer("MEMORY_WRITE", target_var)
-            self.nodes[sink_id] = {
-                "id": sink_id,
-                "kind": "sink",
-                "type": "MEMORY_WRITE",
-                "target_var": target_var,
-                "label": f"Call({func_name})",
-                "lineno": node.start_point[0] + 1,
-                "col_offset": node.start_point[1],
-            }
-            self.signatures.append(
-                FlowSignature(
-                    source_id=src_id,
-                    sink_id=sink_id,
-                    source_type="UNTRUSTED_INPUT",
-                    sink_type="MEMORY_WRITE",
-                    flow_type="CALL_ARGUMENT",
-                    sanitizer_type=san_type,
-                    guarded_target=san_target,
-                )
+            self._emit_sink(
+                node=node,
+                sink_type="MEMORY_WRITE",
+                flow_type="CALL_ARGUMENT",
+                target_var=target_var,
+                label=f"Call({func_name})",
+                id_prefix=f"sink_mem_{func_name}",
+                related_vars=arg_idents[1:],
             )
 
         # Check if call is a system sink
         if func_name in SYSTEM_SINKS:
-            arg_idents = self._extract_call_arg_idents(node)
             target_var = arg_idents[0] if arg_idents else "cmd_str"
-            src_id = self._get_or_create_source(target_var, node)
-            sink_id = self._gen_id(f"sink_sys_{func_name}")
-
-            san_type, san_target = self._resolve_sanitizer("SYSTEM_CALL", target_var)
-            self.nodes[sink_id] = {
-                "id": sink_id,
-                "kind": "sink",
-                "type": "SYSTEM_CALL",
-                "target_var": target_var,
-                "label": f"SysCall({func_name})",
-                "lineno": node.start_point[0] + 1,
-                "col_offset": node.start_point[1],
-            }
-            self.signatures.append(
-                FlowSignature(
-                    source_id=src_id,
-                    sink_id=sink_id,
-                    source_type="UNTRUSTED_INPUT",
-                    sink_type="SYSTEM_CALL",
-                    flow_type="SYSTEM_INVOCATION",
-                    sanitizer_type=san_type,
-                    guarded_target=san_target,
-                )
+            self._emit_sink(
+                node=node,
+                sink_type="SYSTEM_CALL",
+                flow_type="SYSTEM_INVOCATION",
+                target_var=target_var,
+                label=f"SysCall({func_name})",
+                id_prefix=f"sink_sys_{func_name}",
+                related_vars=arg_idents[1:],
             )
 
     def _handle_assignment(self, node: tree_sitter.Node):
@@ -271,105 +342,69 @@ class GraphifyFlowVisitor:
         if not left_node:
             return
 
-        # If left node is subscript or pointer write: arr[i] = val or *ptr = val
+        # If left node is subscript: arr[i] = val
         if left_node.type == "subscript_expression":
             idx_vars = self._extract_subscript_index_vars(left_node)
             target_var = idx_vars[0] if idx_vars else self._extract_target_ident(left_node)
             if target_var:
-                src_id = self._get_or_create_source(target_var, node)
-                sink_id = self._gen_id("sink_idx_write")
-                san_type, san_target = self._resolve_sanitizer("MEMORY_WRITE", target_var)
-                self.nodes[sink_id] = {
-                    "id": sink_id,
-                    "kind": "sink",
-                    "type": "MEMORY_WRITE",
-                    "target_var": target_var,
-                    "label": "SubscriptWrite",
-                    "lineno": node.start_point[0] + 1,
-                    "col_offset": node.start_point[1],
-                }
-                self.signatures.append(
-                    FlowSignature(
-                        source_id=src_id,
-                        sink_id=sink_id,
-                        source_type="UNTRUSTED_INPUT",
-                        sink_type="MEMORY_WRITE",
-                        flow_type="ARRAY_INDEX_WRITE",
-                        sanitizer_type=san_type,
-                        guarded_target=san_target,
-                    )
+                self._emit_sink(
+                    node=node,
+                    sink_type="MEMORY_WRITE",
+                    flow_type="ARRAY_INDEX_WRITE",
+                    target_var=target_var,
+                    label="SubscriptWrite",
+                    id_prefix="sink_idx_write",
+                    related_vars=idx_vars,
                 )
 
         # If right side is a tainted field expression or pointer arithmetic
         if right_node and right_node.type in ("field_expression", "pointer_expression", "binary_expression"):
             target_var = self._extract_target_ident(left_node)
             if target_var:
-                self._register_source(target_var, "tainted_expression", node)
+                self._register_source(target_var, "tainted_expression", node, source_type="UNTRUSTED_INPUT")
 
     def _handle_subscript(self, node: tree_sitter.Node):
         idx_vars = self._extract_subscript_index_vars(node)
         if not idx_vars:
             return
         target_var = idx_vars[0]
-        src_id = self._get_or_create_source(target_var, node)
-        sink_id = self._gen_id("sink_subscript_read")
-        san_type, san_target = self._resolve_sanitizer("ARRAY_INDEX", target_var)
-        self.nodes[sink_id] = {
-            "id": sink_id,
-            "kind": "sink",
-            "type": "ARRAY_INDEX",
-            "target_var": target_var,
-            "label": f"Subscript({target_var})",
-            "lineno": node.start_point[0] + 1,
-            "col_offset": node.start_point[1],
-        }
-        self.signatures.append(
-            FlowSignature(
-                source_id=src_id,
-                sink_id=sink_id,
-                source_type="UNTRUSTED_INPUT",
-                sink_type="ARRAY_INDEX",
-                flow_type="ARRAY_INDEX_READ",
-                sanitizer_type=san_type,
-                guarded_target=san_target,
-            )
+        self._emit_sink(
+            node=node,
+            sink_type="ARRAY_INDEX",
+            flow_type="ARRAY_INDEX_READ",
+            target_var=target_var,
+            label=f"Subscript({target_var})",
+            id_prefix="sink_subscript_read",
+            related_vars=idx_vars,
         )
 
     def _handle_field_expression(self, node: tree_sitter.Node):
-        field_text = self._get_node_text(node)
-        # Recognize pointer dereference patterns: ptr->field, vmcb->save, etc.
-        if "->" in field_text:
-            base_ident = field_text.split("->")[0].strip()
-            src_id = self._get_or_create_source(base_ident, node)
-            sink_id = self._gen_id("sink_ptr_deref")
-            san_type, san_target = self._resolve_sanitizer("POINTER_DEREF", base_ident)
-            self.nodes[sink_id] = {
-                "id": sink_id,
-                "kind": "sink",
-                "type": "POINTER_DEREF",
-                "target_var": base_ident,
-                "label": f"PtrDeref({field_text})",
-                "lineno": node.start_point[0] + 1,
-                "col_offset": node.start_point[1],
-            }
-            self.signatures.append(
-                FlowSignature(
-                    source_id=src_id,
-                    sink_id=sink_id,
-                    source_type="UNTRUSTED_INPUT",
+        # Resolve pointer dereference via AST child argument
+        arg_child = node.child_by_field_name("argument")
+        field_child = node.child_by_field_name("field")
+        op_child = node.child_by_field_name("operator")
+
+        is_pointer_deref = bool(
+            (op_child and self._get_node_text(op_child) == "->")
+            or ("->" in self._get_node_text(node))
+        )
+
+        if is_pointer_deref and arg_child:
+            base_ident = self._find_first_identifier(arg_child)
+            field_name = self._get_node_text(field_child) if field_child else "field"
+            if base_ident:
+                self._emit_sink(
+                    node=node,
                     sink_type="POINTER_DEREF",
                     flow_type="POINTER_ACCESS",
-                    sanitizer_type=san_type,
-                    guarded_target=san_target,
+                    target_var=base_ident,
+                    label=f"PtrDeref({base_ident}->{field_name})",
+                    id_prefix="sink_ptr_deref",
                 )
-            )
 
-    def _get_or_create_source(self, var_name: str, node: tree_sitter.Node) -> str:
-        if var_name in self.sources:
-            return self.sources[var_name]
-        return self._register_source(var_name, "implicit_source", node)
-
-    def _find_first_identifier(self, node: tree_sitter.Node) -> Optional[str]:
+    def _find_first_identifier(self, node: Optional[tree_sitter.Node]) -> Optional[str]:
+        if not node:
+            return None
         if node.type == "identifier":
             return self._get_node_text(node)
         for child in node.children:
@@ -443,23 +478,8 @@ def extract_graphify_flow_snapshot(
             parse_error="Empty code input",
         )
 
-    candidates = _wrap_in_function_if_needed(code_text)
-
-    best_visitor: Optional[GraphifyFlowVisitor] = None
-    max_signatures = -1
-
-    for candidate in candidates:
-        code_bytes = candidate.encode("utf-8")
-        tree = C_PARSER.parse(code_bytes)
-        visitor = GraphifyFlowVisitor(code_bytes)
-        visitor.visit(tree.root_node)
-
-        if len(visitor.signatures) > max_signatures:
-            max_signatures = len(visitor.signatures)
-            best_visitor = visitor
-
-    if best_visitor is None or not best_visitor.nodes:
-        # Fallback: create minimal source and sink nodes if keywords present
+    candidates = wrap_in_function_if_needed(code_text)
+    if not candidates:
         return FlowGraphSnapshot(
             snapshot_id=snapshot_id,
             scenario_id=scenario_id,
@@ -468,7 +488,47 @@ def extract_graphify_flow_snapshot(
             nodes={},
             signatures=[],
             is_complete=False,
-            parse_error="No valid nodes extracted from Tree-sitter parse",
+            parse_error="No viable candidate code variants generated",
+        )
+
+    # Create thread-safe fresh parser per extraction call
+    parser = tree_sitter.Parser(C_LANGUAGE)
+
+    best_visitor: Optional[GraphifyFlowVisitor] = None
+    max_signatures = -1
+    best_is_clean = False
+
+    for candidate in candidates:
+        try:
+            code_bytes = candidate.encode("utf-8")
+            tree = parser.parse(code_bytes)
+            visitor = GraphifyFlowVisitor(code_bytes)
+            visitor.visit(tree.root_node)
+
+            is_clean = not tree.root_node.has_error
+            sig_count = len(visitor.signatures)
+
+            # Prefer clean error-free ASTs; break ties by signature count
+            if (is_clean, sig_count) > (best_is_clean, max_signatures):
+                max_signatures = sig_count
+                best_visitor = visitor
+                best_is_clean = is_clean
+            elif best_visitor is None and visitor.nodes:
+                best_visitor = visitor
+        except RecursionError:
+            logger.warning("RecursionError during Tree-sitter AST traversal on scenario %s", scenario_id)
+            continue
+
+    if best_visitor is None or not best_visitor.nodes:
+        return FlowGraphSnapshot(
+            snapshot_id=snapshot_id,
+            scenario_id=scenario_id,
+            version=version,
+            created_at=created_at,
+            nodes={},
+            signatures=[],
+            is_complete=False,
+            parse_error="No valid AST nodes extracted from Tree-sitter parse",
         )
 
     return FlowGraphSnapshot(
