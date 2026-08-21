@@ -186,14 +186,14 @@ class ReflectResponse(BaseModel):
     mutation_rationale: str
     applied_topological_rule: str
     taxonomy_bucket: TaxonomyBucket
-    pareto_variant_id: str
+    pareto_variant_id: str = Field(..., min_length=1, description="Canonical mutation identifier")
     estimated_correction_success_probability: float = Field(..., ge=0.0, le=1.0)
 ```
 
 #### Status-Specific Prompt Handling Invariants:
-1. **`SUCCESS`:** `mutated_system_prompt` contains the verified, topologically-constrained prompt variant for the next attempt.
-2. **`FALLBACK_BASELINE`:** When the Reflector LLM output is unrecoverable or schema repairs fail, the Reflector sets `status="FALLBACK_BASELINE"` and populates `mutated_system_prompt` with the static baseline specialist prompt for that taxonomy bucket.
-3. **`NO_MUTATION_NEEDED`:** When the failure was non-prompt-related (e.g. transient network timeout), `mutated_system_prompt` is populated with `current_system_prompt` unchanged. The caller lifecycle is guaranteed never to receive an empty or unassigned prompt.
+1. **`SUCCESS`:** `mutated_system_prompt` contains the verified, topologically-constrained prompt variant for the next attempt, and `pareto_variant_id` contains the applied mutation rule hash.
+2. **`FALLBACK_BASELINE`:** When the Reflector LLM output is unrecoverable or schema repairs fail, the Reflector sets `status="FALLBACK_BASELINE"`, `pareto_variant_id="baseline_v0"`, and populates `mutated_system_prompt` with the static baseline specialist prompt.
+3. **`NO_MUTATION_NEEDED`:** When the failure was non-prompt-related (e.g. transient timeout), `status="NO_MUTATION_NEEDED"` preserves the current prompt and mutation identifier without attributing to a new Pareto variant.
 
 ---
 
@@ -227,6 +227,8 @@ Where:
 ### 4.2 Cross-Seed Dead-End Suppression
 If a specific prompt mutation or argument transformation identity has failed $\ge 3$ consecutive attempts across distinct seeds with zero recoveries, the Reflector automatically stamps it as a `KNOWN_DEAD_END` in `artifacts/gepa/lessons.json` and injects an explicit negative constraint (e.g., *"Do not propose pointer null-check as a fix for buffer index overflow"*).
 
+The atomic outcome recording operation evaluates the current failed attempt together with prior cross-seed history before assigning the outcome. If the current failure completes $\ge 3$ consecutive cross-seed failures with zero recoveries, it is immediately classified as `DEAD_END_CHAIN` on that attempt.
+
 ---
 
 ## 5. Taxonomy-Indexed Pareto Frontier Registry
@@ -254,6 +256,7 @@ To support multi-threaded batch runs (`run_batch.py` with concurrency $C=4$):
 from dataclasses import dataclass
 import time
 from typing import Any, Callable, Dict, Optional
+from agentbeats.replay import OfflineReplayError, ReplayManager
 from scenarios.debate.graphify_flow_extractor import extract_graphify_flow_snapshot
 from scenarios.debate.graph_dataflow import evaluate_graph_reachability
 
@@ -269,6 +272,7 @@ async def execute_seed_with_graph_gepa(
     scenario_record: Dict[str, Any],
     max_attempts: int = 3,
     reflector_client: Optional[ReflectorClient] = None,
+    replay_manager: Optional[ReplayManager] = None,
     clock_fn: Optional[Callable[[], float]] = None,
 ) -> AttemptResult:
     """
@@ -284,7 +288,15 @@ async def execute_seed_with_graph_gepa(
     predicate = scenario_record["predicate"]
     taxonomy = classify_taxonomy_bucket(predicate)
     predicate_family = scenario_record.get("predicate_family") or predicate.split(":")[0].strip()
-    seed_id = str(scenario_record.get("seed_id") or scenario_record["seed"])
+    
+    raw_seed_id = scenario_record.get("seed_id")
+    if raw_seed_id is None:
+        if "seed" not in scenario_record:
+            raise ValueError("scenario_record requires seed_id or seed")
+        raw_seed_id = scenario_record["seed"]
+    seed_id = str(raw_seed_id)
+    if not seed_id:
+        raise ValueError("seed_id must be non-empty")
     
     # Retrieve initial prompt (with baseline fallback if reflector_client is None)
     if reflector_client is not None:
@@ -304,6 +316,7 @@ async def execute_seed_with_graph_gepa(
             scenario=scenario_record,
             system_prompt=current_prompt,
             attempt_idx=attempt_idx,
+            replay_manager=replay_manager,
         )
         last_debate_result = debate_result
 
@@ -328,39 +341,30 @@ async def execute_seed_with_graph_gepa(
 
         diag = classify_graph_diagnostic(debate_result, graph_snapshot, risk_score)
 
-        # Check cross-seed dead-end ledger for this prompt mutation identity
-        is_dead_end = False
-        if reflector_client is not None:
-            is_dead_end = await reflector_client.is_known_dead_end(
-                taxonomy_bucket=taxonomy,
-                mutation_id=active_mutation_id,
-            )
-
-        if is_valid:
-            outcome = "VALID_ACCEPT"
-        elif debate_result.verifier_logic_error:
-            outcome = "LOGIC_ERROR"
-        elif is_dead_end:
-            outcome = "DEAD_END_CHAIN"
-        else:
-            outcome = "RETRYABLE_FAILURE"
-
         evaluated_at = now_fn()
 
-        # Record outcome for every attempt in ledger (reflector or baseline fallback)
+        # Record outcome and evaluate against prior cross-seed history
         if reflector_client is not None:
-            await reflector_client.record_outcome(
+            outcome = await reflector_client.record_attempt_and_classify_outcome(
                 taxonomy_bucket=taxonomy,
                 predicate_family=predicate_family,
                 seed_id=seed_id,
                 scenario_id=scenario_record["scenario_id"],
                 prompt=current_prompt,
-                outcome=outcome,
                 attempt_index=attempt_idx,
+                is_valid=is_valid,
+                verifier_logic_error=debate_result.verifier_logic_error,
                 observed_at=observed_at,
                 evaluated_at=evaluated_at,
                 canonical_mutation_id=active_mutation_id,
             )
+        else:
+            if is_valid:
+                outcome = "VALID_ACCEPT"
+            elif debate_result.verifier_logic_error:
+                outcome = "LOGIC_ERROR"
+            else:
+                outcome = "RETRYABLE_FAILURE"
 
         if is_valid:
             return AttemptResult(
@@ -372,21 +376,39 @@ async def execute_seed_with_graph_gepa(
 
         # 4. If failed and attempts remain: Mutate Prompt via Reflector
         if attempt_idx < max_attempts and reflector_client is not None:
-            reflect_resp = await reflector_client.reflect(
-                ReflectRequest(
-                    attempt_index=attempt_idx,
+            # Under replay mode, missing cached responses raise OfflineReplayError without live calls
+            if replay_manager is not None and replay_manager.mode == "replay":
+                cached = replay_manager.lookup_reflector_response(
                     scenario_id=scenario_record["scenario_id"],
-                    predicate_family=predicate_family,
-                    taxonomy_bucket=taxonomy,
-                    code_text=debate_result.candidate_code,
-                    graph_diagnostic=diag,
-                    current_system_prompt=current_prompt,
+                    attempt_index=attempt_idx,
                 )
-            )
-            # Require taxonomy consistency before applying mutated prompt
+                if cached is None:
+                    raise OfflineReplayError(
+                        f"Reflector replay cache miss on scenario {scenario_record['scenario_id']} attempt {attempt_idx}"
+                    )
+                reflect_resp = cached
+            else:
+                reflect_resp = await reflector_client.reflect(
+                    ReflectRequest(
+                        attempt_index=attempt_idx,
+                        scenario_id=scenario_record["scenario_id"],
+                        predicate_family=predicate_family,
+                        taxonomy_bucket=taxonomy,
+                        code_text=debate_result.candidate_code,
+                        graph_diagnostic=diag,
+                        current_system_prompt=current_prompt,
+                    )
+                )
+
+            # Evaluate response status before changing current_prompt or active_mutation_id
             if reflect_resp.taxonomy_bucket == taxonomy:
-                current_prompt = reflect_resp.mutated_system_prompt
-                active_mutation_id = reflect_resp.pareto_variant_id
+                if reflect_resp.status == "SUCCESS":
+                    current_prompt = reflect_resp.mutated_system_prompt
+                    active_mutation_id = reflect_resp.pareto_variant_id
+                elif reflect_resp.status == "FALLBACK_BASELINE":
+                    current_prompt = get_static_baseline_prompt(taxonomy)
+                    active_mutation_id = "baseline_v0"
+                # NO_MUTATION_NEEDED retains current_prompt and active_mutation_id
 
     return AttemptResult(
         status="REJECTED",
