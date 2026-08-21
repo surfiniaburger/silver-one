@@ -513,8 +513,6 @@ def extract_graphify_flow_snapshot(
                 max_signatures = sig_count
                 best_visitor = visitor
                 best_is_clean = is_clean
-            elif best_visitor is None and visitor.nodes:
-                best_visitor = visitor
         except RecursionError:
             logger.warning("RecursionError during Tree-sitter AST traversal on scenario %s", scenario_id)
             continue

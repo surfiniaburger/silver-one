@@ -14,7 +14,10 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import numpy as np
 from sklearn.metrics import average_precision_score, confusion_matrix, roc_auc_score
 
-from scenarios.debate.pre_filter import partition_dataset_by_scenario_stratified
+from scenarios.debate.pre_filter import (
+    CODE_DELIMITER,
+    partition_dataset_by_scenario_stratified,
+)
 from scripts.train_pre_filter import extract_dataset_from_attempts
 from scenarios.debate.graph_extractor import extract_flow_graph_snapshot as orig_extract
 from scenarios.debate.graphify_flow_extractor import extract_graphify_flow_snapshot as graphify_extract
@@ -51,9 +54,9 @@ class EvaluationDataset:
 
 
 def extract_code_from_sample_text(combined_text: str) -> str:
-    """Extracts the code snippet portion from a formatted candidate attempt text."""
-    if "CODE_DELIMITER:" in combined_text:
-        return combined_text.split("CODE_DELIMITER:", 1)[1].strip()
+    """Extracts the code snippet portion from a formatted candidate attempt text using canonical delimiter."""
+    if CODE_DELIMITER in combined_text:
+        return combined_text.split(CODE_DELIMITER, 1)[1].strip()
     return combined_text.strip()
 
 
