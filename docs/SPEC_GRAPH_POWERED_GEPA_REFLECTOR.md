@@ -192,8 +192,8 @@ class ReflectResponse(BaseModel):
 
 #### Status-Specific Prompt Handling Invariants:
 1. **`SUCCESS`:** `mutated_system_prompt` contains the verified, topologically-constrained prompt variant for the next attempt, and `pareto_variant_id` contains the applied mutation rule hash.
-2. **`FALLBACK_BASELINE`:** When the Reflector LLM output is unrecoverable or schema repairs fail, the Reflector sets `status="FALLBACK_BASELINE"`, `pareto_variant_id="baseline_v0"`, and populates `mutated_system_prompt` with the static baseline specialist prompt.
-3. **`NO_MUTATION_NEEDED`:** When the failure was non-prompt-related (e.g. transient timeout), `status="NO_MUTATION_NEEDED"` preserves the current prompt and mutation identifier without attributing to a new Pareto variant.
+2. **`FALLBACK_BASELINE`:** When the Reflector LLM output is unrecoverable, schema repairs fail, or a taxonomy bucket mismatch occurs, the Reflector sets `status="FALLBACK_BASELINE"`, `pareto_variant_id="baseline_v0"`, and populates `mutated_system_prompt` with the static baseline specialist prompt.
+3. **`NO_MUTATION_NEEDED`:** When the failure was non-prompt-related (e.g. transient timeout), `status="NO_MUTATION_NEEDED"` preserves the current prompt and mutation identifier without attributing to an unverified Pareto variant.
 
 ---
 
@@ -254,11 +254,14 @@ To support multi-threaded batch runs (`run_batch.py` with concurrency $C=4$):
 
 ```python
 from dataclasses import dataclass
+import logging
 import time
 from typing import Any, Callable, Dict, Optional
 from agentbeats.replay import OfflineReplayError, ReplayManager
 from scenarios.debate.graphify_flow_extractor import extract_graphify_flow_snapshot
 from scenarios.debate.graph_dataflow import evaluate_graph_reachability
+
+logger = logging.getLogger("run_batch")
 
 @dataclass(frozen=True)
 class AttemptResult:
@@ -277,7 +280,7 @@ async def execute_seed_with_graph_gepa(
 ) -> AttemptResult:
     """
     Executes a multiagent debate with Graph-Powered GEPA prompt adaptation.
-    Guarantees typed return and explicit failure states across all paths.
+    Guarantees typed return, cassette replay stability, and explicit failure states across all paths.
     """
     if max_attempts < 1:
         raise ValueError(f"max_attempts must be >= 1, got {max_attempts}")
@@ -376,32 +379,47 @@ async def execute_seed_with_graph_gepa(
 
         # 4. If failed and attempts remain: Mutate Prompt via Reflector
         if attempt_idx < max_attempts and reflector_client is not None:
-            # Under replay mode, missing cached responses raise OfflineReplayError without live calls
-            if replay_manager is not None and replay_manager.mode == "replay":
-                cached = replay_manager.lookup_reflector_response(
-                    scenario_id=scenario_record["scenario_id"],
-                    attempt_index=attempt_idx,
+            reflect_req = ReflectRequest(
+                attempt_index=attempt_idx,
+                scenario_id=scenario_record["scenario_id"],
+                predicate_family=predicate_family,
+                taxonomy_bucket=taxonomy,
+                code_text=debate_result.candidate_code,
+                graph_diagnostic=diag,
+                current_system_prompt=current_prompt,
+            )
+
+            # Route through ReplayManager.cassette when replay mode is active
+            if replay_manager is not None and replay_manager.cassette.mode == "replay":
+                cached_data = replay_manager.cassette.get_response(
+                    model="reflector_agent",
+                    messages=[{"role": "user", "content": reflect_req.model_dump_json()}],
+                    params={"seed_id": seed_id, "scenario_id": scenario_record["scenario_id"], "attempt_index": attempt_idx},
                 )
-                if cached is None:
+                if cached_data is None:
                     raise OfflineReplayError(
                         f"Reflector replay cache miss on scenario {scenario_record['scenario_id']} attempt {attempt_idx}"
                     )
-                reflect_resp = cached
+                reflect_resp = ReflectResponse.model_validate(cached_data)
             else:
-                reflect_resp = await reflector_client.reflect(
-                    ReflectRequest(
-                        attempt_index=attempt_idx,
-                        scenario_id=scenario_record["scenario_id"],
-                        predicate_family=predicate_family,
-                        taxonomy_bucket=taxonomy,
-                        code_text=debate_result.candidate_code,
-                        graph_diagnostic=diag,
-                        current_system_prompt=current_prompt,
+                reflect_resp = await reflector_client.reflect(reflect_req)
+                if replay_manager is not None and replay_manager.cassette.mode == "record":
+                    replay_manager.cassette.save_response(
+                        model="reflector_agent",
+                        messages=[{"role": "user", "content": reflect_req.model_dump_json()}],
+                        params={"seed_id": seed_id, "scenario_id": scenario_record["scenario_id"], "attempt_index": attempt_idx},
+                        response=reflect_resp.model_dump(),
                     )
-                )
 
-            # Evaluate response status before changing current_prompt or active_mutation_id
-            if reflect_resp.taxonomy_bucket == taxonomy:
+            # Explicitly validate taxonomy consistency; reject mismatches and route to fallback baseline
+            if reflect_resp.taxonomy_bucket != taxonomy:
+                logger.error(
+                    "Reflector taxonomy mismatch on scenario %s: expected %s, got %s. Routing to fallback baseline.",
+                    scenario_record["scenario_id"], taxonomy, reflect_resp.taxonomy_bucket
+                )
+                current_prompt = get_static_baseline_prompt(taxonomy)
+                active_mutation_id = "baseline_v0"
+            else:
                 if reflect_resp.status == "SUCCESS":
                     current_prompt = reflect_resp.mutated_system_prompt
                     active_mutation_id = reflect_resp.pareto_variant_id
