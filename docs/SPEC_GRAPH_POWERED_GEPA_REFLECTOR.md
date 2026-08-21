@@ -72,7 +72,7 @@ This specification establishes a **Graph-Powered GEPA Reflector**:
  │       (e.g., "Anchor BOUNDS_CHECK on variable 'len' before sink 'memcpy'")       │
  │                                                                                  │
  │  3. Concurrency-Safe Pareto Frontier Update:                                     │
- │     - Atomically updates artifacts/gepa/pareto_frontier.json (.lock companion)   │
+ │     - Atomically updates artifacts/gepa/pareto_frontier.json via shared lock     │
  │     - Appends trace to artifacts/gepa/mutations.jsonl                            │
  └────────────────────────────────────────┬─────────────────────────────────────────┘
                                           │
@@ -87,12 +87,36 @@ This specification establishes a **Graph-Powered GEPA Reflector**:
 
 ## 3. Data Contracts & Structured Schemas
 
-### 3.1 Graph Failure Bucket Taxonomy & Deterministic Precedence
+### 3.1 Closed-Set Taxonomy & Failure Bucket Type Aliases
+
+```python
+from typing import Any, Callable, Dict, List, Literal, Optional
+from pydantic import BaseModel, Field
+
+FailureBucket = Literal[
+    "B_UNSUPPORTED_SYNTAX",
+    "B_LOGIC_ERROR",
+    "B_ANCHOR_UNMATCHED",
+    "B_SOURCE_MISSING",
+    "B_SINK_MISSING",
+    "B_SANITIZER_MISMATCH",
+    "B_SANITIZER_TARGET_MISMATCH",
+]
+
+TaxonomyBucket = Literal[
+    "memory_safety",
+    "integer_arithmetic",
+    "concurrency",
+    "input_validation",
+]
+```
+
+### 3.2 Graph Failure Bucket Taxonomy & Deterministic Precedence
 When a candidate attempt fails adjudication, it is classified into **exactly one** diagnostic bucket using the following strict, top-to-bottom precedence order:
 
 | Precedence | Bucket ID | Diagnostic Trigger Condition | Reflector Prompt Action |
 | :--- | :--- | :--- | :--- |
-| **1 (Highest)** | `B_UNSUPPORTED_SYNTAX` | Tree-sitter parse failed completely or no AST nodes recovered (`is_complete == False` and `len(nodes) == 0`). | Fallback to sanitized baseline prompt with macro expansion / standard C snippet guidance. |
+| **1 (Highest)** | `B_UNSUPPORTED_SYNTAX` | Tree-sitter parsing is incomplete and no AST nodes are recovered (`is_complete == False` and `len(nodes) == 0`). | Fallback to sanitized baseline prompt with macro expansion / standard C snippet guidance. |
 | **2** | `B_LOGIC_ERROR` | Verifier detected factual contradiction or self-inconsistent proof chain (`verifier_logic_error == True`). | Suppress flawed argument; prompt Con debater with contradiction counter-evidence. |
 | **3** | `B_ANCHOR_UNMATCHED` | Candidate code lines fail case-insensitive substring match against source repo (`b2_strict_fail == True` or `b2_anchor_match == False`). | Instruct Pro to quote exact line anchors directly from repository context. |
 | **4** | `B_SOURCE_MISSING` | AST contains sink operation, but source parameter is untracked/synthetic (`source_type == "UNKNOWN_ORIGIN"` or missing parameter). | Instruct Pro to ground untrusted input to genuine function entrypoint parameters. |
@@ -102,13 +126,9 @@ When a candidate attempt fails adjudication, it is classified into **exactly one
 
 ---
 
-### 3.2 Canonical Graph Diagnostic Schema (`μ_f^graph`)
+### 3.3 Canonical Graph Diagnostic Schema (`μ_f^graph`)
 
 ```python
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional
-from pydantic import BaseModel, Field
-
 class GraphDiagnosticSignature(BaseModel):
     """
     Standardized graph diagnostic feedback emitted by the AST extraction layer.
@@ -116,7 +136,7 @@ class GraphDiagnosticSignature(BaseModel):
     """
     scenario_id: str = Field(..., description="Scenario ID or HASH-{sha256[:10]}")
     predicate_family: str = Field(..., description="e.g. BUFFER_OVERFLOW, USE_AFTER_FREE, COMMAND_INJECTION")
-    failure_bucket: str = Field(..., description="Canonical Bucket ID (B_SANITIZER_MISMATCH, etc.)")
+    failure_bucket: FailureBucket = Field(..., description="Canonical FailureBucket ID")
     source_id: Optional[str] = None
     sink_id: Optional[str] = None
     sink_type: Optional[str] = None
@@ -145,7 +165,7 @@ class GraphDiagnosticSignature(BaseModel):
 
 ---
 
-### 3.3 A2A Reflector API Schema (HTTP Port 8004) & Structured-Output Fallback
+### 3.4 A2A Reflector API Schema (HTTP Port 8004) & Structured-Output Fallback
 
 All prompt mutation requests are executed via `call_structured(...)` from `agentbeats.structured_output`:
 
@@ -154,7 +174,7 @@ class ReflectRequest(BaseModel):
     attempt_index: int = Field(..., ge=1, description="Current attempt number for this seed")
     scenario_id: str
     predicate_family: str
-    taxonomy_bucket: Literal["memory_safety", "integer_arithmetic", "concurrency", "input_validation"]
+    taxonomy_bucket: TaxonomyBucket
     code_text: str
     graph_diagnostic: GraphDiagnosticSignature
     current_system_prompt: str
@@ -165,7 +185,7 @@ class ReflectResponse(BaseModel):
     mutated_system_prompt: str = Field(..., min_length=1, description="Must be non-empty valid prompt")
     mutation_rationale: str
     applied_topological_rule: str
-    taxonomy_bucket: str
+    taxonomy_bucket: TaxonomyBucket
     pareto_variant_id: str
     estimated_correction_success_probability: float = Field(..., ge=0.0, le=1.0)
 ```
@@ -191,7 +211,7 @@ Every evaluated attempt emits an immutable ledger record containing:
 - `observed_at`: Injected epoch timestamp of initial attempt execution.
 - `evaluated_at`: Injected epoch timestamp of outcome evaluation.
 - `outcome`: One of `VALID_ACCEPT`, `LOGIC_ERROR`, `DEAD_END_CHAIN`, or `RETRYABLE_FAILURE`.
-- `canonical_mutation_id`: Hash of the applied prompt mutation rule.
+- `canonical_mutation_id`: Stable hash of the applied prompt mutation rule (or `"baseline_v0"` when unmutated).
 
 Each historical attempt record $i$ for a given vulnerability family $(S, P, K)$ contributes a signed, time-decayed score $s_i$:
 
@@ -204,8 +224,8 @@ Where:
 - $\tau_{\text{half\_life}} = 30.0\text{ days}$ (ensures recent failures immediately outweigh older successes)
 - **Promotion Threshold:** A prompt mutation rule is marked `PREFERRED` only when corroborated by $\ge 2$ distinct successful seeds ($\text{Corroboration} \ge 2$).
 
-### 4.2 Dead-End Suppression
-If a specific argument pattern or code transformation has failed $\ge 3$ consecutive attempts across seeds with zero recoveries, the Reflector automatically stamps it as a `KNOWN_DEAD_END` in `artifacts/gepa/lessons.json` and injects an explicit negative constraint (e.g., *"Do not propose pointer null-check as a fix for buffer index overflow"*).
+### 4.2 Cross-Seed Dead-End Suppression
+If a specific prompt mutation or argument transformation identity has failed $\ge 3$ consecutive attempts across distinct seeds with zero recoveries, the Reflector automatically stamps it as a `KNOWN_DEAD_END` in `artifacts/gepa/lessons.json` and injects an explicit negative constraint (e.g., *"Do not propose pointer null-check as a fix for buffer index overflow"*).
 
 ---
 
@@ -219,12 +239,12 @@ GEPA maintains distinct Pareto-optimal prompt pools across four structural vulne
 3. `concurrency`: TOCTOU race conditions, lock-free invariants, double-checked locking, deadlocks.
 4. `input_validation`: Command injection, path traversal, untrusted deserialization, format string bugs.
 
-### 5.2 Concurrency-Safe Ledger & Lessons Contract
+### 5.2 Shared Concurrency Lock & Lessons Contract
 To support multi-threaded batch runs (`run_batch.py` with concurrency $C=4$):
 
-1. **Stable Companion Lock for Frontier & Lessons:** All reads and updates to `artifacts/gepa/pareto_frontier.json` and `artifacts/gepa/lessons.json` must acquire a lock on `artifacts/gepa/pareto_frontier.json.lock` and `artifacts/gepa/lessons.json.lock` using non-blocking `fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)` with exponential backoff retry ($t \in [10\text{ms}, 500\text{ms}]$, max timeout $5.0\text{s}$).
-2. **Atomic Write Publication:** Writes are staged to temporary files (`pareto_frontier.json.tmp.<pid>.<uuid>`, `lessons.json.tmp.<pid>.<uuid>`) and published via `os.replace`.
-3. **Append-Only Serialized Audit Log:** Every mutation event is logged unconditionally to `artifacts/gepa/mutations.jsonl` while holding the companion lock.
+1. **Unified Global GEPA Lock:** All reads and updates to `artifacts/gepa/pareto_frontier.json`, `artifacts/gepa/lessons.json`, and appends to `artifacts/gepa/mutations.jsonl` must acquire a single shared serialization lock on `artifacts/gepa/gepa_ledger.lock` using non-blocking `fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)` with exponential backoff retry ($t \in [10\text{ms}, 500\text{ms}]$, max timeout $5.0\text{s}$).
+2. **Atomic Write Publication:** Writes to `pareto_frontier.json` and `lessons.json` are staged to temporary files (`pareto_frontier.json.tmp.<pid>.<uuid>`, `lessons.json.tmp.<pid>.<uuid>`) and published via `os.replace` while holding the shared lock.
+3. **Append-Only Serialized Audit Log:** Every mutation event is logged unconditionally to `artifacts/gepa/mutations.jsonl` while holding the shared lock.
 
 ---
 
@@ -233,7 +253,7 @@ To support multi-threaded batch runs (`run_batch.py` with concurrency $C=4$):
 ```python
 from dataclasses import dataclass
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 from scenarios.debate.graphify_flow_extractor import extract_graphify_flow_snapshot
 from scenarios.debate.graph_dataflow import evaluate_graph_reachability
 
@@ -259,9 +279,12 @@ async def execute_seed_with_graph_gepa(
         raise ValueError(f"max_attempts must be >= 1, got {max_attempts}")
 
     now_fn = clock_fn if clock_fn is not None else time.time
-    taxonomy = classify_taxonomy_bucket(scenario_record["predicate"])
-    predicate_family = scenario_record.get("predicate_family", "UNKNOWN")
-    seed_id = scenario_record.get("seed_id", "default_seed")
+    
+    # Require canonical scenario identity without silent fallback placeholders
+    predicate = scenario_record["predicate"]
+    taxonomy = classify_taxonomy_bucket(predicate)
+    predicate_family = scenario_record.get("predicate_family") or predicate.split(":")[0].strip()
+    seed_id = str(scenario_record.get("seed_id") or scenario_record["seed"])
     
     # Retrieve initial prompt (with baseline fallback if reflector_client is None)
     if reflector_client is not None:
@@ -271,8 +294,7 @@ async def execute_seed_with_graph_gepa(
 
     last_debate_result = None
     last_risk_score = 1.0
-    previous_bucket = None
-    consecutive_bucket_repeats = 0
+    active_mutation_id = "baseline_v0"
 
     for attempt_idx in range(1, max_attempts + 1):
         observed_at = now_fn()
@@ -305,19 +327,20 @@ async def execute_seed_with_graph_gepa(
         )
 
         diag = classify_graph_diagnostic(debate_result, graph_snapshot, risk_score)
-        
-        # Track consecutive repeated failure buckets for dead-end classification
-        if diag.failure_bucket == previous_bucket:
-            consecutive_bucket_repeats += 1
-        else:
-            consecutive_bucket_repeats = 1
-            previous_bucket = diag.failure_bucket
+
+        # Check cross-seed dead-end ledger for this prompt mutation identity
+        is_dead_end = False
+        if reflector_client is not None:
+            is_dead_end = await reflector_client.is_known_dead_end(
+                taxonomy_bucket=taxonomy,
+                mutation_id=active_mutation_id,
+            )
 
         if is_valid:
             outcome = "VALID_ACCEPT"
         elif debate_result.verifier_logic_error:
             outcome = "LOGIC_ERROR"
-        elif consecutive_bucket_repeats >= 3:
+        elif is_dead_end:
             outcome = "DEAD_END_CHAIN"
         else:
             outcome = "RETRYABLE_FAILURE"
@@ -336,7 +359,7 @@ async def execute_seed_with_graph_gepa(
                 attempt_index=attempt_idx,
                 observed_at=observed_at,
                 evaluated_at=evaluated_at,
-                canonical_mutation_id=diag.failure_bucket,
+                canonical_mutation_id=active_mutation_id,
             )
 
         if is_valid:
@@ -360,7 +383,10 @@ async def execute_seed_with_graph_gepa(
                     current_system_prompt=current_prompt,
                 )
             )
-            current_prompt = reflect_resp.mutated_system_prompt
+            # Require taxonomy consistency before applying mutated prompt
+            if reflect_resp.taxonomy_bucket == taxonomy:
+                current_prompt = reflect_resp.mutated_system_prompt
+                active_mutation_id = reflect_resp.pareto_variant_id
 
     return AttemptResult(
         status="REJECTED",
@@ -405,6 +431,6 @@ graph TD
 
 1. **`scenarios/debate/graphify_flow_extractor.py`:** Implement Graphify's Tree-sitter C extraction engine with error-tolerant AST traversal.
 2. **`scenarios/debate/reflector_agent.py`:** Implement FastAPI microservice with Pydantic contracts and Graphify `reflect.py` work-memory scoring.
-3. **`scenarios/debate/pareto_registry.py`:** Implement `fcntl.flock` companion-lock protected Pareto and lessons storage in `artifacts/gepa/`.
+3. **`scenarios/debate/pareto_registry.py`:** Implement unified shared `fcntl.flock` companion-lock protected Pareto and lessons storage in `artifacts/gepa/`.
 4. **`scenarios/debate/run_batch.py`:** Add Attempt 2+ reflection hooks and `ReplayManager` record/replay integration.
 5. **`scripts/evaluate_graphify_cv.py`:** 5-fold Stratified Scenario-Grouped CV evaluation script to generate authoritative JSON compliance receipts.

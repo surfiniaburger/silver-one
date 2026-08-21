@@ -28,6 +28,15 @@ def test_empty_and_whitespace_code_input():
     assert snap_space.parse_error == "Empty code input"
 
 
+def test_malformed_syntax_failure():
+    """Verify that completely unparseable syntax with no extracted AST nodes returns incomplete snapshot."""
+    malformed = "!@#$%^&*() ~`{}[]|\\:"
+    snap = extract_graphify_flow_snapshot(malformed, "test_malformed")
+    assert not snap.is_complete
+    assert snap.parse_error is not None
+    assert len(snap.signatures) == 0
+
+
 def test_markdown_fence_stripping():
     """Verify markdown fences are cleanly stripped."""
     fenced = "```c\nint x = 42;\nmemcpy(buf, src, 10);\n```"
@@ -59,9 +68,8 @@ def test_unguarded_memory_write():
 
     mem_sigs = [s for s in snap.signatures if s.sink_type == "MEMORY_WRITE"]
     assert len(mem_sigs) >= 1
-    sig = mem_sigs[0]
-    assert sig.sanitizer_type is None
-    assert sig.guarded_target is None
+    assert all(s.sanitizer_type is None for s in mem_sigs)
+    assert all(s.guarded_target is None for s in mem_sigs)
 
 
 def test_guarded_memory_write_bounds_check():
@@ -130,7 +138,7 @@ def test_sanitizer_preference_sink_rejection():
     assert snap_sys.is_complete
     sys_sigs = [s for s in snap_sys.signatures if s.sink_type == "SYSTEM_CALL"]
     assert len(sys_sigs) >= 1
-    assert sys_sigs[0].sanitizer_type is None
+    assert all(s.sanitizer_type is None for s in sys_sigs)
 
     # Bounds check around a pointer dereference -> should remain unsanitized because BOUNDS_CHECK is invalid for POINTER_DEREF
     code_ptr_bounds = """
@@ -144,7 +152,7 @@ def test_sanitizer_preference_sink_rejection():
     assert snap_ptr.is_complete
     ptr_sigs = [s for s in snap_ptr.signatures if s.sink_type == "POINTER_DEREF"]
     assert len(ptr_sigs) >= 1
-    assert ptr_sigs[0].sanitizer_type is None
+    assert all(s.sanitizer_type is None for s in ptr_sigs)
 
 
 def test_system_call_sink():
@@ -202,7 +210,7 @@ def test_run_5fold_cv_for_extractor_empty():
 
 
 def test_extract_code_from_sample_text():
-    """Verify code snippet parsing from delimiter-formatted attempt string."""
+    """Verify production code snippet parsing from delimiter-formatted attempt string."""
     text_with_delim = "PREDICATE_PREFIX:some_pred | Code: memcpy(a, b, c);"
     extracted = extract_code_from_sample_text(text_with_delim)
     assert extracted == "memcpy(a, b, c);"
