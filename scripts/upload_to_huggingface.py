@@ -10,7 +10,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Tuple
+from typing import Any, Tuple
 from huggingface_hub import HfApi, create_repo, get_token
 
 # Ensure repository root is on sys.path for direct execution
@@ -94,10 +94,54 @@ REQUIRED_GEPA_KEYS = {"predicate", "evidence_hooks", "uncertainty", "proof_requi
 SUPPORTED_LANGUAGES = {"c", "cpp", "c++"}
 
 
+def _validate_gepa_payload(gepa: Any, lineno: int) -> Tuple[bool, str]:
+    """Validate GEPA payload subfields."""
+    if not isinstance(gepa, dict):
+        return False, f"Line {lineno} gepa_info must be a JSON object"
+    missing_gepa = REQUIRED_GEPA_KEYS - set(gepa.keys())
+    if missing_gepa:
+        return False, f"Line {lineno} gepa_info missing required subfields: {sorted(missing_gepa)}"
+    if not isinstance(gepa.get("predicate"), str) or not gepa["predicate"].strip():
+        return False, f"Line {lineno} gepa_info.predicate is empty"
+    if not isinstance(gepa.get("evidence_hooks"), list) or len(gepa["evidence_hooks"]) < 1:
+        return False, f"Line {lineno} gepa_info.evidence_hooks must be a non-empty list"
+    if not isinstance(gepa.get("proof_requirements"), str) or not gepa["proof_requirements"].strip():
+        return False, f"Line {lineno} gepa_info.proof_requirements is empty"
+    return True, ""
+
+
+def _validate_record(record: Any, lineno: int) -> Tuple[bool, str]:
+    """Validate a single parsed JSON record against the dataset contract."""
+    if not isinstance(record, dict):
+        return False, f"Line {lineno} is not a JSON object"
+
+    missing_keys = REQUIRED_SCHEMA_KEYS - set(record.keys())
+    if missing_keys:
+        return False, f"Line {lineno} missing required keys: {sorted(missing_keys)}"
+
+    lang = (record.get("language") or "").strip().lower()
+    if lang not in SUPPORTED_LANGUAGES:
+        return False, f"Line {lineno} unsupported language: '{lang}'"
+
+    topic = record.get("topic", "")
+    if not isinstance(topic, str) or len(topic) < 200 or len(topic) > 12000:
+        return False, f"Line {lineno} invalid topic length: {len(topic)} (must be 200-12000)"
+
+    pred = record.get("predicate", "")
+    if not isinstance(pred, str) or not pred.strip():
+        return False, f"Line {lineno} missing or empty predicate"
+
+    anchors = record.get("anchors", [])
+    if not isinstance(anchors, list) or len(anchors) < 1:
+        return False, f"Line {lineno} missing anchors list"
+
+    return _validate_gepa_payload(record.get("gepa_info"), lineno)
+
+
 def validate_seed_corpus(file_path: Path, expected_count: int = 500) -> Tuple[bool, str, int]:
     """
     Validate all JSONL records before publication.
-    Enforces documented schema, exact record count, length bounds (500-12000),
+    Enforces documented schema, exact record count, length bounds (200-12000),
     allowed languages, non-empty anchors, and complete GEPA payload subfields.
     """
     if not file_path.is_file():
@@ -114,52 +158,12 @@ def validate_seed_corpus(file_path: Path, expected_count: int = 500) -> Tuple[bo
             except Exception as e:
                 return False, f"Malformed JSON at line {lineno}: {e}", count
 
-            # Enforce JSON object (dict)
-            if not isinstance(record, dict):
-                return False, f"Line {lineno} is not a JSON object", count
-
-            # Validate required schema keys
-            missing_keys = REQUIRED_SCHEMA_KEYS - set(record.keys())
-            if missing_keys:
-                return False, f"Line {lineno} missing required keys: {sorted(missing_keys)}", count
-
-            # Validate language
-            lang = (record.get("language") or "").strip().lower()
-            if lang not in SUPPORTED_LANGUAGES:
-                return False, f"Line {lineno} unsupported language: '{lang}'", count
-
-            # Validate topic length (documented 200-12,000 range)
-            topic = record.get("topic", "")
-            if not isinstance(topic, str) or len(topic) < 200 or len(topic) > 12000:
-                return False, f"Line {lineno} invalid topic length: {len(topic)} (must be 200-12000)", count
-
-            # Validate predicate
-            pred = record.get("predicate", "")
-            if not isinstance(pred, str) or not pred.strip():
-                return False, f"Line {lineno} missing or empty predicate", count
-
-            # Validate complete GEPA info fields
-            gepa = record.get("gepa_info", {})
-            if not isinstance(gepa, dict):
-                return False, f"Line {lineno} gepa_info must be a JSON object", count
-            missing_gepa = REQUIRED_GEPA_KEYS - set(gepa.keys())
-            if missing_gepa:
-                return False, f"Line {lineno} gepa_info missing required subfields: {sorted(missing_gepa)}", count
-            if not isinstance(gepa.get("predicate"), str) or not gepa["predicate"].strip():
-                return False, f"Line {lineno} gepa_info.predicate is empty", count
-            if not isinstance(gepa.get("evidence_hooks"), list) or len(gepa["evidence_hooks"]) < 1:
-                return False, f"Line {lineno} gepa_info.evidence_hooks must be a non-empty list", count
-            if not isinstance(gepa.get("proof_requirements"), str) or not gepa["proof_requirements"].strip():
-                return False, f"Line {lineno} gepa_info.proof_requirements is empty", count
-
-            # Validate anchors
-            anchors = record.get("anchors", [])
-            if not isinstance(anchors, list) or len(anchors) < 1:
-                return False, f"Line {lineno} missing anchors list", count
+            is_valid, err_msg = _validate_record(record, lineno)
+            if not is_valid:
+                return False, err_msg, count
 
             count += 1
 
-    # Require exact record count
     if count != expected_count:
         return False, f"Corpus record count ({count}) does not match expected count ({expected_count})", count
 
