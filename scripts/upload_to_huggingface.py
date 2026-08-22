@@ -6,13 +6,25 @@ Repository: surfiniaburger/cve-decision-seeds
 
 import argparse
 import datetime
-import hashlib
 import json
 import os
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import Tuple
 from huggingface_hub import HfApi, create_repo, get_token
+
+# Ensure repository root is on sys.path for direct execution
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.hub_common import (
+    DEFAULT_LOCAL_PATH,
+    DEFAULT_REPO_ID,
+    compute_sha256,
+    log_provenance,
+    safe_resolve,
+)
 
 
 DATASET_CARD = """---
@@ -43,7 +55,7 @@ This dataset contains **500 high-fidelity, verified C/C++ vulnerability seeds** 
 
 - **Source Corpus:** Extracted from [CVEFixes](https://www.kaggle.com/datasets/girish17019/cvefixes-vulnerable-and-fixed-code).
 - **Clean-Room Anti-Leakage Partitioning:** Excluded against all 5,000 held-out evaluation scenarios in [cve-decision](https://www.kaggle.com/datasets/surfiniaburger/cve-decision) using exact, normalized, and 5-gram fuzzy shingling ($J < 0.80$).
-- **Strict Length Limits:** $500 \\le \\text{code length} \\le 12,000$ characters.
+- **Strict Length Limits:** $200 \\le \\text{code length} \\le 12,000$ characters.
 - **Structured Explanations:** Generated using `call_structured(GepaExplanation)` with `gpt-oss:120b-cloud`.
 - **Anchor Grounding:** $100\\%$ non-generic AST syntax tokens (no generic stopwords).
 
@@ -78,41 +90,15 @@ print(f"Loaded {len(dataset['train'])} seeds.")
 """
 
 REQUIRED_SCHEMA_KEYS = {"topic", "predicate", "gepa_info", "language", "original_safety", "anchors"}
+REQUIRED_GEPA_KEYS = {"predicate", "evidence_hooks", "uncertainty", "proof_requirements"}
 SUPPORTED_LANGUAGES = {"c", "cpp", "c++"}
 
 
-def _safe_resolve(path_str: str, base_dir: Path) -> Path:
-    """Validate and safely resolve a path within base_dir to prevent path traversal."""
-    resolved = (base_dir / path_str).resolve()
-    base_resolved = base_dir.resolve()
-    try:
-        resolved.relative_to(base_resolved)
-    except ValueError:
-        raise ValueError(f"Path traversal error: '{path_str}' escapes base directory '{base_dir}'")
-    return resolved
-
-
-def _compute_sha256(file_path: Path) -> str:
-    """Compute SHA-256 hash of a local file."""
-    hasher = hashlib.sha256()
-    with open(file_path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            hasher.update(chunk)
-    return hasher.hexdigest()
-
-
-def _log_provenance(entry: dict, base_dir: Path) -> None:
-    """Append operation provenance record to append-only JSONL log."""
-    log_path = base_dir / "artifacts" / "provenance" / "hub_operations.jsonl"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(log_path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry) + "\n")
-
-
-def validate_seed_corpus(file_path: Path, expected_min_count: int = 10) -> Tuple[bool, str, int]:
+def validate_seed_corpus(file_path: Path, expected_count: int = 500) -> Tuple[bool, str, int]:
     """
     Validate all JSONL records before publication.
-    Enforces documented schema, length bounds, allowed languages, and required GEPA fields.
+    Enforces documented schema, exact record count, length bounds (500-12000),
+    allowed languages, non-empty anchors, and complete GEPA payload subfields.
     """
     if not file_path.is_file():
         return False, f"File does not exist: {file_path}", 0
@@ -128,30 +114,43 @@ def validate_seed_corpus(file_path: Path, expected_min_count: int = 10) -> Tuple
             except Exception as e:
                 return False, f"Malformed JSON at line {lineno}: {e}", count
 
+            # Enforce JSON object (dict)
+            if not isinstance(record, dict):
+                return False, f"Line {lineno} is not a JSON object", count
+
             # Validate required schema keys
             missing_keys = REQUIRED_SCHEMA_KEYS - set(record.keys())
             if missing_keys:
-                return False, f"Line {lineno} missing required keys: {missing_keys}", count
+                return False, f"Line {lineno} missing required keys: {sorted(missing_keys)}", count
 
             # Validate language
             lang = (record.get("language") or "").strip().lower()
             if lang not in SUPPORTED_LANGUAGES:
                 return False, f"Line {lineno} unsupported language: '{lang}'", count
 
-            # Validate topic length
+            # Validate topic length (documented 200-12,000 range)
             topic = record.get("topic", "")
-            if not isinstance(topic, str) or len(topic) < 50 or len(topic) > 12000:
-                return False, f"Line {lineno} invalid topic length: {len(topic)} (must be 50-12000)", count
+            if not isinstance(topic, str) or len(topic) < 200 or len(topic) > 12000:
+                return False, f"Line {lineno} invalid topic length: {len(topic)} (must be 200-12000)", count
 
             # Validate predicate
             pred = record.get("predicate", "")
             if not isinstance(pred, str) or not pred.strip():
                 return False, f"Line {lineno} missing or empty predicate", count
 
-            # Validate GEPA info
+            # Validate complete GEPA info fields
             gepa = record.get("gepa_info", {})
-            if not isinstance(gepa, dict) or not gepa.get("predicate"):
-                return False, f"Line {lineno} missing or invalid gepa_info payload", count
+            if not isinstance(gepa, dict):
+                return False, f"Line {lineno} gepa_info must be a JSON object", count
+            missing_gepa = REQUIRED_GEPA_KEYS - set(gepa.keys())
+            if missing_gepa:
+                return False, f"Line {lineno} gepa_info missing required subfields: {sorted(missing_gepa)}", count
+            if not isinstance(gepa.get("predicate"), str) or not gepa["predicate"].strip():
+                return False, f"Line {lineno} gepa_info.predicate is empty", count
+            if not isinstance(gepa.get("evidence_hooks"), list) or len(gepa["evidence_hooks"]) < 1:
+                return False, f"Line {lineno} gepa_info.evidence_hooks must be a non-empty list", count
+            if not isinstance(gepa.get("proof_requirements"), str) or not gepa["proof_requirements"].strip():
+                return False, f"Line {lineno} gepa_info.proof_requirements is empty", count
 
             # Validate anchors
             anchors = record.get("anchors", [])
@@ -160,8 +159,9 @@ def validate_seed_corpus(file_path: Path, expected_min_count: int = 10) -> Tuple
 
             count += 1
 
-    if count < expected_min_count:
-        return False, f"Record count {count} is below expected minimum {expected_min_count}", count
+    # Require exact record count
+    if count != expected_count:
+        return False, f"Corpus record count ({count}) does not match expected count ({expected_count})", count
 
     return True, "Valid", count
 
@@ -170,13 +170,13 @@ def main():
     parser = argparse.ArgumentParser(description="Upload clean CVE seeds dataset to Hugging Face Hub")
     parser.add_argument(
         "--repo-id",
-        default="surfiniaburger/cve-decision-seeds",
-        help="Hugging Face dataset repository ID (default: surfiniaburger/cve-decision-seeds)",
+        default=DEFAULT_REPO_ID,
+        help=f"Hugging Face dataset repository ID (default: {DEFAULT_REPO_ID})",
     )
     parser.add_argument(
         "--file",
-        default="scenarios/debate/cve_seeds_500_clean.jsonl",
-        help="Path to clean seeds JSONL file",
+        default=DEFAULT_LOCAL_PATH,
+        help=f"Path to clean seeds JSONL file (default: {DEFAULT_LOCAL_PATH})",
     )
     parser.add_argument(
         "--private",
@@ -187,24 +187,40 @@ def main():
         "--expected-count",
         type=int,
         default=500,
-        help="Expected record count in dataset (default: 500)",
+        help="Expected exact record count in dataset (default: 500)",
     )
     args = parser.parse_args()
 
     workspace_root = Path.cwd().resolve()
     try:
-        target_file = _safe_resolve(args.file, workspace_root)
+        target_file = safe_resolve(args.file, workspace_root)
     except ValueError as e:
         print(f"Security error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # Validate seed corpus before making any Hub calls
-    is_valid, reason, total_records = validate_seed_corpus(target_file, expected_min_count=min(10, args.expected_count))
+    # 1. Validate seed corpus before making any Hub calls
+    is_valid, reason, total_records = validate_seed_corpus(target_file, expected_count=args.expected_count)
     if not is_valid:
         print(f"Corpus validation failed: {reason}", file=sys.stderr)
         sys.exit(1)
 
     print(f"Verified corpus: {total_records} clean, valid records in {target_file.name}.")
+    source_sha256 = compute_sha256(target_file)
+
+    # 2. Log pre-operation started record
+    log_provenance(
+        {
+            "operation": "upload",
+            "phase": "upload_started",
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "repo_id": args.repo_id,
+            "filename": target_file.name,
+            "total_records": total_records,
+            "source_sha256": source_sha256,
+            "private": bool(args.private),
+        },
+        workspace_root,
+    )
 
     token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN") or get_token()
     if not token:
@@ -220,6 +236,16 @@ def main():
     try:
         user_info = api.whoami()
     except Exception as e:
+        log_provenance(
+            {
+                "operation": "upload",
+                "phase": "auth_failed",
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "repo_id": args.repo_id,
+                "error": str(e),
+            },
+            workspace_root,
+        )
         print(f"Authentication failed: {e}", file=sys.stderr)
         sys.exit(1)
 
@@ -227,61 +253,115 @@ def main():
     print(f"Authenticated as Hugging Face user: {username}")
 
     print(f"Creating / verifying dataset repo: {args.repo_id}...")
-    create_repo(
-        repo_id=args.repo_id,
-        repo_type="dataset",
-        private=args.private,
-        token=token,
-        exist_ok=True,
-    )
+    try:
+        create_repo(
+            repo_id=args.repo_id,
+            repo_type="dataset",
+            private=args.private,
+            token=token,
+            exist_ok=True,
+        )
+        if args.private:
+            api.update_repo_settings(repo_id=args.repo_id, repo_type="dataset", private=True)
+            info = api.dataset_info(repo_id=args.repo_id, token=token)
+            if not info.private:
+                raise RuntimeError(f"Repository {args.repo_id} is not private as requested.")
+    except Exception as e:
+        log_provenance(
+            {
+                "operation": "upload",
+                "phase": "repo_setup_failed",
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "repo_id": args.repo_id,
+                "error": str(e),
+            },
+            workspace_root,
+        )
+        print(f"Repository setup failed: {e}", file=sys.stderr)
+        sys.exit(1)
 
-    # Explicitly enforce and verify private visibility when requested
-    if args.private:
-        api.update_repo_settings(repo_id=args.repo_id, repo_type="dataset", private=True)
-        info = api.dataset_info(repo_id=args.repo_id, token=token)
-        if not info.private:
-            print(f"Security error: Repository {args.repo_id} is not private as requested. Aborting upload.", file=sys.stderr)
-            sys.exit(1)
+    data_commit_oid = None
+    card_commit_oid = None
 
-    source_sha256 = _compute_sha256(target_file)
+    # 3. Upload data file
     print(f"Uploading {target_file.name} to {args.repo_id}/cve_seeds_500_clean.jsonl...")
-    commit_data = api.upload_file(
-        path_or_fileobj=str(target_file),
-        path_in_repo="cve_seeds_500_clean.jsonl",
-        repo_id=args.repo_id,
-        repo_type="dataset",
-        commit_message=f"Add {total_records} clean verified CVE debate seeds (GEPA-first)",
-    )
-    data_commit_oid = commit_data.oid if hasattr(commit_data, "oid") else str(commit_data)
+    try:
+        commit_data = api.upload_file(
+            path_or_fileobj=str(target_file),
+            path_in_repo="cve_seeds_500_clean.jsonl",
+            repo_id=args.repo_id,
+            repo_type="dataset",
+            commit_message=f"Add {total_records} clean verified CVE debate seeds (GEPA-first)",
+        )
+        data_commit_oid = commit_data.oid if hasattr(commit_data, "oid") else str(commit_data)
+        log_provenance(
+            {
+                "operation": "upload",
+                "phase": "data_upload_success",
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "repo_id": args.repo_id,
+                "data_commit_oid": data_commit_oid,
+                "source_sha256": source_sha256,
+            },
+            workspace_root,
+        )
+    except Exception as e:
+        log_provenance(
+            {
+                "operation": "upload",
+                "phase": "data_upload_failed",
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "repo_id": args.repo_id,
+                "error": str(e),
+            },
+            workspace_root,
+        )
+        print(f"Data upload failed: {e}", file=sys.stderr)
+        sys.exit(1)
 
+    # 4. Upload dataset card
     print("Uploading README.md dataset card...")
-    commit_card = api.upload_file(
-        path_or_fileobj=DATASET_CARD.encode("utf-8"),
-        path_in_repo="README.md",
-        repo_id=args.repo_id,
-        repo_type="dataset",
-        commit_message="Add dataset card and documentation",
-    )
-    card_commit_oid = commit_card.oid if hasattr(commit_card, "oid") else str(commit_card)
-
-    # Log immutable operation provenance
-    _log_provenance(
-        {
-            "operation": "upload",
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "repo_id": args.repo_id,
-            "filename": target_file.name,
-            "total_records": total_records,
-            "source_sha256": source_sha256,
-            "data_commit_oid": data_commit_oid,
-            "card_commit_oid": card_commit_oid,
-            "private": bool(args.private),
-        },
-        workspace_root,
-    )
+    try:
+        commit_card = api.upload_file(
+            path_or_fileobj=DATASET_CARD.encode("utf-8"),
+            path_in_repo="README.md",
+            repo_id=args.repo_id,
+            repo_type="dataset",
+            commit_message="Add dataset card and documentation",
+        )
+        card_commit_oid = commit_card.oid if hasattr(commit_card, "oid") else str(commit_card)
+        log_provenance(
+            {
+                "operation": "upload",
+                "phase": "upload_complete",
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "repo_id": args.repo_id,
+                "filename": target_file.name,
+                "total_records": total_records,
+                "source_sha256": source_sha256,
+                "data_commit_oid": data_commit_oid,
+                "card_commit_oid": card_commit_oid,
+                "private": bool(args.private),
+            },
+            workspace_root,
+        )
+    except Exception as e:
+        log_provenance(
+            {
+                "operation": "upload",
+                "phase": "card_upload_failed",
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "repo_id": args.repo_id,
+                "data_commit_oid": data_commit_oid,
+                "error": str(e),
+            },
+            workspace_root,
+        )
+        print(f"Dataset card upload failed: {e}", file=sys.stderr)
+        sys.exit(1)
 
     print(f"\nSuccess! Dataset is published at: https://huggingface.co/datasets/{args.repo_id}")
-    print(f"Commit OID: {data_commit_oid} | SHA-256: {source_sha256[:12]}...")
+    print(f"Data Commit OID: {data_commit_oid} | Card Commit OID: {card_commit_oid} | SHA-256: {source_sha256[:12]}...")
 
 
 if __name__ == "__main__":

@@ -6,58 +6,42 @@ Repository: surfiniaburger/cve-decision-seeds
 
 import argparse
 import datetime
-import hashlib
-import json
 import os
 import sys
 from pathlib import Path
 from huggingface_hub import hf_hub_download
 
+# Ensure repository root is on sys.path for direct execution
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
-def _safe_resolve(path_str: str, base_dir: Path) -> Path:
-    """Validate and safely resolve a path within base_dir to prevent path traversal."""
-    resolved = (base_dir / path_str).resolve()
-    base_resolved = base_dir.resolve()
-    try:
-        resolved.relative_to(base_resolved)
-    except ValueError:
-        raise ValueError(f"Path traversal error: '{path_str}' escapes base directory '{base_dir}'")
-    return resolved
-
-
-def _compute_sha256(file_path: Path) -> str:
-    """Compute SHA-256 hash of a local file."""
-    hasher = hashlib.sha256()
-    with open(file_path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            hasher.update(chunk)
-    return hasher.hexdigest()
-
-
-def _log_provenance(entry: dict, base_dir: Path) -> None:
-    """Append operation provenance record to append-only JSONL log."""
-    log_path = base_dir / "artifacts" / "provenance" / "hub_operations.jsonl"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(log_path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry) + "\n")
+from scripts.hub_common import (
+    DEFAULT_FILENAME,
+    DEFAULT_LOCAL_PATH,
+    DEFAULT_REPO_ID,
+    compute_sha256,
+    log_provenance,
+    safe_resolve,
+)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Download clean CVE seeds dataset from Hugging Face Hub")
     parser.add_argument(
         "--repo-id",
-        default="surfiniaburger/cve-decision-seeds",
-        help="Hugging Face dataset repository ID (default: surfiniaburger/cve-decision-seeds)",
+        default=DEFAULT_REPO_ID,
+        help=f"Hugging Face dataset repository ID (default: {DEFAULT_REPO_ID})",
     )
     parser.add_argument(
         "--filename",
-        default="cve_seeds_500_clean.jsonl",
-        help="Target filename inside dataset repo",
+        default=DEFAULT_FILENAME,
+        help=f"Target filename inside dataset repo (default: {DEFAULT_FILENAME})",
     )
     parser.add_argument(
         "--output",
-        default="scenarios/debate/cve_seeds_500_clean.jsonl",
-        help="Local destination file path",
+        default=DEFAULT_LOCAL_PATH,
+        help=f"Local destination file path (default: {DEFAULT_LOCAL_PATH})",
     )
     parser.add_argument(
         "--revision",
@@ -68,7 +52,7 @@ def main():
 
     workspace_root = Path.cwd().resolve()
     try:
-        target_path = _safe_resolve(args.output, workspace_root)
+        target_path = safe_resolve(args.output, workspace_root)
     except ValueError as e:
         print(f"Security error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -79,32 +63,64 @@ def main():
     # Sanitize remote filename against directory traversal
     clean_filename = os.path.basename(args.filename)
 
-    print(f"Downloading {clean_filename} (revision: {args.revision}) from {args.repo_id} to {target_path}...")
-    downloaded_path_str = hf_hub_download(
-        repo_id=args.repo_id,
-        filename=clean_filename,
-        revision=args.revision,
-        repo_type="dataset",
-        local_dir=str(target_dir),
-    )
-    downloaded_path = Path(downloaded_path_str).resolve()
-    file_sha256 = _compute_sha256(downloaded_path)
-
-    # Log immutable operation provenance
-    _log_provenance(
+    # 1. Log pre-network attempt record (started)
+    log_provenance(
         {
             "operation": "download",
+            "phase": "download_started",
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "repo_id": args.repo_id,
             "filename": clean_filename,
             "revision": args.revision,
-            "file_sha256": file_sha256,
-            "target_path": str(downloaded_path.relative_to(workspace_root)),
+            "target_path": str(target_path.relative_to(workspace_root)),
         },
         workspace_root,
     )
 
-    print(f"Downloaded successfully: {downloaded_path} (SHA-256: {file_sha256[:12]}...)")
+    print(f"Downloading {clean_filename} (revision: {args.revision}) from {args.repo_id} to {target_path}...")
+    try:
+        downloaded_path_str = hf_hub_download(
+            repo_id=args.repo_id,
+            filename=clean_filename,
+            revision=args.revision,
+            repo_type="dataset",
+            local_dir=str(target_dir),
+        )
+        downloaded_path = Path(downloaded_path_str).resolve()
+        file_sha256 = compute_sha256(downloaded_path)
+
+        # 2. Log success record with immutable file digest
+        log_provenance(
+            {
+                "operation": "download",
+                "phase": "download_success",
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "repo_id": args.repo_id,
+                "filename": clean_filename,
+                "revision": args.revision,
+                "file_sha256": file_sha256,
+                "target_path": str(downloaded_path.relative_to(workspace_root)),
+            },
+            workspace_root,
+        )
+        print(f"Downloaded successfully: {downloaded_path} (SHA-256: {file_sha256[:12]}...)")
+    except Exception as e:
+        # 3. Log failure record
+        log_provenance(
+            {
+                "operation": "download",
+                "phase": "download_failed",
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "repo_id": args.repo_id,
+                "filename": clean_filename,
+                "revision": args.revision,
+                "error": str(e),
+                "target_path": str(target_path.relative_to(workspace_root)),
+            },
+            workspace_root,
+        )
+        print(f"Download failed: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
