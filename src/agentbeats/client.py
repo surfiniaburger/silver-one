@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from typing import Any
 from uuid import uuid4
 
 import httpx
@@ -9,6 +8,7 @@ from a2a.client import (
     ClientConfig,
     ClientFactory,
 )
+from a2a.client.client import Consumer
 from a2a.types import (
     Message,
     Part,
@@ -44,7 +44,7 @@ async def send_message(
     base_url: str,
     context_id: str | None = None,
     streaming=False,
-    consumer: Any | None = None,
+    consumer: Consumer | None = None,
 ):
     """Returns dict with context_id, response and status (if exists)"""
     async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as httpx_client:
