@@ -126,8 +126,10 @@ def _validate_record(record: Any, lineno: int) -> Tuple[bool, str]:
     if lang not in SUPPORTED_LANGUAGES:
         return False, f"Line {lineno} unsupported language: '{lang}'"
 
-    topic = record.get("topic", "")
-    if not isinstance(topic, str) or len(topic) < 200 or len(topic) > 12000:
+    topic = record.get("topic")
+    if not isinstance(topic, str):
+        return False, f"Line {lineno} topic must be a string"
+    if len(topic) < 200 or len(topic) > 12000:
         return False, f"Line {lineno} invalid topic length: {len(topic)} (must be 200-12000)"
 
     pred = record.get("predicate", "")
