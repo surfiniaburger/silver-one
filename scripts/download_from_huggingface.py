@@ -87,6 +87,9 @@ def main():
             local_dir=str(target_dir),
         )
         downloaded_path = Path(downloaded_path_str).resolve()
+        if downloaded_path != target_path:
+            downloaded_path.replace(target_path)
+            downloaded_path = target_path
         file_sha256 = compute_sha256(downloaded_path)
 
         # 2. Log success record with immutable file digest

@@ -1,7 +1,7 @@
 import json
 import pytest
 from pathlib import Path
-from scripts.hub_common import safe_resolve, compute_sha256, log_provenance
+from scripts.hub_common import safe_resolve, log_provenance
 from scripts.upload_to_huggingface import validate_seed_corpus
 
 

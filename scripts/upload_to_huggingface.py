@@ -119,7 +119,10 @@ def _validate_record(record: Any, lineno: int) -> Tuple[bool, str]:
     if missing_keys:
         return False, f"Line {lineno} missing required keys: {sorted(missing_keys)}"
 
-    lang = (record.get("language") or "").strip().lower()
+    raw_language = record.get("language")
+    if not isinstance(raw_language, str):
+        return False, f"Line {lineno} language must be a string"
+    lang = raw_language.strip().lower()
     if lang not in SUPPORTED_LANGUAGES:
         return False, f"Line {lineno} unsupported language: '{lang}'"
 
