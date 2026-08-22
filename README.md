@@ -152,6 +152,17 @@ Generated corpora, cassettes, attempts, metrics, checkpoints, and local `.env` f
 
 ## Installation
 
+### Seed Datasets & Anti-Leakage Clean-Room Isolation
+
+To keep the Git repository lightweight, large seed datasets are excluded from Git tracking and published on **Hugging Face Hub** ([`surfiniaburger/cve-decision-seeds`](https://huggingface.co/datasets/surfiniaburger/cve-decision-seeds)).
+
+- **Running Debates & Smoke Tests (Swarm Persona):** The repository includes a lightweight fixture (`scenarios/debate/cve_seeds_test.jsonl`). To pull the full 500 clean seeds corpus in one step:
+  ```bash
+  uv run python scripts/download_from_huggingface.py
+  ```
+- **Reproducing or Expanding Seeds (Curator Persona):** Ingest raw CVEs from [CVEFixes (1.4 GB)](https://www.kaggle.com/datasets/girish17019/cvefixes-vulnerable-and-fixed-code) while excluding evaluation samples from [cve-decision (254 MB)](https://www.kaggle.com/datasets/surfiniaburger/cve-decision) to prevent benchmark leakage. See [SEED_GENERATION_GUIDE.md](scenarios/debate/SEED_GENERATION_GUIDE.md) for full instructions.
+
+
 ### Prerequisites
 
 - Python `>=3.11`
