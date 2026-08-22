@@ -27,11 +27,19 @@ artifacts/cassettes/*.lock
 training_corpus*.jsonl
 *_corpus*.jsonl
 todo.md
-doc.md
 scenarios/debate/cve_seeds_200.jsonl
+scenarios/debate/cve_seeds_500*.jsonl
+scenarios/debate/cve_seeds_50.jsonl
 ddods/
 jcrume/
 
 checkpoints/
+scratch/
+tasks/
+.agents-cli-spec.md
+
+barred-fleet/artifacts/
+barred-fleet/.google-agents-cli/
+barred-fleet/.venv/
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md

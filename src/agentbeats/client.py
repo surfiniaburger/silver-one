@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from typing import Any
 from uuid import uuid4
 
 import httpx
@@ -7,7 +8,6 @@ from a2a.client import (
     A2ACardResolver,
     ClientConfig,
     ClientFactory,
-    Consumer,
 )
 from a2a.types import (
     Message,
@@ -39,7 +39,13 @@ def merge_parts(parts: list[Part]) -> str:
             chunks.append(part.root.data)
     return "\n".join(chunks)
 
-async def send_message(message: str, base_url: str, context_id: str | None = None, streaming=False, consumer: Consumer | None = None):
+async def send_message(
+    message: str,
+    base_url: str,
+    context_id: str | None = None,
+    streaming=False,
+    consumer: Any | None = None,
+):
     """Returns dict with context_id, response and status (if exists)"""
     async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as httpx_client:
         resolver = A2ACardResolver(httpx_client=httpx_client, base_url=base_url)
@@ -69,7 +75,7 @@ async def send_message(message: str, base_url: str, context_id: str | None = Non
                 outputs["context_id"] = msg.context_id
                 outputs["response"] += merge_parts(msg.parts)
 
-            case (task, update):
+            case (task, _):
                 outputs["context_id"] = task.context_id
                 outputs["status"] = task.status.state.value
                 msg = task.status.message
@@ -78,8 +84,5 @@ async def send_message(message: str, base_url: str, context_id: str | None = Non
                 if task.artifacts:
                     for artifact in task.artifacts:
                         outputs["response"] += merge_parts(artifact.parts)
-
-            case _:
-                pass
 
         return outputs
