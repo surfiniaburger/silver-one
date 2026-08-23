@@ -1708,6 +1708,8 @@ Debate Transcript:
                         f"GEPA Reflector applied mutation: {reflect_resp.mutation_rationale}"
                     ),
                 )
+        except ReplayError:
+            raise
         except Exception as exc:
             logger.warning("GEPA Reflector prompt mutation failed in judge: %s", exc)
 

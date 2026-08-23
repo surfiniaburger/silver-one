@@ -298,3 +298,37 @@ async def test_fetch_reflector_response_replay_miss_raises():
 
     with pytest.raises(OfflineReplayError, match="No cached reflector response"):
         await judge._fetch_reflector_response(ctx, 0, req)
+
+
+def test_client_unpack_task_event_extracts_datapart_metadata():
+    """Verify that _unpack_task_event extracts DataPart metadata while preserving status/response."""
+    from a2a.types import DataPart, Part, TextPart
+    from agentbeats.client import _unpack_task_event
+
+    task = MagicMock()
+    task.context_id = "ctx_12345"
+    task_status = MagicMock()
+    task_status.state.value = "completed"
+    task_status.message = MagicMock()
+    task_status.message.parts = [Part(TextPart(text="Task finished successfully."))]
+    task.status = task_status
+
+    artifact = MagicMock()
+    artifact.parts = [
+        Part(TextPart(text="Artifact summary text")),
+        Part(DataPart(data={"active_mutation_id": "var_tested_42", "attempt_index": 2, "score": 4.5})),
+    ]
+    task.artifacts = [artifact]
+
+    outputs = {"response": "", "context_id": None}
+    _unpack_task_event(task, outputs)
+
+    assert outputs["context_id"] == "ctx_12345"
+    assert outputs["status"] == "completed"
+    assert "Task finished successfully." in outputs["response"]
+    assert "Artifact summary text" in outputs["response"]
+    assert outputs.get("metadata") == {
+        "active_mutation_id": "var_tested_42",
+        "attempt_index": 2,
+        "score": 4.5,
+    }

@@ -41,6 +41,7 @@ def merge_parts(parts: list[Part]) -> str:
     return "\n".join(chunks)
 
 def _unpack_task_event(task: Any, outputs: dict) -> None:
+    """Populate outputs dict with context_id, status, merged response, and optional metadata from DataParts."""
     outputs["context_id"] = task.context_id
     outputs["status"] = task.status.state.value
     if task.status.message:
@@ -71,7 +72,13 @@ async def send_message(
     streaming: bool = False,
     consumer: Consumer | None = None,
 ) -> dict:
-    """Returns dict with context_id, response and status (if exists)"""
+    """
+    Send an A2A message to an agent endpoint and return output dictionary.
+
+    Returns:
+        dict: Containing 'response' (str), 'context_id' (str | None), optional 'status' (str),
+              and optional 'metadata' (dict) populated from dictionary DataPart artifacts.
+    """
     async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as httpx_client:
         resolver = A2ACardResolver(httpx_client=httpx_client, base_url=base_url)
         agent_card = await resolver.get_agent_card()
