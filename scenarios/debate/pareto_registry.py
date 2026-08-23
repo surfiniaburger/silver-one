@@ -235,6 +235,62 @@ class ParetoRegistry:
                 self.mutations_log_path,
             )
 
+    def _group_traces_by_bucket_and_variant(
+        self, traces: List[Dict[str, Any]]
+    ) -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
+        traces_by_bucket: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
+        for t in traces:
+            bucket = t.get("taxonomy_bucket")
+            var_id = t.get("canonical_mutation_id")
+            if bucket and var_id and var_id != "baseline_v0":
+                traces_by_bucket.setdefault(bucket, {}).setdefault(var_id, []).append(t)
+        return traces_by_bucket
+
+    def _find_best_variant_for_bucket(
+        self,
+        var_dict: Dict[str, List[Dict[str, Any]]],
+        now_iso: str,
+    ) -> Optional[tuple[str, Dict[str, Any], float]]:
+        from scenarios.debate.reflector_agent import calculate_rule_score
+        best_var = None
+        best_score = -float("inf")
+        for var_id, var_traces in var_dict.items():
+            score = calculate_rule_score(var_traces, now_iso)
+            if score > best_score:
+                best_score = score
+                best_var = (var_id, var_traces[-1], score)
+        return best_var
+
+    def sync_pareto_frontier(self) -> None:
+        """
+        Consolidate all recorded attempt traces across mutations and update
+        the active pareto_frontier.json entry for each taxonomy bucket based on
+        highest empirical time-decayed signed score.
+        """
+        with self._lock():
+            traces = self._load_recent_traces_unlocked(limit=1000)
+            if not traces:
+                return
+
+            traces_by_bucket = self._group_traces_by_bucket_and_variant(traces)
+            frontier = self._load_json_unlocked(self.frontier_path, {})
+            now_iso = RunClock.from_env().now_iso()
+
+            for bucket, var_dict in traces_by_bucket.items():
+                best = self._find_best_variant_for_bucket(var_dict, now_iso)
+                if best and best[2] > 0:
+                    var_id, last_trace, score = best
+                    prompt_used = last_trace.get("prompt") or get_static_baseline_prompt(bucket)
+                    frontier[bucket] = {
+                        "variant_id": var_id,
+                        "prompt": prompt_used,
+                        "score": round(score, 6),
+                        "updated_at": now_iso,
+                    }
+
+            if frontier:
+                atomic_write_json(self.frontier_path, frontier)
+
     # ── Lessons & Dead-End Operations ──────────────────────────────────────
 
     def get_lessons(self, taxonomy: Optional[TaxonomyBucket] = None) -> Dict[str, Any]:
@@ -296,6 +352,39 @@ class ParetoRegistry:
             if constraint not in dead_ends:
                 dead_ends.append(constraint)
                 atomic_write_json(self.lessons_path, data)
+
+    def _load_recent_traces_unlocked(
+        self,
+        taxonomy: Optional[TaxonomyBucket] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        if not self.traces_log_path.exists():
+            return []
+        traces: List[Dict[str, Any]] = []
+        try:
+            with open(self.traces_log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        t = json.loads(line)
+                        if taxonomy is None or t.get("taxonomy_bucket") == taxonomy:
+                            traces.append(t)
+                    except json.JSONDecodeError:
+                        continue
+        except OSError as e:
+            logger.warning("Error reading traces log %s: %s", self.traces_log_path, e)
+        return traces[-limit:] if limit > 0 else traces
+
+    def get_recent_traces(
+        self,
+        taxonomy: Optional[TaxonomyBucket] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """Return recent historical traces, optionally filtered by taxonomy bucket."""
+        with self._lock():
+            return self._load_recent_traces_unlocked(taxonomy, limit)
 
     def get_recent_traces_for_mutation(
         self,
