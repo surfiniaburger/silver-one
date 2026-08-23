@@ -354,6 +354,41 @@ class TestPromptMutation:
         assert resp.pareto_variant_id.startswith("var_")
         assert 0.0 <= resp.estimated_correction_success_probability <= 1.0
 
+    def test_mutate_system_prompt_variant_hash_depends_on_full_prompt(
+        self, tmp_path: Path
+    ) -> None:
+        """Variant hash must depend on full mutated prompt text, distinguishing different base prompts."""
+        reg = ParetoRegistry(gepa_dir=tmp_path / "gepa")
+        diag = GraphDiagnosticSignature(
+            scenario_id="scenario_001",
+            predicate_family="BUFFER_OVERFLOW",
+            failure_bucket="B_SINK_MISSING",
+        )
+        req1 = ReflectRequest(
+            attempt_index=1,
+            scenario_id="scenario_001",
+            predicate_family="BUFFER_OVERFLOW",
+            taxonomy_bucket="memory_safety",
+            code_text="char buf[10];",
+            graph_diagnostic=diag,
+            current_system_prompt="Base prompt Alpha",
+        )
+        req2 = ReflectRequest(
+            attempt_index=1,
+            scenario_id="scenario_001",
+            predicate_family="BUFFER_OVERFLOW",
+            taxonomy_bucket="memory_safety",
+            code_text="char buf[10];",
+            graph_diagnostic=diag,
+            current_system_prompt="Base prompt Beta",
+        )
+
+        resp1 = mutate_system_prompt(req1, reg)
+        resp2 = mutate_system_prompt(req2, reg)
+
+        # Both have same diagnostic bucket but different base prompts -> must produce distinct variant IDs
+        assert resp1.pareto_variant_id != resp2.pareto_variant_id
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # §3.4  FastAPI Microservice & ReflectorClient Tests

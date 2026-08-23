@@ -66,13 +66,14 @@ def compute_time_decay(
     observed_at: str | datetime,
     evaluated_at: str | datetime,
     half_life_days: float = DEFAULT_HALF_LIFE_DAYS,
+    clock: Optional[RunClock] = None,
 ) -> float:
     """
     Compute time-decay weight in (0, 1]: halves every `half_life_days`.
     Formula: 2^(-delta_t / tau)
     """
-    t0 = parse_datetime(observed_at)
-    t1 = parse_datetime(evaluated_at)
+    t0 = parse_datetime(observed_at, clock=clock)
+    t1 = parse_datetime(evaluated_at, clock=clock)
     age_days = max(0.0, (t1 - t0).total_seconds() / 86400.0)
     if half_life_days <= 0:
         return 1.0
@@ -111,7 +112,9 @@ def calculate_rule_score(
 
     for rec in history_records:
         rec_time = rec.get("evaluated_at") or rec.get("observed_at")
-        decay = compute_time_decay(rec_time, current_time, half_life_days=half_life_days)
+        decay = compute_time_decay(
+            rec_time, current_time, half_life_days=half_life_days, clock=clock
+        )
         sign = outcome_sign(rec.get("outcome", "RETRYABLE_FAILURE"))
         total_score += sign * decay
 
@@ -136,7 +139,10 @@ def is_mutation_preferred(
     return count_corroborating_seeds(history_records) >= min_corroboration
 
 
-def is_cross_seed_dead_end(history_records: List[Dict[str, Any]]) -> bool:
+def is_cross_seed_dead_end(
+    history_records: List[Dict[str, Any]],
+    clock: Optional[RunClock] = None,
+) -> bool:
     """
     Return True if the mutation rule has failed >= 3 consecutive attempts across distinct seeds
     with zero recoveries (Spec §4.2).
@@ -147,7 +153,9 @@ def is_cross_seed_dead_end(history_records: List[Dict[str, Any]]) -> bool:
     # Check last 3 chronological traces using normalized datetime
     sorted_records = sorted(
         history_records,
-        key=lambda r: parse_datetime(r.get("evaluated_at") or r.get("observed_at")),
+        key=lambda r: parse_datetime(
+            r.get("evaluated_at") or r.get("observed_at"), clock=clock
+        ),
     )
     last_3 = sorted_records[-3:]
 
@@ -167,6 +175,7 @@ def classify_attempt_outcome(
     prior_mutation_traces: List[Dict[str, Any]],
     seed_id: str = "",
     evaluated_at: str = "",
+    clock: Optional[RunClock] = None,
 ) -> AttemptOutcome:
     """
     Classify the outcome of an attempt in relation to its cross-seed trajectory (Spec §4.1 / §4.2):
@@ -181,13 +190,14 @@ def classify_attempt_outcome(
         return "LOGIC_ERROR"
 
     # Evaluate potential dead-end trigger including the current attempt's seed
+    normalized_eval_ts = parse_datetime(evaluated_at, clock=clock).isoformat()
     current_attempt = {
         "outcome": "RETRYABLE_FAILURE",
         "seed_id": seed_id,
-        "evaluated_at": evaluated_at or datetime.now(timezone.utc).isoformat(),
+        "evaluated_at": normalized_eval_ts,
     }
     simulated_history = [*prior_mutation_traces, current_attempt]
-    if is_cross_seed_dead_end(simulated_history):
+    if is_cross_seed_dead_end(simulated_history, clock=clock):
         return "DEAD_END_CHAIN"
 
     return "RETRYABLE_FAILURE"
@@ -218,6 +228,9 @@ _BUCKET_REPAIR_TEMPLATES: Dict[FailureBucket, str] = {
     ),
     "B_SANITIZER_TARGET_MISMATCH": (
         "Ensure sanitizer guard protects sink target '{target_var}' instead of guarding '{guarded_target}'."
+    ),
+    "B_EDGE_MISSING": (
+        "Ensure data-flow graph contains an active, unbroken edge between source and sink AST nodes."
     ),
 }
 
@@ -256,7 +269,6 @@ def mutate_system_prompt(
 
     # Construct the mutated prompt
     rule_text = f"[{diag.failure_bucket}] {repair_directive}"
-    variant_hash = f"var_{hashlib.sha256(rule_text.encode('utf-8')).hexdigest()[:8]}"
 
     mutated_prompt = (
         f"{request.current_system_prompt}\n\n"
@@ -265,12 +277,15 @@ def mutate_system_prompt(
         f"{dead_end_clause}"
     ).strip()
 
+    # Hash the complete mutated prompt text for accurate variant tracking
+    variant_hash = f"var_{hashlib.sha256(mutated_prompt.encode('utf-8')).hexdigest()[:8]}"
+
     # Probability estimation from historical traces
     history = registry.get_recent_traces_for_mutation(request.taxonomy_bucket, variant_hash)
     score = calculate_rule_score(history)
     prob = 1.0 / (1.0 + math.exp(-score))  # Sigmoid mapping to [0, 1]
 
-    # Check dead-end suppression: only record negative constraint when dead-end threshold is met
+    # Check dead-end suppression
     if diag.failure_bucket == "B_SANITIZER_TARGET_MISMATCH" and diag.guarded_target:
         if is_cross_seed_dead_end(history):
             registry.add_dead_end_constraint(
@@ -300,20 +315,18 @@ def mutate_system_prompt(
 
 
 # ---------------------------------------------------------------------------
-# §3.4  FastAPI Microservice (Port 8004)
+# §5  FastAPI Microservice Endpoints (Port 8004)
 # ---------------------------------------------------------------------------
 
 
 class RecordAttemptRequest(BaseModel):
-    """Inbound attempt outcome record request."""
-
     taxonomy_bucket: TaxonomyBucket
     predicate_family: str
     seed_id: str
     scenario_id: str
     prompt: str = ""
-    attempt_index: int = Field(..., ge=1)
-    is_valid: bool
+    attempt_index: int = 1
+    is_valid: bool = False
     verifier_logic_error: bool = False
     observed_at: str = ""
     evaluated_at: str = ""
@@ -322,8 +335,6 @@ class RecordAttemptRequest(BaseModel):
 
 
 class RecordAttemptResponse(BaseModel):
-    """Outbound attempt outcome record response."""
-
     outcome: AttemptOutcome
     rule_score: float
     is_preferred: bool
@@ -331,9 +342,9 @@ class RecordAttemptResponse(BaseModel):
 
 
 def create_app(registry: Optional[ParetoRegistry] = None) -> FastAPI:
-    """Factory creating the FastAPI microservice app on Port 8004."""
-    app = FastAPI(title="GEPA Graph-Powered Prompt Reflector", version="1.0.0")
+    """Create configured FastAPI application for GEPA Reflector microservice."""
     reg = registry or ParetoRegistry()
+    app = FastAPI(title="GEPA Graph-Powered Prompt Reflector", version="1.0.0")
 
     @app.get("/health")
     def health() -> Dict[str, Any]:
@@ -343,14 +354,14 @@ def create_app(registry: Optional[ParetoRegistry] = None) -> FastAPI:
     def get_pareto_prompt_endpoint(taxonomy: TaxonomyBucket) -> Dict[str, str]:
         prompt = reg.get_pareto_prompt(taxonomy)
         variant_id = reg.get_pareto_variant_id(taxonomy)
-        return {"prompt": prompt, "variant_id": variant_id, "taxonomy": taxonomy}
+        return {"taxonomy": taxonomy, "prompt": prompt, "variant_id": variant_id}
 
     @app.post("/reflect")
     def reflect(request: ReflectRequest) -> ReflectResponse:
         try:
             return mutate_system_prompt(request, reg)
         except Exception as e:
-            logger.exception("Mutation failed on scenario %s: %s", request.scenario_id, e)
+            logger.exception("Mutation failed: %s", e)
             baseline = get_static_baseline_prompt(request.taxonomy_bucket)
             return ReflectResponse(
                 status="FALLBACK_BASELINE",
@@ -364,8 +375,9 @@ def create_app(registry: Optional[ParetoRegistry] = None) -> FastAPI:
 
     @app.post("/record_attempt")
     def record_attempt(req: RecordAttemptRequest) -> RecordAttemptResponse:
-        observed_ts = req.observed_at or RunClock.from_env().now_iso()
-        evaluated_ts = req.evaluated_at or RunClock.from_env().now_iso()
+        clock = RunClock.from_env()
+        observed_ts = parse_datetime(req.observed_at, clock=clock).isoformat()
+        evaluated_ts = parse_datetime(req.evaluated_at, clock=clock).isoformat()
 
         prior_traces = reg.get_recent_traces_for_mutation(
             req.taxonomy_bucket, req.canonical_mutation_id
@@ -376,6 +388,7 @@ def create_app(registry: Optional[ParetoRegistry] = None) -> FastAPI:
             prior_mutation_traces=prior_traces,
             seed_id=req.seed_id,
             evaluated_at=evaluated_ts,
+            clock=clock,
         )
 
         trace_details = dict(req.details)
@@ -398,7 +411,9 @@ def create_app(registry: Optional[ParetoRegistry] = None) -> FastAPI:
         all_traces = reg.get_recent_traces_for_mutation(
             req.taxonomy_bucket, req.canonical_mutation_id
         )
-        score = calculate_rule_score(all_traces, now=parse_datetime(evaluated_ts))
+        score = calculate_rule_score(
+            all_traces, now=parse_datetime(evaluated_ts, clock=clock), clock=clock
+        )
         preferred = is_mutation_preferred(all_traces)
         seeds_count = count_corroborating_seeds(all_traces)
 
@@ -468,8 +483,9 @@ class ReflectorClient:
         if prompt:
             rec_details["prompt"] = prompt
 
-        observed_ts = observed_at or RunClock.from_env().now_iso()
-        evaluated_ts = evaluated_at or RunClock.from_env().now_iso()
+        clock = RunClock.from_env()
+        observed_ts = parse_datetime(observed_at, clock=clock).isoformat()
+        evaluated_ts = parse_datetime(evaluated_at, clock=clock).isoformat()
 
         if not self.in_process:
             import httpx
@@ -501,6 +517,7 @@ class ReflectorClient:
             prior_mutation_traces=prior_traces,
             seed_id=seed_id,
             evaluated_at=evaluated_ts,
+            clock=clock,
         )
 
         self.registry.record_attempt_trace(
