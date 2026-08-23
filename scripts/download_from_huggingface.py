@@ -5,7 +5,6 @@ Repository: surfiniaburger/cve-decision-seeds
 """
 
 import argparse
-import datetime
 import os
 import sys
 from pathlib import Path
@@ -21,8 +20,8 @@ from scripts.hub_common import (
     DEFAULT_LOCAL_PATH,
     DEFAULT_REPO_ID,
     compute_sha256,
-    log_provenance,
-    safe_resolve,
+    log_hub_event,
+    resolve_target_path,
 )
 
 
@@ -50,13 +49,7 @@ def main():
     )
     args = parser.parse_args()
 
-    workspace_root = Path.cwd().resolve()
-    try:
-        target_path = safe_resolve(args.output, workspace_root)
-    except ValueError as e:
-        print(f"Security error: {e}", file=sys.stderr)
-        sys.exit(1)
-
+    target_path, workspace_root = resolve_target_path(args.output)
     target_dir = target_path.parent
     target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -64,17 +57,14 @@ def main():
     clean_filename = os.path.basename(args.filename)
 
     # 1. Log pre-network attempt record (started)
-    log_provenance(
-        {
-            "operation": "download",
-            "phase": "download_started",
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "repo_id": args.repo_id,
-            "filename": clean_filename,
-            "revision": args.revision,
-            "target_path": str(target_path.relative_to(workspace_root)),
-        },
+    log_hub_event(
+        "download",
+        "download_started",
         workspace_root,
+        repo_id=args.repo_id,
+        filename=clean_filename,
+        revision=args.revision,
+        target_path=str(target_path.relative_to(workspace_root)),
     )
 
     print(f"Downloading {clean_filename} (revision: {args.revision}) from {args.repo_id} to {target_path}...")
@@ -93,34 +83,28 @@ def main():
         file_sha256 = compute_sha256(downloaded_path)
 
         # 2. Log success record with immutable file digest
-        log_provenance(
-            {
-                "operation": "download",
-                "phase": "download_success",
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                "repo_id": args.repo_id,
-                "filename": clean_filename,
-                "revision": args.revision,
-                "file_sha256": file_sha256,
-                "target_path": str(downloaded_path.relative_to(workspace_root)),
-            },
+        log_hub_event(
+            "download",
+            "download_success",
             workspace_root,
+            repo_id=args.repo_id,
+            filename=clean_filename,
+            revision=args.revision,
+            file_sha256=file_sha256,
+            target_path=str(downloaded_path.relative_to(workspace_root)),
         )
         print(f"Downloaded successfully: {downloaded_path} (SHA-256: {file_sha256[:12]}...)")
     except Exception as e:
         # 3. Log failure record
-        log_provenance(
-            {
-                "operation": "download",
-                "phase": "download_failed",
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                "repo_id": args.repo_id,
-                "filename": clean_filename,
-                "revision": args.revision,
-                "error": str(e),
-                "target_path": str(target_path.relative_to(workspace_root)),
-            },
+        log_hub_event(
+            "download",
+            "download_failed",
             workspace_root,
+            repo_id=args.repo_id,
+            filename=clean_filename,
+            revision=args.revision,
+            error=str(e),
+            target_path=str(target_path.relative_to(workspace_root)),
         )
         print(f"Download failed: {e}", file=sys.stderr)
         sys.exit(1)
