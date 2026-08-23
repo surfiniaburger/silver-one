@@ -225,6 +225,13 @@ def main():
 
     token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN") or get_token()
     if not token:
+        log_hub_event(
+            "upload",
+            "auth_failed",
+            workspace_root,
+            repo_id=args.repo_id,
+            error="No Hugging Face token found in environment (HF_TOKEN/HUGGING_FACE_HUB_TOKEN) or local hub cache",
+        )
         print(
             "Error: Hugging Face authentication token is required.\n"
             "Set HF_TOKEN or HUGGING_FACE_HUB_TOKEN in your environment or log in via `hf auth login`.\n"

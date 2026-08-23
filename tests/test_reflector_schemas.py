@@ -504,6 +504,11 @@ class TestReflectRequest:
 
     def test_attempt_index_minimum(self) -> None:
         """attempt_index must be >= 1."""
+        diag = GraphDiagnosticSignature(
+            scenario_id="test",
+            predicate_family="TEST",
+            failure_bucket="B_SINK_MISSING",
+        )
         with pytest.raises(ValidationError):
             ReflectRequest(
                 attempt_index=0,
@@ -511,11 +516,7 @@ class TestReflectRequest:
                 predicate_family="TEST",
                 taxonomy_bucket="memory_safety",
                 code_text="int x;",
-                graph_diagnostic=GraphDiagnosticSignature(
-                    scenario_id="test",
-                    predicate_family="TEST",
-                    failure_bucket="B_SINK_MISSING",
-                ),
+                graph_diagnostic=diag,
                 current_system_prompt="prompt",
             )
 

@@ -12,7 +12,7 @@ All functions are pure (no I/O, no network, no filesystem).
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, FrozenSet, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
