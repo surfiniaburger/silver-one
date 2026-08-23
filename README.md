@@ -289,22 +289,24 @@ Use this exact flow when you want attempts-level soft checks captured and scored
 # Re-run a record run to generate attempts with soft_checks
 
 uv run python scenarios/debate/run_batch.py \
-  --run-id pilot-v1-calibrated-l \
+  --run-id pilot-v7-poe \
   --seed 42 \
   --mode record \
   --max-concurrency 4 \
   --clock-now 2026-07-25T21:32:53Z \
   --seeds scenarios/debate/cve_seeds_test.jsonl \
-  --output training_corpus_calibrated_l.jsonl \
-  --attempts-out artifacts/attempts/pilot-v1-calibrated-l.jsonl
+  --output training_corpus_v7_poe.jsonl \
+  --attempts-out artifacts/attempts/pilot-v7-poe.jsonl \
+  --reflector
+
 
 
 # Compute B metrics + soft-check rates
 
 ./scripts/run_b_gate.sh \
-  training_corpus_calibrated_l.jsonl \
-  artifacts/attempts/pilot-v1-calibrated-l.jsonl \
-  artifacts/metrics/b_gate-pilot-v1-calibrated-l.json
+  training_corpus_calibrated_pot.jsonl \
+  artifacts/attempts/pilot-v1-calibrated-pot.jsonl \
+  artifacts/metrics/b_gate-pilot-v1-calibrated-pot.json
 
 
 #To compute benchmark metrics for a single run:
