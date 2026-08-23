@@ -29,7 +29,6 @@ from scenarios.debate.pareto_registry import ParetoRegistry
 from scenarios.debate.pre_filter import BarredPreFilter
 from scenarios.debate.reflector_agent import ReflectorClient
 from scenarios.debate.reflector_schemas import (
-    TaxonomyBucket,
     classify_taxonomy_bucket,
     get_static_baseline_prompt,
 )
@@ -251,8 +250,22 @@ async def _record_gepa_reflector_trace(
     taxonomy = classify_taxonomy_bucket(predicate)
     is_valid = status == "completed" and result.get("decision") != "rejected"
     verifier_logic_error = bool(result.get("verifier_logic_error", False))
-    active_mutation_id = payload["config"].get("active_mutation_id", "baseline_v0")
-    prompt_used = payload["config"].get("reflector_prompt", "")
+    meta = result.get("metadata") if isinstance(result.get("metadata"), dict) else {}
+    active_mutation_id = (
+        meta.get("active_mutation_id")
+        or result.get("active_mutation_id")
+        or payload["config"].get("active_mutation_id", "baseline_v0")
+    )
+    prompt_used = (
+        meta.get("reflector_prompt")
+        or result.get("reflector_prompt")
+        or payload["config"].get("reflector_prompt", "")
+    )
+    attempt_index = int(
+        meta.get("attempt_index")
+        or result.get("attempt_index")
+        or 1
+    )
 
     try:
         await ctx.reflector_client.record_attempt_and_classify_outcome(
@@ -261,7 +274,7 @@ async def _record_gepa_reflector_trace(
             seed_id=str(item_seed),
             scenario_id=str(seed.get("cve_id") or f"scenario_{item_seed}"),
             prompt=prompt_used,
-            attempt_index=1,
+            attempt_index=attempt_index,
             is_valid=is_valid,
             verifier_logic_error=verifier_logic_error,
             observed_at=ctx.batch_started_at,
@@ -347,6 +360,9 @@ async def _process_seed(
         except Exception as e:
             print(f"  ERROR: Seed {i+1} failed: {e}")
             await write_manifest("error", error=str(e))
+            await _record_gepa_reflector_trace(
+                ctx, seed, item_seed, payload, {"decision": "rejected", "reject_reason": str(e)}, "error", i
+            )
 
 
 def _init_gepa_components(args: argparse.Namespace) -> tuple[Optional[ParetoRegistry], Optional[ReflectorClient]]:

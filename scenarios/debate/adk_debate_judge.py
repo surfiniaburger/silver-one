@@ -17,7 +17,7 @@ load_dotenv()
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
-from a2a.types import TaskState, Part, TextPart
+from a2a.types import TaskState, Part, TextPart, DataPart
 from a2a.utils import new_agent_text_message
 
 from agentbeats.green_executor import GreenAgent, GreenExecutor
@@ -790,7 +790,7 @@ class _EvalContext:
         self.gepa_dir = req.config.get("gepa_dir", "artifacts/gepa")
         self.last_sample_block = self.current_input_block
         self.reflector_client = None
-        if os.path.exists(self.gepa_dir) or req.config.get("reflector", True):
+        if _truthy(req.config.get("reflector", False)):
             try:
                 registry = ParetoRegistry(gepa_dir=self.gepa_dir)
                 self.reflector_client = ReflectorClient(registry=registry, in_process=True)
@@ -843,6 +843,15 @@ class _AcceptedSamplePayload:
     soft_checks: dict
     anchor_stats: dict
     last_judge_reason: str
+
+
+@dataclass
+class _ReflectorDiagnosticInput:
+    candidate_code: str
+    verifier_logic_error: bool
+    verifier_report: dict
+    failed_anchor_lines: list
+    judge_rationale: str
 
 
 class DebateJudgeADK(GreenAgent):
@@ -1501,7 +1510,16 @@ Debate Transcript:
                 logger.warning("Failed to register accepted prompt into Pareto frontier: %s", e)
 
         await updater.add_artifact(
-            parts=[TextPart(text=f"Sample Accepted and saved to {ctx.output_file}"), TextPart(text=payload.debate_eval.reason)],
+            parts=[
+                TextPart(text=f"Sample Accepted and saved to {ctx.output_file}"),
+                TextPart(text=payload.debate_eval.reason),
+                DataPart(data={
+                    "active_mutation_id": ctx.active_mutation_id,
+                    "reflector_prompt": ctx.reflector_prompt,
+                    "attempt_index": i + 1,
+                    "decision": "accepted",
+                }),
+            ],
             name="Result",
         )
 
@@ -1619,7 +1637,11 @@ Debate Transcript:
                 messages=[{"role": "user", "content": reflect_req.model_dump_json()}],
                 params={"seed_id": str(ctx.seed), "attempt_index": i + 1},
             )
-            return ReflectResponse.model_validate(cached) if cached else await ctx.reflector_client.reflect(reflect_req)
+            if cached is None:
+                raise OfflineReplayError(
+                    f"Offline Replay Error: No cached reflector response for seed {ctx.seed} attempt {i + 1}"
+                )
+            return ReflectResponse.model_validate(cached)
 
         reflect_resp = await ctx.reflector_client.reflect(reflect_req)
         if ctx.replay_manager.cassette.mode == "record":
@@ -1649,13 +1671,13 @@ Debate Transcript:
                 or "verifier_logic_error" in last_judge_reason.lower()
             )
             diag = classify_graph_diagnostic(
-                debate_result=type("AdjudicationResult", (), {
-                    "candidate_code": sample_block,
-                    "verifier_logic_error": is_verifier_logic_error,
-                    "verifier_report": {"reason": last_judge_reason},
-                    "failed_anchor_lines": getattr(ctx, "failed_anchor_lines", []),
-                    "judge_rationale": last_judge_reason,
-                })(),
+                debate_result=_ReflectorDiagnosticInput(
+                    candidate_code=sample_block,
+                    verifier_logic_error=is_verifier_logic_error,
+                    verifier_report={"reason": last_judge_reason},
+                    failed_anchor_lines=getattr(ctx, "failed_anchor_lines", []),
+                    judge_rationale=last_judge_reason,
+                ),
                 graph_snapshot=snapshot,
                 scenario_id=str(ctx.seed),
                 predicate_family=ctx.predicate,

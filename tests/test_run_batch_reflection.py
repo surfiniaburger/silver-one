@@ -10,24 +10,20 @@ Tests:
 """
 
 import asyncio
-import json
-import os
 import shutil
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agentbeats.clock import RunClock
+from agentbeats.replay import OfflineReplayError
+from scenarios.debate.adk_debate_judge import DebateJudgeADK
 from scenarios.debate.pareto_registry import ParetoRegistry
 from scenarios.debate.reflector_agent import ReflectorClient
 from scenarios.debate.reflector_schemas import (
-    GraphDiagnosticSignature,
     ReflectRequest,
     ReflectResponse,
-    TaxonomyBucket,
-    classify_taxonomy_bucket,
     get_static_baseline_prompt,
 )
 from scenarios.debate.run_batch import (
@@ -218,3 +214,87 @@ async def test_process_seed_concurrent_execution(temp_gepa_dir):
     concurrency_traces = registry.get_recent_traces("concurrency", limit=20)
     memory_traces = registry.get_recent_traces("memory_safety", limit=20)
     assert len(concurrency_traces) + len(memory_traces) == num_seeds
+
+
+@pytest.mark.asyncio
+async def test_fetch_reflector_response_replay_hit():
+    """Verify that in replay mode, cassette hit returns recorded Reflector response."""
+    judge = DebateJudgeADK()
+    mock_cassette = MagicMock()
+    mock_cassette.mode = "replay"
+    recorded_payload = {
+        "status": "SUCCESS",
+        "taxonomy_bucket": "memory_safety",
+        "pareto_variant_id": "var_replay_123",
+        "applied_topological_rule": "TEST_RULE",
+        "mutated_system_prompt": "MUTATED PROMPT FROM CASSETTE",
+        "mutation_rationale": "Cached rationale",
+        "estimated_correction_success_probability": 0.85,
+        "dead_end_constraints_added": [],
+        "confidence": 0.95,
+    }
+    mock_cassette.get_response.return_value = recorded_payload
+
+    ctx = MagicMock()
+    ctx.mode = "replay"
+    ctx.replay_manager.cassette = mock_cassette
+    ctx.seed = 42
+    ctx.reflector_client = None
+
+    req = ReflectRequest(
+        attempt_index=1,
+        scenario_id="scenario_42",
+        predicate_family="TEST",
+        taxonomy_bucket="memory_safety",
+        code_text="void foo() {}",
+        graph_diagnostic={
+            "scenario_id": "scenario_42",
+            "predicate_family": "TEST",
+            "failure_bucket": "B_LOGIC_ERROR",
+            "category": "memory_safety",
+            "signature": "TEST",
+            "suggested_topological_action": "TEST",
+        },
+        current_system_prompt="BASE PROMPT",
+    )
+
+    resp = await judge._fetch_reflector_response(ctx, 0, req)
+    assert resp is not None
+    assert resp.status == "SUCCESS"
+    assert resp.pareto_variant_id == "var_replay_123"
+    assert resp.mutated_system_prompt == "MUTATED PROMPT FROM CASSETTE"
+
+
+@pytest.mark.asyncio
+async def test_fetch_reflector_response_replay_miss_raises():
+    """Verify that in replay mode, cassette miss raises OfflineReplayError."""
+    judge = DebateJudgeADK()
+    mock_cassette = MagicMock()
+    mock_cassette.mode = "replay"
+    mock_cassette.get_response.return_value = None
+
+    ctx = MagicMock()
+    ctx.mode = "replay"
+    ctx.replay_manager.cassette = mock_cassette
+    ctx.seed = 42
+    ctx.reflector_client = None
+
+    req = ReflectRequest(
+        attempt_index=1,
+        scenario_id="scenario_42",
+        predicate_family="TEST",
+        taxonomy_bucket="memory_safety",
+        code_text="void foo() {}",
+        graph_diagnostic={
+            "scenario_id": "scenario_42",
+            "predicate_family": "TEST",
+            "failure_bucket": "B_LOGIC_ERROR",
+            "category": "memory_safety",
+            "signature": "TEST",
+            "suggested_topological_action": "TEST",
+        },
+        current_system_prompt="BASE PROMPT",
+    )
+
+    with pytest.raises(OfflineReplayError, match="No cached reflector response"):
+        await judge._fetch_reflector_response(ctx, 0, req)
