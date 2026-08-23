@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
+from agentbeats.clock import RunClock
 from scenarios.debate.pareto_registry import (
     DEFAULT_HALF_LIFE_DAYS,
     DEFAULT_MIN_CORROBORATION,
@@ -45,13 +46,14 @@ logger = logging.getLogger("gepa.reflector_agent")
 def parse_datetime(dt_val: str | datetime | None) -> datetime:
     """Parse ISO datetime string or aware datetime object to UTC aware datetime."""
     if dt_val is None:
-        return datetime.now(timezone.utc)
+        dt_val = RunClock.from_env().now_iso()
     if isinstance(dt_val, datetime):
         if dt_val.tzinfo is None:
             return dt_val.replace(tzinfo=timezone.utc)
         return dt_val
     try:
-        dt = datetime.fromisoformat(str(dt_val))
+        clean_str = str(dt_val).replace("Z", "+00:00")
+        dt = datetime.fromisoformat(clean_str)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt
@@ -360,6 +362,9 @@ def create_app(registry: Optional[ParetoRegistry] = None) -> FastAPI:
 
     @app.post("/record_attempt")
     def record_attempt(req: RecordAttemptRequest) -> RecordAttemptResponse:
+        observed_ts = req.observed_at or RunClock.from_env().now_iso()
+        evaluated_ts = req.evaluated_at or RunClock.from_env().now_iso()
+
         prior_traces = reg.get_recent_traces_for_mutation(
             req.taxonomy_bucket, req.canonical_mutation_id
         )
@@ -368,7 +373,7 @@ def create_app(registry: Optional[ParetoRegistry] = None) -> FastAPI:
             verifier_logic_error=req.verifier_logic_error,
             prior_mutation_traces=prior_traces,
             seed_id=req.seed_id,
-            evaluated_at=req.evaluated_at,
+            evaluated_at=evaluated_ts,
         )
 
         trace_details = dict(req.details)
@@ -383,8 +388,8 @@ def create_app(registry: Optional[ParetoRegistry] = None) -> FastAPI:
             attempt_index=req.attempt_index,
             outcome=outcome,
             canonical_mutation_id=req.canonical_mutation_id,
-            observed_at=req.observed_at or datetime.now(timezone.utc).isoformat(),
-            evaluated_at=req.evaluated_at or datetime.now(timezone.utc).isoformat(),
+            observed_at=observed_ts,
+            evaluated_at=evaluated_ts,
             details=trace_details,
         )
 
@@ -461,6 +466,9 @@ class ReflectorClient:
         if prompt:
             rec_details["prompt"] = prompt
 
+        observed_ts = observed_at or RunClock.from_env().now_iso()
+        evaluated_ts = evaluated_at or RunClock.from_env().now_iso()
+
         if not self.in_process:
             import httpx
             async with httpx.AsyncClient(base_url=self.base_url) as client:
@@ -473,8 +481,8 @@ class ReflectorClient:
                     "attempt_index": attempt_index,
                     "is_valid": is_valid,
                     "verifier_logic_error": verifier_logic_error,
-                    "observed_at": observed_at,
-                    "evaluated_at": evaluated_at,
+                    "observed_at": observed_ts,
+                    "evaluated_at": evaluated_ts,
                     "canonical_mutation_id": canonical_mutation_id,
                     "details": rec_details,
                 }
@@ -490,7 +498,7 @@ class ReflectorClient:
             verifier_logic_error=verifier_logic_error,
             prior_mutation_traces=prior_traces,
             seed_id=seed_id,
-            evaluated_at=evaluated_at,
+            evaluated_at=evaluated_ts,
         )
 
         self.registry.record_attempt_trace(
@@ -501,8 +509,8 @@ class ReflectorClient:
             attempt_index=attempt_index,
             outcome=outcome,
             canonical_mutation_id=canonical_mutation_id,
-            observed_at=observed_at,
-            evaluated_at=evaluated_at,
+            observed_at=observed_ts,
+            evaluated_at=evaluated_ts,
             details=rec_details,
         )
         return outcome

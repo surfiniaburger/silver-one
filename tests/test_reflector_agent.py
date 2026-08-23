@@ -134,17 +134,17 @@ class TestWorkMemoryScoring:
         assert classify_attempt_outcome(is_valid=False, verifier_logic_error=True, prior_mutation_traces=[]) == "LOGIC_ERROR"
 
         # 3. Dead end chain (current attempt seed_id='44' spans distinct seeds with prior failures)
-        now = datetime.now(timezone.utc)
+        fixed_now = datetime(2026, 8, 23, 12, 0, 0, tzinfo=timezone.utc)
         prior_failures = [
-            {"seed_id": "42", "outcome": "RETRYABLE_FAILURE", "evaluated_at": (now - timedelta(minutes=10)).isoformat()},
-            {"seed_id": "43", "outcome": "RETRYABLE_FAILURE", "evaluated_at": (now - timedelta(minutes=5)).isoformat()},
+            {"seed_id": "42", "outcome": "RETRYABLE_FAILURE", "evaluated_at": (fixed_now - timedelta(minutes=10)).isoformat()},
+            {"seed_id": "43", "outcome": "RETRYABLE_FAILURE", "evaluated_at": (fixed_now - timedelta(minutes=5)).isoformat()},
         ]
         assert classify_attempt_outcome(
             is_valid=False,
             verifier_logic_error=False,
             prior_mutation_traces=prior_failures,
             seed_id="44",
-            evaluated_at=now.isoformat(),
+            evaluated_at=fixed_now.isoformat(),
         ) == "DEAD_END_CHAIN"
 
         # 4. Standard retryable failure
@@ -203,6 +203,37 @@ class TestParetoRegistryAndLock:
         # Check mutations log
         mutations_log = (tmp_path / "gepa" / "mutations.jsonl").read_text(encoding="utf-8")
         assert "var_abc123" in mutations_log
+
+    def test_pareto_registry_tie_score_does_not_overwrite(self, tmp_path: Path) -> None:
+        """Equal score (e.g. 0.0) does not overwrite existing Pareto frontier variant."""
+        reg = ParetoRegistry(gepa_dir=tmp_path / "gepa")
+        reg.register_pareto_prompt(
+            taxonomy="memory_safety",
+            prompt="Initial prompt v1",
+            variant_id="var_v1",
+            score=0.0,
+        )
+        assert reg.get_pareto_variant_id("memory_safety") == "var_v1"
+
+        # Registering another prompt with equal score 0.0 does NOT overwrite
+        reg.register_pareto_prompt(
+            taxonomy="memory_safety",
+            prompt="Alternative prompt v2",
+            variant_id="var_v2",
+            score=0.0,
+        )
+        assert reg.get_pareto_variant_id("memory_safety") == "var_v1"
+        assert reg.get_pareto_prompt("memory_safety") == "Initial prompt v1"
+
+        # Registering prompt with strictly higher score DOES overwrite
+        reg.register_pareto_prompt(
+            taxonomy="memory_safety",
+            prompt="Superior prompt v3",
+            variant_id="var_v3",
+            score=0.5,
+        )
+        assert reg.get_pareto_variant_id("memory_safety") == "var_v3"
+        assert reg.get_pareto_prompt("memory_safety") == "Superior prompt v3"
 
     def test_pareto_registry_traces_jsonl(self, tmp_path: Path) -> None:
         """ParetoRegistry streams attempt traces from append-only traces.jsonl."""

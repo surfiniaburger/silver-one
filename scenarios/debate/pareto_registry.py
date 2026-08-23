@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
 
+from agentbeats.clock import RunClock
 from scenarios.debate.reflector_schemas import (
     TaxonomyBucket,
     get_static_baseline_prompt,
@@ -202,14 +203,14 @@ class ParetoRegistry:
         Register a new or updated Pareto prompt variant for a taxonomy bucket.
         Updates pareto_frontier.json atomically and logs to mutations.jsonl.
         """
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = RunClock.from_env().now_iso()
         with self._lock():
             frontier = self._load_json_unlocked(self.frontier_path, {})
             current_entry = frontier.get(taxonomy, {})
             current_score = current_entry.get("score", -float("inf"))
 
-            # Update if better score or fresh baseline replacement
-            if score >= current_score or not current_entry:
+            # Update if strictly better score or fresh initial entry
+            if not current_entry or score > current_score:
                 frontier[taxonomy] = {
                     "variant_id": variant_id,
                     "prompt": prompt,
