@@ -277,8 +277,8 @@ def mutate_system_prompt(
         f"{dead_end_clause}"
     ).strip()
 
-    # Hash the complete mutated prompt text for accurate variant tracking
-    variant_hash = f"var_{hashlib.sha256(mutated_prompt.encode('utf-8')).hexdigest()[:8]}"
+    # Hash the complete mutated prompt text for collision-resistant variant tracking
+    variant_hash = f"var_{hashlib.sha256(mutated_prompt.encode('utf-8')).hexdigest()}"
 
     # Probability estimation from historical traces
     history = registry.get_recent_traces_for_mutation(request.taxonomy_bucket, variant_hash)
@@ -325,7 +325,7 @@ class RecordAttemptRequest(BaseModel):
     seed_id: str
     scenario_id: str
     prompt: str = ""
-    attempt_index: int = 1
+    attempt_index: int = Field(default=1, ge=1)
     is_valid: bool = False
     verifier_logic_error: bool = False
     observed_at: str = ""

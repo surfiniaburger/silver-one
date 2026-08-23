@@ -27,6 +27,7 @@ from scenarios.debate.pareto_registry import (
     gepa_lock,
 )
 from scenarios.debate.reflector_agent import (
+    RecordAttemptRequest,
     ReflectorClient,
     calculate_rule_score,
     classify_attempt_outcome,
@@ -388,6 +389,9 @@ class TestPromptMutation:
 
         # Both have same diagnostic bucket but different base prompts -> must produce distinct variant IDs
         assert resp1.pareto_variant_id != resp2.pareto_variant_id
+        # Must be collision-resistant full SHA-256 (var_ + 64 hex chars = 68 chars)
+        assert len(resp1.pareto_variant_id) == 68
+        assert len(resp2.pareto_variant_id) == 68
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -397,6 +401,38 @@ class TestPromptMutation:
 
 class TestFastAPIServiceAndClient:
     """Tests for FastAPI endpoints and ReflectorClient."""
+
+    def test_record_attempt_request_attempt_index_validation(self) -> None:
+        """attempt_index must enforce ge=1 constraint."""
+        # Valid attempt_index >= 1
+        req = RecordAttemptRequest(
+            taxonomy_bucket="memory_safety",
+            predicate_family="BUFFER_OVERFLOW",
+            seed_id="seed_1",
+            scenario_id="scenario_1",
+            attempt_index=1,
+        )
+        assert req.attempt_index == 1
+
+        # Invalid attempt_index <= 0 raises ValidationError
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            RecordAttemptRequest(
+                taxonomy_bucket="memory_safety",
+                predicate_family="BUFFER_OVERFLOW",
+                seed_id="seed_1",
+                scenario_id="scenario_1",
+                attempt_index=0,
+            )
+
+        with pytest.raises(ValidationError):
+            RecordAttemptRequest(
+                taxonomy_bucket="memory_safety",
+                predicate_family="BUFFER_OVERFLOW",
+                seed_id="seed_1",
+                scenario_id="scenario_1",
+                attempt_index=-1,
+            )
 
     def test_health_endpoint(self, tmp_path: Path) -> None:
         reg = ParetoRegistry(gepa_dir=tmp_path / "gepa")
