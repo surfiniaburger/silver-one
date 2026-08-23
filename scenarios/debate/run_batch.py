@@ -16,13 +16,22 @@ if os.getcwd() not in sys.path:
 import scenarios.debate._thread_limits  # noqa: F401 (Enforce OpenMP thread limits on import)
 sys.path.append(os.path.join(os.getcwd(), "src"))
 
+import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
+
+logger = logging.getLogger("run_batch")
 
 from agentbeats.client import send_message
 from agentbeats.checkpoint import save_checkpoint
 from agentbeats.clock import RunClock
+from scenarios.debate.pareto_registry import ParetoRegistry
 from scenarios.debate.pre_filter import BarredPreFilter
+from scenarios.debate.reflector_agent import ReflectorClient
+from scenarios.debate.reflector_schemas import (
+    classify_taxonomy_bucket,
+    get_static_baseline_prompt,
+)
 
 
 def _load_processed_predicates(output_path: str) -> set:
@@ -89,6 +98,12 @@ def _parse_args(cmd_args: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--pre-filter", action="store_true", default=True, help="Enable BARRED 3-Stage Pre-Filter Cascade.")
     parser.add_argument("--no-pre-filter", dest="pre_filter", action="store_false", help="Disable BARRED 3-Stage Pre-Filter Cascade.")
     parser.add_argument("--model-dir", default="artifacts/models", help="Directory containing pre-filter model weights.")
+    parser.add_argument("--reflector", action="store_true", default=True, help="Enable Graph-Powered GEPA Pareto Reflector.")
+    parser.add_argument("--no-reflector", dest="reflector", action="store_false", help="Disable Graph-Powered GEPA Pareto Reflector.")
+    parser.add_argument("--reflector-in-process", action="store_true", default=True, help="Execute ReflectorClient in-process.")
+    parser.add_argument("--no-reflector-in-process", dest="reflector_in_process", action="store_false", help="Execute ReflectorClient over HTTP network.")
+    parser.add_argument("--reflector-url", default="http://127.0.0.1:8004", help="Base URL for Reflector microservice.")
+    parser.add_argument("--gepa-dir", default="artifacts/gepa", help="Directory for GEPA ledger, Pareto frontier, and traces.")
     return parser.parse_args(cmd_args)
 
 
@@ -99,7 +114,23 @@ def _build_payload(
     record_path: str,
     batch_started_at: str,
     seed: dict,
+    reflector_client: ReflectorClient | None = None,
 ) -> dict:
+    predicate = seed.get("predicate", "")
+    taxonomy = classify_taxonomy_bucket(predicate)
+    pareto_prompt = ""
+    active_mutation_id = "baseline_v0"
+
+    if reflector_client is not None and reflector_client.registry is not None:
+        try:
+            pareto_prompt = reflector_client.registry.get_pareto_prompt(taxonomy)
+            active_mutation_id = reflector_client.registry.get_pareto_variant_id(taxonomy)
+        except Exception:
+            pareto_prompt = get_static_baseline_prompt(taxonomy)
+            active_mutation_id = "baseline_v0"
+    else:
+        pareto_prompt = get_static_baseline_prompt(taxonomy)
+
     return {
         "participants": {
             "pro_debater": "http://127.0.0.1:9019/",
@@ -122,9 +153,12 @@ def _build_payload(
             "num_rounds": 2,
             "max_refinements": 1,
             "output_file": args.output,
+            "taxonomy_bucket": taxonomy,
+            "reflector_prompt": pareto_prompt,
+            "active_mutation_id": active_mutation_id,
+            "gepa_dir": getattr(args, "gepa_dir", "artifacts/gepa"),
         },
     }
-
 
 
 from dataclasses import dataclass, field
@@ -142,6 +176,8 @@ class BatchContext:
     attempts_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     judge_url: str = "http://127.0.0.1:9009"
     pre_filter: BarredPreFilter | None = None
+    reflector_client: ReflectorClient | None = None
+    pareto_registry: ParetoRegistry | None = None
 
 
 import errno
@@ -168,9 +204,6 @@ def _append_attempt_record(attempts_path: str, record: dict) -> None:
         except OSError as exc:
             if exc.errno not in _UNSUPPORTED_FSYNC_ERRNOS:
                 raise RuntimeError(f"Durable attempt log file sync failed for '{attempts_path}': {exc}") from exc
-
-
-
 
 
 async def _handle_pre_filter_rejection(
@@ -201,6 +234,91 @@ async def _handle_pre_filter_rejection(
     await write_manifest_fn("skipped_pre_filter", response_excerpt=f"Rejected at {decision.stage} (p={decision.probability:.4f})")
 
 
+async def _record_gepa_reflector_trace(
+    ctx: BatchContext,
+    seed: dict,
+    item_seed: int,
+    payload: dict,
+    result: dict,
+    status: str,
+    i: int,
+) -> None:
+    if ctx.reflector_client is None:
+        return
+
+    predicate = seed.get("predicate", "")
+    taxonomy = classify_taxonomy_bucket(predicate)
+    is_valid = status == "completed" and result.get("decision") != "rejected"
+    verifier_logic_error = bool(result.get("verifier_logic_error", False))
+    meta = result.get("metadata") if isinstance(result.get("metadata"), dict) else {}
+    active_mutation_id = (
+        meta.get("active_mutation_id")
+        or result.get("active_mutation_id")
+        or payload["config"].get("active_mutation_id", "baseline_v0")
+    )
+    prompt_used = (
+        meta.get("reflector_prompt")
+        or result.get("reflector_prompt")
+        or payload["config"].get("reflector_prompt", "")
+    )
+    attempt_index = int(
+        meta.get("attempt_index")
+        or result.get("attempt_index")
+        or 1
+    )
+
+    try:
+        await ctx.reflector_client.record_attempt_and_classify_outcome(
+            taxonomy_bucket=taxonomy,
+            predicate_family=seed.get("predicate_family") or seed.get("topic") or "GENERAL",
+            seed_id=str(item_seed),
+            scenario_id=str(seed.get("cve_id") or f"scenario_{item_seed}"),
+            prompt=prompt_used,
+            attempt_index=attempt_index,
+            is_valid=is_valid,
+            verifier_logic_error=verifier_logic_error,
+            observed_at=ctx.batch_started_at,
+            evaluated_at=ctx.batch_started_at,
+            canonical_mutation_id=active_mutation_id,
+            details={
+                "run_id": ctx.args.run_id,
+                "status": status,
+                "decision": result.get("decision"),
+                "reject_reason": result.get("reject_reason"),
+            },
+        )
+    except Exception as exc:
+        print(f"  Warning: Reflector trace recording failed for seed {i+1}: {exc}")
+
+
+async def _should_skip_seed(
+    ctx: BatchContext,
+    seed: dict,
+    item_seed: int,
+    i: int,
+    write_manifest_fn: Any,
+) -> bool:
+    instruction = f"Analyze this input for the condition: {seed['predicate']}"
+    if instruction in ctx.processed_predicates:
+        print(f"Skipping seed {i+1} (already processed).")
+        await write_manifest_fn("skipped_existing_output")
+        return True
+
+    if ctx.pre_filter is not None:
+        attempt_number = seed.get("attempt_number") or 1
+        input_block = seed.get("input_block") or ""
+        decision = ctx.pre_filter.predict(
+            seed.get("predicate", ""),
+            input_block=input_block,
+            attempt_number=attempt_number,
+        )
+        if not decision.accept:
+            await _handle_pre_filter_rejection(i, seed, item_seed, decision, ctx, write_manifest_fn)
+            return True
+
+    return False
+
+
 async def _process_seed(
     sem: asyncio.Semaphore,
     i: int,
@@ -219,31 +337,18 @@ async def _process_seed(
 
     async with sem:
         item_seed = ctx.args.seed + i
-        instruction = f"Analyze this input for the condition: {seed['predicate']}"
-        checkpoint_path = os.path.join(ctx.args.checkpoint_dir, ctx.args.run_id, f"{item_seed}.json")
-        record_path = ctx.args.record_path or os.path.join(ctx.args.record_dir, ctx.args.run_id, f"{item_seed}.json")
-
-        if instruction in ctx.processed_predicates:
-            print(f"Skipping seed {i+1} (already processed).")
-            await write_manifest("skipped_existing_output")
+        if await _should_skip_seed(ctx, seed, item_seed, i, write_manifest):
             return
 
-        if ctx.pre_filter is not None:
-            attempt_number = seed.get("attempt_number") or 1
-            input_block = seed.get("input_block") or ""
-            decision = ctx.pre_filter.predict(
-                seed.get("predicate", ""),
-                input_block=input_block,
-                attempt_number=attempt_number,
-            )
-            if not decision.accept:
-                await _handle_pre_filter_rejection(i, seed, item_seed, decision, ctx, write_manifest)
-                return
+        checkpoint_path = os.path.join(ctx.args.checkpoint_dir, ctx.args.run_id, f"{item_seed}.json")
+        record_path = ctx.args.record_path or os.path.join(ctx.args.record_dir, ctx.args.run_id, f"{item_seed}.json")
 
         print(f"\n>>> [{i+1}/{ctx.total_seeds}] Seed Predicate: {seed.get('predicate')[:80]}...")
         await write_manifest("running")
 
-        payload = _build_payload(ctx.args, item_seed, checkpoint_path, record_path, ctx.batch_started_at, seed)
+        payload = _build_payload(
+            ctx.args, item_seed, checkpoint_path, record_path, ctx.batch_started_at, seed, ctx.reflector_client
+        )
 
         try:
             result = await send_message(json.dumps(payload), ctx.judge_url)
@@ -251,34 +356,35 @@ async def _process_seed(
             status = result.get("status") or "completed"
             excerpt = str(result.get("response", ""))[:500]
             await write_manifest(status, response_excerpt=excerpt)
+            await _record_gepa_reflector_trace(ctx, seed, item_seed, payload, result, status, i)
         except Exception as e:
             print(f"  ERROR: Seed {i+1} failed: {e}")
             await write_manifest("error", error=str(e))
+            await _record_gepa_reflector_trace(
+                ctx, seed, item_seed, payload, {"decision": "rejected", "reject_reason": str(e)}, "error", i
+            )
 
 
-async def run_batch():
-    args = _parse_args()
+def _init_gepa_components(args: argparse.Namespace) -> tuple[Optional[ParetoRegistry], Optional[ReflectorClient]]:
+    if not args.reflector:
+        return None, None
+    gepa_path = Path(args.gepa_dir)
+    pareto_registry = ParetoRegistry(gepa_dir=gepa_path)
+    reflector_client = ReflectorClient(
+        registry=pareto_registry,
+        base_url=args.reflector_url,
+        in_process=args.reflector_in_process,
+    )
+    print(f"GEPA Graph-Powered Reflector enabled (in_process={args.reflector_in_process}, gepa_dir='{args.gepa_dir}').")
+    return pareto_registry, reflector_client
 
-    clock = RunClock.from_value(args.clock_now or os.getenv("RUN_CLOCK_NOW", ""))
-    batch_started_at = clock.now_iso()
-    if not args.run_id:
-        args.run_id = f"run-{clock.compact_timestamp()}"
-    manifest_path = args.manifest_out or os.path.join(args.record_dir, args.run_id, "batch_manifest.json")
 
-    judge_url = "http://127.0.0.1:9009"
-    
-    if not os.path.exists(args.seeds):
-        print(f"Error: {args.seeds} not found.")
-        return
-
-    # Load existing results and seeds (single-read for seeds and digest calculation)
-    processed_predicates = await asyncio.to_thread(_load_processed_predicates, args.output)
-    seeds_sha256, seeds = await asyncio.to_thread(_load_seeds_with_hash, args.seeds)
-
-    pre_filter = BarredPreFilter(model_dir=Path(args.model_dir)) if args.pre_filter else None
-    if pre_filter:
-        print(f"BARRED 3-Stage Pre-Filter enabled (models loaded from '{args.model_dir}').")
-
+def _build_batch_manifest(
+    args: argparse.Namespace,
+    seeds: list[dict],
+    seeds_sha256: str,
+    batch_started_at: str,
+) -> dict:
     manifest_items = [
         {
             "index": i,
@@ -292,7 +398,7 @@ async def run_batch():
         for i, s in enumerate(seeds)
     ]
 
-    manifest = {
+    return {
         "schema_version": 1,
         "run_id": args.run_id,
         "mode": args.mode,
@@ -310,11 +416,43 @@ async def run_batch():
         "items": manifest_items,
     }
 
+
+def _check_batch_failures(manifest: dict, mode: str) -> None:
+    failed_items = [item for item in manifest["items"] if item.get("status") == "error"]
+    if failed_items:
+        print(f"\n[ERROR] {len(failed_items)} item(s) failed during batch execution.")
+        if mode == "replay":
+            raise RuntimeError(f"Replay mode failed for {len(failed_items)} seed(s). Batch execution aborted.")
+        sys.exit(1)
+
+
+async def run_batch():
+    args = _parse_args()
+
+    clock = RunClock.from_value(args.clock_now or os.getenv("RUN_CLOCK_NOW", ""))
+    batch_started_at = clock.now_iso()
+    if not args.run_id:
+        args.run_id = f"run-{clock.compact_timestamp()}"
+    manifest_path = args.manifest_out or os.path.join(args.record_dir, args.run_id, "batch_manifest.json")
+
+    if not os.path.exists(args.seeds):
+        print(f"Error: {args.seeds} not found.")
+        return
+
+    processed_predicates = await asyncio.to_thread(_load_processed_predicates, args.output)
+    seeds_sha256, seeds = await asyncio.to_thread(_load_seeds_with_hash, args.seeds)
+
+    pre_filter = BarredPreFilter(model_dir=Path(args.model_dir)) if args.pre_filter else None
+    if pre_filter:
+        print(f"BARRED 3-Stage Pre-Filter enabled (models loaded from '{args.model_dir}').")
+
+    pareto_registry, reflector_client = _init_gepa_components(args)
+    manifest = _build_batch_manifest(args, seeds, seeds_sha256, batch_started_at)
     save_checkpoint(manifest_path, manifest, clock_now=batch_started_at)
-    
+
     print(f"Loaded {len(seeds)} seeds. {len(processed_predicates)} already processed.")
     print(f"Run ID: {args.run_id} | Base seed: {args.seed} | Mode: {args.mode} | Concurrency: {args.max_concurrency}")
-    
+
     sem = asyncio.Semaphore(args.max_concurrency)
     manifest_lock = asyncio.Lock()
 
@@ -326,28 +464,23 @@ async def run_batch():
         manifest_path=manifest_path,
         manifest_lock=manifest_lock,
         total_seeds=len(seeds),
-        judge_url=judge_url,
+        judge_url="http://127.0.0.1:9009",
         pre_filter=pre_filter,
+        reflector_client=reflector_client,
+        pareto_registry=pareto_registry,
     )
 
-    await asyncio.gather(
-        *(
-            _process_seed(
-                sem,
-                i,
-                s,
-                ctx,
-            )
-            for i, s in enumerate(seeds)
-        )
-    )
+    await asyncio.gather(*(_process_seed(sem, i, s, ctx) for i, s in enumerate(seeds)))
 
-    failed_items = [item for item in manifest["items"] if item.get("status") == "error"]
-    if failed_items:
-        print(f"\n[ERROR] {len(failed_items)} item(s) failed during batch execution.")
-        if args.mode == "replay":
-            raise RuntimeError(f"Replay mode failed for {len(failed_items)} seed(s). Batch execution aborted.")
-        sys.exit(1)
+    if pareto_registry is not None:
+        try:
+            pareto_registry.sync_pareto_frontier()
+            print(f"GEPA Pareto frontier synced to '{args.gepa_dir}/pareto_frontier.json'.")
+        except Exception as e:
+            logger.warning("Could not sync Pareto frontier: %s", e)
+
+    _check_batch_failures(manifest, args.mode)
+
 
 if __name__ == "__main__":
     asyncio.run(run_batch())

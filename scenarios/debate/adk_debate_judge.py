@@ -17,7 +17,7 @@ load_dotenv()
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
-from a2a.types import TaskState, Part, TextPart
+from a2a.types import TaskState, Part, TextPart, DataPart
 from a2a.utils import new_agent_text_message
 
 from agentbeats.green_executor import GreenAgent, GreenExecutor
@@ -39,6 +39,16 @@ from agentbeats.checkpoint import (
     validate_checkpoint,
 )
 from typing import Optional, Dict, Any, Tuple, TypedDict
+
+from scenarios.debate.pareto_registry import ParetoRegistry
+from scenarios.debate.reflector_agent import ReflectorClient
+from scenarios.debate.reflector_schemas import (
+    ReflectRequest,
+    ReflectResponse,
+    classify_graph_diagnostic,
+    get_static_baseline_prompt,
+)
+from scenarios.debate.graphify_flow_extractor import extract_graphify_flow_snapshot
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("adk_debate_judge")
@@ -774,6 +784,18 @@ class _EvalContext:
                 )
 
         self.record_path = req.config.get("record_path", f"artifacts/runs/{self.run_id}.json")
+        self.reflector_prompt = req.config.get("reflector_prompt", "")
+        self.active_mutation_id = req.config.get("active_mutation_id", "baseline_v0")
+        self.taxonomy_bucket = req.config.get("taxonomy_bucket", "input_validation")
+        self.gepa_dir = req.config.get("gepa_dir", "artifacts/gepa")
+        self.last_sample_block = self.current_input_block
+        self.reflector_client = None
+        if _truthy(req.config.get("reflector", False)):
+            try:
+                registry = ParetoRegistry(gepa_dir=self.gepa_dir)
+                self.reflector_client = ReflectorClient(registry=registry, in_process=True)
+            except Exception as e:
+                logger.warning("Could not initialize ReflectorClient in judge: %s", e)
 
     def write_checkpoint(self, phase: str, refinement_round: int, **state: Any) -> None:
         payload = {
@@ -821,6 +843,15 @@ class _AcceptedSamplePayload:
     soft_checks: dict
     anchor_stats: dict
     last_judge_reason: str
+
+
+@dataclass
+class _ReflectorDiagnosticInput:
+    candidate_code: str
+    verifier_logic_error: bool
+    verifier_report: dict
+    failed_anchor_lines: list
+    judge_rationale: str
 
 
 class DebateJudgeADK(GreenAgent):
@@ -996,6 +1027,10 @@ class DebateJudgeADK(GreenAgent):
         opposite_verdict = "False" if ctx.target_verdict == "True" else "True"
         pro_mission = f"PRO MISSION: Prove that the predicate '{ctx.predicate}' is {ctx.target_verdict} for the given code."
         con_mission = f"CON MISSION: Prove that the predicate '{ctx.predicate}' is {opposite_verdict} (i.e., disprove the target verdict)."
+
+        if ctx.reflector_prompt:
+            pro_mission = f"{ctx.reflector_prompt}\n\n{pro_mission}"
+            con_mission = f"{ctx.reflector_prompt}\n\n{con_mission}"
 
         if active_checkpoint and _phase_at_least(checkpoint_phase, "debate_complete"):
             debate = active_checkpoint.get("debate") or {"pro_debater": [], "con_debater": []}
@@ -1456,8 +1491,35 @@ Debate Transcript:
             last_judge_reason=payload.last_judge_reason,
         )
 
+        if ctx.reflector_client and ctx.reflector_client.registry and ctx.active_mutation_id != "baseline_v0":
+            try:
+                score = 1.0 + (0.5 if i > 0 else 0.0)
+                ctx.reflector_client.registry.register_pareto_prompt(
+                    taxonomy=ctx.taxonomy_bucket,
+                    prompt=ctx.reflector_prompt,
+                    variant_id=ctx.active_mutation_id,
+                    score=score,
+                    rationale=f"Repaired scenario {ctx.seed} in refinement round {i+1}",
+                    topological_rule=getattr(ctx, "last_topological_rule", "EVOLVED_PARETO_RULE"),
+                )
+                logger.info(
+                    "Promoted mutated prompt %s into Pareto frontier for bucket %s (score=%.2f)",
+                    ctx.active_mutation_id, ctx.taxonomy_bucket, score
+                )
+            except Exception as e:
+                logger.warning("Failed to register accepted prompt into Pareto frontier: %s", e)
+
         await updater.add_artifact(
-            parts=[TextPart(text=f"Sample Accepted and saved to {ctx.output_file}"), TextPart(text=payload.debate_eval.reason)],
+            parts=[
+                TextPart(text=f"Sample Accepted and saved to {ctx.output_file}"),
+                TextPart(text=payload.debate_eval.reason),
+                DataPart(data={
+                    "active_mutation_id": ctx.active_mutation_id,
+                    "reflector_prompt": ctx.reflector_prompt,
+                    "attempt_index": i + 1,
+                    "decision": "accepted",
+                }),
+            ],
             name="Result",
         )
 
@@ -1485,6 +1547,7 @@ Debate Transcript:
         sample_data, current_sample_block = await self._get_sample_data(
             ctx, i, active_checkpoint, checkpoint_phase, last_judge_reason, updater
         )
+        ctx.last_sample_block = current_sample_block
 
         # Code-like guardrail
         if not _is_code_like(current_sample_block):
@@ -1565,6 +1628,91 @@ Debate Transcript:
         await self._export_accepted_sample(ctx, i, payload, updater)
         return True, last_judge_reason
 
+    async def _fetch_reflector_response(
+        self, ctx: _EvalContext, i: int, reflect_req: ReflectRequest
+    ) -> Optional[ReflectResponse]:
+        if ctx.mode == "replay" and ctx.replay_manager.cassette.mode == "replay":
+            cached = ctx.replay_manager.cassette.get_response(
+                model="reflector_agent",
+                messages=[{"role": "user", "content": reflect_req.model_dump_json()}],
+                params={"seed_id": str(ctx.seed), "attempt_index": i + 1},
+            )
+            if cached is None:
+                raise OfflineReplayError(
+                    f"Offline Replay Error: No cached reflector response for seed {ctx.seed} attempt {i + 1}"
+                )
+            return ReflectResponse.model_validate(cached)
+
+        reflect_resp = await ctx.reflector_client.reflect(reflect_req)
+        if ctx.replay_manager.cassette.mode == "record":
+            ctx.replay_manager.cassette.save_response(
+                model="reflector_agent",
+                messages=[{"role": "user", "content": reflect_req.model_dump_json()}],
+                params={"seed_id": str(ctx.seed), "attempt_index": i + 1},
+                response=reflect_resp.model_dump(),
+            )
+        return reflect_resp
+
+    async def _try_mutate_reflector_prompt(
+        self,
+        ctx: _EvalContext,
+        i: int,
+        last_judge_reason: str,
+        updater: TaskUpdater,
+    ) -> None:
+        if i >= ctx.max_refinements or ctx.reflector_client is None:
+            return
+
+        try:
+            sample_block = getattr(ctx, "last_sample_block", ctx.current_input_block)
+            snapshot = extract_graphify_flow_snapshot(code_text=sample_block, scenario_id=str(ctx.seed))
+            is_verifier_logic_error = (
+                "logic_error" in last_judge_reason.lower()
+                or "verifier_logic_error" in last_judge_reason.lower()
+            )
+            diag = classify_graph_diagnostic(
+                debate_result=_ReflectorDiagnosticInput(
+                    candidate_code=sample_block,
+                    verifier_logic_error=is_verifier_logic_error,
+                    verifier_report={"reason": last_judge_reason},
+                    failed_anchor_lines=getattr(ctx, "failed_anchor_lines", []),
+                    judge_rationale=last_judge_reason,
+                ),
+                graph_snapshot=snapshot,
+                scenario_id=str(ctx.seed),
+                predicate_family=ctx.predicate,
+            )
+
+            reflect_req = ReflectRequest(
+                attempt_index=i + 1,
+                scenario_id=str(ctx.seed),
+                predicate_family=ctx.predicate,
+                taxonomy_bucket=ctx.taxonomy_bucket,
+                code_text=sample_block,
+                graph_diagnostic=diag,
+                current_system_prompt=ctx.reflector_prompt or get_static_baseline_prompt(ctx.taxonomy_bucket),
+            )
+
+            reflect_resp = await self._fetch_reflector_response(ctx, i, reflect_req)
+            if reflect_resp and reflect_resp.status == "SUCCESS":
+                logger.info(
+                    "GEPA Reflector mutated prompt for Round %d (rule=%s, var=%s)",
+                    i + 2, reflect_resp.applied_topological_rule, reflect_resp.pareto_variant_id
+                )
+                ctx.reflector_prompt = reflect_resp.mutated_system_prompt
+                ctx.active_mutation_id = reflect_resp.pareto_variant_id
+                ctx.last_topological_rule = reflect_resp.applied_topological_rule
+                await updater.update_status(
+                    TaskState.working,
+                    new_agent_text_message(
+                        f"GEPA Reflector applied mutation: {reflect_resp.mutation_rationale}"
+                    ),
+                )
+        except ReplayError:
+            raise
+        except Exception as exc:
+            logger.warning("GEPA Reflector prompt mutation failed in judge: %s", exc)
+
     async def run_eval(self, req: EvalRequest, updater: TaskUpdater) -> None:
         logger.info(f"Starting BARRED debate orchestration: {req}")
         ctx = _EvalContext(req, self)
@@ -1585,6 +1733,7 @@ Debate Transcript:
                 )
                 if accepted:
                     return
+                await self._try_mutate_reflector_prompt(ctx, i, last_judge_reason, updater)
 
             # Failure path after max refinements
             record_path = req.config.get("record_path", f"artifacts/runs/{ctx.run_id}.json")

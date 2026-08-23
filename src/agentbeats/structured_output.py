@@ -22,36 +22,45 @@ def strip_markdown_fence(text: str) -> str:
     return s
 
 
+def _update_string_state(ch: str, in_string: bool, escaped: bool) -> tuple[bool, bool, bool]:
+    if escaped:
+        return in_string, False, True
+    if ch == "\\":
+        return in_string, in_string, True
+    if ch == '"':
+        return not in_string, False, True
+    return in_string, False, in_string
+
+
+def _scan_json_object_bounds(text: str) -> Optional[tuple[int, int]]:
+    first_brace = text.find("{")
+    if first_brace == -1:
+        return None
+
+    in_string = False
+    escaped = False
+    depth = 0
+
+    for idx, ch in enumerate(text[first_brace:], start=first_brace):
+        in_string, escaped, skip = _update_string_state(ch, in_string, escaped)
+        if skip:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return (first_brace, idx + 1)
+
+    return None
+
+
 def extract_first_json_object(text: str) -> Optional[str]:
     """
     Return the first complete top-level JSON object found in `text`.
     """
-    in_string = False
-    escaped = False
-    depth = 0
-    start = -1
-    for idx, ch in enumerate(text):
-        if escaped:
-            escaped = False
-            continue
-        if ch == "\\":
-            escaped = True
-            continue
-        if ch == '"':
-            in_string = not in_string
-            continue
-        if in_string:
-            continue
-        if ch == "{":
-            if depth == 0:
-                start = idx
-            depth += 1
-        elif ch == "}":
-            if depth > 0:
-                depth -= 1
-            if depth == 0 and start >= 0:
-                return text[start : idx + 1]
-    return None
+    bounds = _scan_json_object_bounds(text)
+    return text[bounds[0] : bounds[1]] if bounds is not None else None
 
 
 def escape_invalid_backslashes(text: str) -> str:
@@ -68,6 +77,13 @@ def _json_candidates(raw_text: str) -> list[str]:
     for candidate in (s0, s1, s2, s3):
         if candidate and candidate not in out:
             out.append(candidate)
+        try:
+            parsed = json.loads(candidate, strict=False)
+            reencoded = json.dumps(parsed)
+            if reencoded not in out:
+                out.append(reencoded)
+        except Exception:
+            pass
     return out
 
 
@@ -135,6 +151,107 @@ def _safe_record_event(
         logger.exception("Failed to record structured-output event %s.", name)
 
 
+def _try_parse_schema_candidates(raw_text: str, schema_model: Type[T]) -> Optional[T]:
+    for candidate in _json_candidates(raw_text):
+        try:
+            return schema_model.model_validate_json(candidate)
+        except Exception:
+            pass
+    return None
+
+
+async def _request_completion_with_schema_fallback(
+    replay_manager: Any,
+    model: str,
+    messages: list[dict[str, str]],
+    schema: dict[str, Any],
+    schema_name: str,
+    schema_fp: str,
+    strict: bool,
+    stage: str,
+    **kwargs,
+) -> tuple[str, bool]:
+    try:
+        response = await replay_manager.acompletion(
+            model=model,
+            messages=messages,
+            response_format=schema,
+            stage=stage,
+            **kwargs,
+        )
+        return response.choices[0].message.content.strip(), True
+    except Exception as e:
+        if not _likely_schema_unsupported(e):
+            raise
+
+        _safe_record_event(
+            replay_manager,
+            model=model,
+            name="structured_output_response_format_rejected",
+            params={"schema_fp": schema_fp, "schema_name": schema_name, "strict": strict},
+            payload={"error": _stringify_exc(e)},
+        )
+
+        retry_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Output MUST be a single valid JSON object and NOTHING else. "
+                    "Do not wrap in markdown. Do not include any non-JSON text."
+                ),
+            },
+            *messages,
+        ]
+        response = await replay_manager.acompletion(model=model, messages=retry_messages, stage=stage, **kwargs)
+        return response.choices[0].message.content.strip(), False
+
+
+async def _execute_repair_completion(
+    replay_manager: Any,
+    model: str,
+    repair_model: Optional[str],
+    raw_text: str,
+    schema: dict[str, Any],
+    schema_model: Type[T],
+    structured_supported: bool,
+    strict: bool,
+    stage: str,
+    **kwargs,
+) -> T:
+    repair_messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a JSON repair tool. Convert the input text into a single valid JSON object "
+                "that conforms EXACTLY to the provided JSON schema. Output ONLY JSON. No markdown."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"JSON Schema (strict={strict}):\n{json.dumps(schema_model.model_json_schema(), indent=2)}\n\n"
+                f"Text to convert:\n{raw_text}"
+            ),
+        },
+    ]
+
+    repair_kwargs: dict[str, Any] = {
+        "model": repair_model or model,
+        "messages": repair_messages,
+        "stage": stage,
+        **kwargs,
+    }
+    if structured_supported:
+        repair_kwargs["response_format"] = schema
+
+    response2 = await replay_manager.acompletion(**repair_kwargs)
+    raw_text2 = response2.choices[0].message.content.strip()
+    parsed = _try_parse_schema_candidates(raw_text2, schema_model)
+    if parsed is not None:
+        return parsed
+    return schema_model.model_validate_json(raw_text2)
+
+
 async def call_structured(
     *,
     replay_manager: Any,
@@ -150,67 +267,17 @@ async def call_structured(
 ) -> T:
     """
     Structured output helper with *recorded* fallback.
-
-    Behavior:
-    - Primary call: request strict JSON via `response_format` and validate with Pydantic.
-    - If the provider rejects `response_format`:
-      - record an event
-      - retry without `response_format` but with JSON-only instructions, then validate/repair
-    - On validation failure:
-      - emit a deterministic failure event into the cassette
-      - optionally run a second "repair" call that converts raw text to valid JSON for the same schema
-
-    Determinism rules:
-    - In replay mode, any cache miss is a hard failure (handled by ReplayManager).
-    - Both primary and repair calls go through ReplayManager, so they are recorded/replayed.
-    - Failure events are written to the cassette as data (no side effects beyond recording).
     """
     schema = _schema_dict(schema_name, schema_model, strict=strict)
     schema_fp = _schema_fingerprint(schema)
 
-    structured_supported = True
-    raw_text: str
-    try:
-        response = await replay_manager.acompletion(
-            model=model,
-            messages=messages,
-            response_format=schema,
-            stage=stage,
-            **kwargs,
-        )
-        raw_text = response.choices[0].message.content.strip()
-    except Exception as e:
-        if not _likely_schema_unsupported(e):
-            raise
+    raw_text, structured_supported = await _request_completion_with_schema_fallback(
+        replay_manager, model, messages, schema, schema_name, schema_fp, strict, stage, **kwargs
+    )
 
-        structured_supported = False
-        _safe_record_event(
-            replay_manager,
-            model=model,
-            name="structured_output_response_format_rejected",
-            params={"schema_fp": schema_fp, "schema_name": schema_name, "strict": strict},
-            payload={"error": _stringify_exc(e)},
-        )
-
-        # Retry without response_format, but demand JSON only.
-        retry_messages = [
-            {
-                "role": "system",
-                "content": (
-                    "Output MUST be a single valid JSON object and NOTHING else. "
-                    "Do not wrap in markdown. Do not include any non-JSON text."
-                ),
-            },
-            *messages,
-        ]
-        response = await replay_manager.acompletion(model=model, messages=retry_messages, stage=stage, **kwargs)
-        raw_text = response.choices[0].message.content.strip()
-
-    for candidate in _json_candidates(raw_text):
-        try:
-            return schema_model.model_validate_json(candidate)
-        except Exception:
-            pass
+    parsed = _try_parse_schema_candidates(raw_text, schema_model)
+    if parsed is not None:
+        return parsed
 
     try:
         return schema_model.model_validate_json(raw_text)
@@ -231,38 +298,15 @@ async def call_structured(
         if not repair_on_fail:
             raise
 
-        # Repair: ask for JSON matching the same schema, with no extra text.
-        repair_messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a JSON repair tool. Convert the input text into a single valid JSON object "
-                    "that conforms EXACTLY to the provided JSON schema. Output ONLY JSON. No markdown."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"JSON Schema (strict={strict}):\n{json.dumps(schema_model.model_json_schema(), indent=2)}\n\n"
-                    f"Text to convert:\n{raw_text}"
-                ),
-            },
-        ]
-
-        repair_kwargs: dict[str, Any] = {
-            "model": repair_model or model,
-            "messages": repair_messages,
-            "stage": stage,
+        return await _execute_repair_completion(
+            replay_manager,
+            model,
+            repair_model,
+            raw_text,
+            schema,
+            schema_model,
+            structured_supported,
+            strict,
+            stage,
             **kwargs,
-        }
-        if structured_supported:
-            repair_kwargs["response_format"] = schema
-
-        response2 = await replay_manager.acompletion(**repair_kwargs)
-        raw_text2 = response2.choices[0].message.content.strip()
-        for candidate in _json_candidates(raw_text2):
-            try:
-                return schema_model.model_validate_json(candidate)
-            except Exception:
-                pass
-        return schema_model.model_validate_json(raw_text2)
+        )
