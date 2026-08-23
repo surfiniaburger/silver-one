@@ -15,7 +15,6 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict
 
 import pytest
 from fastapi.testclient import TestClient
@@ -33,6 +32,7 @@ from scenarios.debate.reflector_agent import (
     compute_time_decay,
     count_corroborating_seeds,
     create_app,
+    get_app,
     is_cross_seed_dead_end,
     is_mutation_preferred,
     mutate_system_prompt,
@@ -41,7 +41,6 @@ from scenarios.debate.reflector_agent import (
 from scenarios.debate.reflector_schemas import (
     GraphDiagnosticSignature,
     ReflectRequest,
-    ReflectResponse,
     get_static_baseline_prompt,
 )
 
@@ -134,13 +133,19 @@ class TestWorkMemoryScoring:
         # 2. Logic error
         assert classify_attempt_outcome(is_valid=False, verifier_logic_error=True, prior_mutation_traces=[]) == "LOGIC_ERROR"
 
-        # 3. Dead end chain
+        # 3. Dead end chain (current attempt seed_id='44' spans distinct seeds with prior failures)
         now = datetime.now(timezone.utc)
         prior_failures = [
             {"seed_id": "42", "outcome": "RETRYABLE_FAILURE", "evaluated_at": (now - timedelta(minutes=10)).isoformat()},
             {"seed_id": "43", "outcome": "RETRYABLE_FAILURE", "evaluated_at": (now - timedelta(minutes=5)).isoformat()},
         ]
-        assert classify_attempt_outcome(is_valid=False, verifier_logic_error=False, prior_mutation_traces=prior_failures) == "DEAD_END_CHAIN"
+        assert classify_attempt_outcome(
+            is_valid=False,
+            verifier_logic_error=False,
+            prior_mutation_traces=prior_failures,
+            seed_id="44",
+            evaluated_at=now.isoformat(),
+        ) == "DEAD_END_CHAIN"
 
         # 4. Standard retryable failure
         assert classify_attempt_outcome(is_valid=False, verifier_logic_error=False, prior_mutation_traces=[]) == "RETRYABLE_FAILURE"
@@ -198,6 +203,30 @@ class TestParetoRegistryAndLock:
         # Check mutations log
         mutations_log = (tmp_path / "gepa" / "mutations.jsonl").read_text(encoding="utf-8")
         assert "var_abc123" in mutations_log
+
+    def test_pareto_registry_traces_jsonl(self, tmp_path: Path) -> None:
+        """ParetoRegistry streams attempt traces from append-only traces.jsonl."""
+        reg = ParetoRegistry(gepa_dir=tmp_path / "gepa")
+        reg.record_attempt_trace(
+            taxonomy="integer_arithmetic",
+            predicate_family="INT_OVERFLOW",
+            seed_id="42",
+            scenario_id="s1",
+            attempt_index=1,
+            outcome="VALID_ACCEPT",
+            canonical_mutation_id="var_int1",
+            observed_at=datetime.now(timezone.utc).isoformat(),
+            evaluated_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+        traces_file = tmp_path / "gepa" / "traces.jsonl"
+        assert traces_file.exists()
+        assert "var_int1" in traces_file.read_text(encoding="utf-8")
+
+        traces = reg.get_recent_traces_for_mutation("integer_arithmetic", "var_int1")
+        assert len(traces) == 1
+        assert traces[0]["seed_id"] == "42"
+        assert traces[0]["outcome"] == "VALID_ACCEPT"
 
     def test_pareto_registry_dead_ends(self, tmp_path: Path) -> None:
         """ParetoRegistry tracks negative dead-end constraints."""
@@ -366,3 +395,8 @@ class TestFastAPIServiceAndClient:
             evaluated_at=datetime.now(timezone.utc).isoformat(),
         )
         assert outcome == "LOGIC_ERROR"
+
+    def test_get_app_factory(self) -> None:
+        """get_app returns a valid FastAPI instance."""
+        app = get_app()
+        assert app.title == "GEPA Graph-Powered Prompt Reflector"

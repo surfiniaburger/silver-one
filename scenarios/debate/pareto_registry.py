@@ -146,6 +146,7 @@ class ParetoRegistry:
         self.frontier_path = self.gepa_dir / "pareto_frontier.json"
         self.lessons_path = self.gepa_dir / "lessons.json"
         self.mutations_log_path = self.gepa_dir / "mutations.jsonl"
+        self.traces_log_path = self.gepa_dir / "traces.jsonl"
         self.gepa_dir.mkdir(parents=True, exist_ok=True)
 
     def _lock(self, timeout: float = DEFAULT_LOCK_TIMEOUT_SECONDS):
@@ -243,7 +244,7 @@ class ParetoRegistry:
         with self._lock():
             data = self._load_json_unlocked(self.lessons_path, {})
             if taxonomy is not None:
-                return data.get(taxonomy, {"preferred_rules": [], "known_dead_ends": [], "traces": []})
+                return data.get(taxonomy, {"preferred_rules": [], "known_dead_ends": []})
             return data
 
     def get_known_dead_ends(self, taxonomy: TaxonomyBucket) -> List[str]:
@@ -266,10 +267,9 @@ class ParetoRegistry:
         evaluated_at: str,
         details: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """
-        Record an immutable attempt evaluation trace in lessons.json under the given taxonomy bucket.
-        """
+        """Record an immutable attempt evaluation trace in traces.jsonl."""
         record: Dict[str, Any] = {
+            "taxonomy_bucket": taxonomy,
             "seed_id": seed_id,
             "scenario_id": scenario_id,
             "predicate_family": predicate_family,
@@ -280,18 +280,8 @@ class ParetoRegistry:
             "evaluated_at": evaluated_at,
             "details": details or {},
         }
-
         with self._lock():
-            data = self._load_json_unlocked(self.lessons_path, {})
-            bucket_data = data.setdefault(taxonomy, {
-                "preferred_rules": [],
-                "known_dead_ends": [],
-                "traces": [],
-            })
-            traces: List[Dict[str, Any]] = bucket_data.setdefault("traces", [])
-            traces.append(record)
-
-            atomic_write_json(self.lessons_path, data)
+            append_audit_log(record, self.traces_log_path)
 
     def add_dead_end_constraint(self, taxonomy: TaxonomyBucket, constraint: str) -> None:
         """Add an explicit negative constraint / dead end to lessons.json."""
@@ -300,7 +290,6 @@ class ParetoRegistry:
             bucket_data = data.setdefault(taxonomy, {
                 "preferred_rules": [],
                 "known_dead_ends": [],
-                "traces": [],
             })
             dead_ends: List[str] = bucket_data.setdefault("known_dead_ends", [])
             if constraint not in dead_ends:
@@ -314,7 +303,24 @@ class ParetoRegistry:
     ) -> List[Dict[str, Any]]:
         """Return all historical traces for a specific mutation identifier in a taxonomy bucket."""
         with self._lock():
-            data = self._load_json_unlocked(self.lessons_path, {})
-            bucket_data = data.get(taxonomy, {})
-            traces = bucket_data.get("traces", [])
-            return [t for t in traces if t.get("canonical_mutation_id") == canonical_mutation_id]
+            if not self.traces_log_path.exists():
+                return []
+            matching_traces: List[Dict[str, Any]] = []
+            try:
+                with open(self.traces_log_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            t = json.loads(line)
+                            if (
+                                t.get("taxonomy_bucket") == taxonomy
+                                and t.get("canonical_mutation_id") == canonical_mutation_id
+                            ):
+                                matching_traces.append(t)
+                        except json.JSONDecodeError:
+                            continue
+            except OSError as e:
+                logger.warning("Error reading traces log %s: %s", self.traces_log_path, e)
+            return matching_traces

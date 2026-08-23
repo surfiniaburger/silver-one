@@ -15,10 +15,9 @@ import hashlib
 import logging
 import math
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
 from scenarios.debate.pareto_registry import (
@@ -141,10 +140,10 @@ def is_cross_seed_dead_end(history_records: List[Dict[str, Any]]) -> bool:
     if len(history_records) < 3:
         return False
 
-    # Check last 3 chronological traces
+    # Check last 3 chronological traces using normalized datetime
     sorted_records = sorted(
         history_records,
-        key=lambda r: str(r.get("evaluated_at") or r.get("observed_at")),
+        key=lambda r: parse_datetime(r.get("evaluated_at") or r.get("observed_at")),
     )
     last_3 = sorted_records[-3:]
 
@@ -162,6 +161,8 @@ def classify_attempt_outcome(
     is_valid: bool,
     verifier_logic_error: bool,
     prior_mutation_traces: List[Dict[str, Any]],
+    seed_id: str = "",
+    evaluated_at: str = "",
 ) -> AttemptOutcome:
     """
     Classify the outcome of an attempt in relation to its cross-seed trajectory (Spec §4.1 / §4.2):
@@ -175,8 +176,13 @@ def classify_attempt_outcome(
     if verifier_logic_error:
         return "LOGIC_ERROR"
 
-    # Evaluate potential dead-end trigger
-    simulated_history = prior_mutation_traces + [{"outcome": "RETRYABLE_FAILURE"}]
+    # Evaluate potential dead-end trigger including the current attempt's seed
+    current_attempt = {
+        "outcome": "RETRYABLE_FAILURE",
+        "seed_id": seed_id,
+        "evaluated_at": evaluated_at or datetime.now(timezone.utc).isoformat(),
+    }
+    simulated_history = [*prior_mutation_traces, current_attempt]
     if is_cross_seed_dead_end(simulated_history):
         return "DEAD_END_CHAIN"
 
@@ -260,12 +266,23 @@ def mutate_system_prompt(
     score = calculate_rule_score(history)
     prob = 1.0 / (1.0 + math.exp(-score))  # Sigmoid mapping to [0, 1]
 
-    # Check dead-end suppression: if this failure completes a dead-end chain, record negative constraint
+    # Check dead-end suppression: only record negative constraint when dead-end threshold is met
     if diag.failure_bucket == "B_SANITIZER_TARGET_MISMATCH" and diag.guarded_target:
-        registry.add_dead_end_constraint(
-            request.taxonomy_bucket,
-            f"guard operand '{diag.guarded_target}' when sink targets '{diag.target_var}'",
-        )
+        if is_cross_seed_dead_end(history):
+            registry.add_dead_end_constraint(
+                request.taxonomy_bucket,
+                f"guard operand '{diag.guarded_target}' when sink targets '{diag.target_var}'",
+            )
+
+    # Register the mutated prompt in Pareto frontier
+    registry.register_pareto_prompt(
+        taxonomy=request.taxonomy_bucket,
+        prompt=mutated_prompt,
+        variant_id=variant_hash,
+        score=score,
+        rationale=f"Repaired {diag.failure_bucket} by applying {repair_directive}",
+        topological_rule=rule_text,
+    )
 
     return ReflectResponse(
         status="SUCCESS",
@@ -315,17 +332,17 @@ def create_app(registry: Optional[ParetoRegistry] = None) -> FastAPI:
     reg = registry or ParetoRegistry()
 
     @app.get("/health")
-    async def health() -> Dict[str, Any]:
+    def health() -> Dict[str, Any]:
         return {"status": "healthy", "service": "gepa_reflector", "port": 8004}
 
     @app.get("/pareto_prompt/{taxonomy}")
-    async def get_pareto_prompt_endpoint(taxonomy: TaxonomyBucket) -> Dict[str, str]:
+    def get_pareto_prompt_endpoint(taxonomy: TaxonomyBucket) -> Dict[str, str]:
         prompt = reg.get_pareto_prompt(taxonomy)
         variant_id = reg.get_pareto_variant_id(taxonomy)
         return {"prompt": prompt, "variant_id": variant_id, "taxonomy": taxonomy}
 
-    @app.post("/reflect", response_model=ReflectResponse)
-    async def reflect(request: ReflectRequest) -> ReflectResponse:
+    @app.post("/reflect")
+    def reflect(request: ReflectRequest) -> ReflectResponse:
         try:
             return mutate_system_prompt(request, reg)
         except Exception as e:
@@ -341,8 +358,8 @@ def create_app(registry: Optional[ParetoRegistry] = None) -> FastAPI:
                 estimated_correction_success_probability=0.0,
             )
 
-    @app.post("/record_attempt", response_model=RecordAttemptResponse)
-    async def record_attempt(req: RecordAttemptRequest) -> RecordAttemptResponse:
+    @app.post("/record_attempt")
+    def record_attempt(req: RecordAttemptRequest) -> RecordAttemptResponse:
         prior_traces = reg.get_recent_traces_for_mutation(
             req.taxonomy_bucket, req.canonical_mutation_id
         )
@@ -350,6 +367,8 @@ def create_app(registry: Optional[ParetoRegistry] = None) -> FastAPI:
             is_valid=req.is_valid,
             verifier_logic_error=req.verifier_logic_error,
             prior_mutation_traces=prior_traces,
+            seed_id=req.seed_id,
+            evaluated_at=req.evaluated_at,
         )
 
         trace_details = dict(req.details)
@@ -386,8 +405,9 @@ def create_app(registry: Optional[ParetoRegistry] = None) -> FastAPI:
     return app
 
 
-# Default app instance
-app = create_app()
+def get_app() -> FastAPI:
+    """Lazy ASGI factory target: uvicorn scenarios.debate.reflector_agent:get_app --factory"""
+    return create_app()
 
 
 # ---------------------------------------------------------------------------
@@ -417,8 +437,8 @@ class ReflectorClient:
             import httpx
             async with httpx.AsyncClient(base_url=self.base_url) as client:
                 resp = await client.get(f"/pareto_prompt/{taxonomy}")
-                if resp.status_code == 200:
-                    return str(resp.json().get("prompt", get_static_baseline_prompt(taxonomy)))
+                resp.raise_for_status()
+                return str(resp.json().get("prompt", get_static_baseline_prompt(taxonomy)))
         return self.registry.get_pareto_prompt(taxonomy)
 
     async def record_attempt_and_classify_outcome(
@@ -459,8 +479,8 @@ class ReflectorClient:
                     "details": rec_details,
                 }
                 resp = await client.post("/record_attempt", json=payload)
-                if resp.status_code == 200:
-                    return resp.json().get("outcome", "RETRYABLE_FAILURE")
+                resp.raise_for_status()
+                return resp.json()["outcome"]
 
         prior_traces = self.registry.get_recent_traces_for_mutation(
             taxonomy_bucket, canonical_mutation_id
@@ -469,6 +489,8 @@ class ReflectorClient:
             is_valid=is_valid,
             verifier_logic_error=verifier_logic_error,
             prior_mutation_traces=prior_traces,
+            seed_id=seed_id,
+            evaluated_at=evaluated_at,
         )
 
         self.registry.record_attempt_trace(
@@ -491,8 +513,8 @@ class ReflectorClient:
             import httpx
             async with httpx.AsyncClient(base_url=self.base_url) as client:
                 resp = await client.post("/reflect", json=request.model_dump())
-                if resp.status_code == 200:
-                    return ReflectResponse.model_validate(resp.json())
+                resp.raise_for_status()
+                return ReflectResponse.model_validate(resp.json())
 
         try:
             return mutate_system_prompt(request, self.registry)
