@@ -71,7 +71,9 @@ class GraphDiagnosticSignature(BaseModel):
     )
     source_id: Optional[str] = None
     sink_id: Optional[str] = None
+    source_type: Optional[str] = "UNTRUSTED_INPUT"
     sink_type: Optional[str] = None
+    flow_type: Optional[str] = "data_flow"
     required_sanitizer: Optional[str] = None
     found_sanitizer: Optional[str] = None
     target_var: Optional[str] = Field(
@@ -81,6 +83,7 @@ class GraphDiagnosticSignature(BaseModel):
         None, description="Operand protected by the sanitizer guard"
     )
     failed_anchor_lines: List[str] = Field(default_factory=list)
+    invalid_at: Optional[float] = None
     verifier_logic_error: bool = False
     verifier_report: Dict[str, Any] = Field(default_factory=dict)
     judge_rationale: str = ""
@@ -88,14 +91,17 @@ class GraphDiagnosticSignature(BaseModel):
     def to_flow_dict(self) -> Dict[str, Any]:
         """Adapter for backward compatibility with FlowSignature dict schemas."""
         return {
-            "source_id": self.source_id,
-            "sink_id": self.sink_id,
-            "sink_type": self.sink_type,
+            "source_id": self.source_id or "",
+            "sink_id": self.sink_id or "",
+            "source_type": self.source_type or "UNTRUSTED_INPUT",
+            "sink_type": self.sink_type or "",
+            "flow_type": self.flow_type or "data_flow",
             "sanitizer_type": self.found_sanitizer,
             "target_var": self.target_var,
             "guarded_target": self.guarded_target,
             "failure_bucket": self.failure_bucket,
-            "invalid_at": self.failed_anchor_lines,
+            "failed_anchor_lines": self.failed_anchor_lines,
+            "invalid_at": self.invalid_at,
         }
 
 
@@ -173,6 +179,14 @@ _INPUT_VALIDATION_KEYWORDS = frozenset({
 })
 
 
+_TAXONOMY_RULES: Tuple[Tuple[TaxonomyBucket, FrozenSet[str]], ...] = (
+    ("memory_safety", _MEMORY_SAFETY_KEYWORDS),
+    ("integer_arithmetic", _INTEGER_ARITHMETIC_KEYWORDS),
+    ("concurrency", _CONCURRENCY_KEYWORDS),
+    ("input_validation", _INPUT_VALIDATION_KEYWORDS),
+)
+
+
 def classify_taxonomy_bucket(predicate: str) -> TaxonomyBucket:
     """
     Classify a vulnerability predicate string into one of the four
@@ -184,30 +198,23 @@ def classify_taxonomy_bucket(predicate: str) -> TaxonomyBucket:
     Falls back to ``input_validation`` when no keyword matches.
     """
     lower = predicate.lower()
-
-    for keyword in _MEMORY_SAFETY_KEYWORDS:
-        if keyword in lower:
-            return "memory_safety"
-
-    for keyword in _INTEGER_ARITHMETIC_KEYWORDS:
-        if keyword in lower:
-            return "integer_arithmetic"
-
-    for keyword in _CONCURRENCY_KEYWORDS:
-        if keyword in lower:
-            return "concurrency"
-
-    for keyword in _INPUT_VALIDATION_KEYWORDS:
-        if keyword in lower:
-            return "input_validation"
-
-    # Default fallback per spec: input_validation
+    for bucket, keywords in _TAXONOMY_RULES:
+        if any(kw in lower for kw in keywords):
+            return bucket
     return "input_validation"
 
 
 # ---------------------------------------------------------------------------
 # §3.2  Deterministic Graph Diagnostic Classifier
 # ---------------------------------------------------------------------------
+
+
+def _is_flow_sanitized(sig: FlowSignature, sink_node: Dict[str, Any]) -> bool:
+    """Return True if signature has valid sanitizer type and matching guarded target."""
+    if not sig.sanitizer_type or not is_sanitizer_valid_for_sink(sig.sink_type, sig.sanitizer_type):
+        return False
+    sink_target = sink_node.get("target_var")
+    return bool(sig.guarded_target and sink_target and sig.guarded_target == sink_target)
 
 
 def _find_first_unsanitized_sink(
@@ -219,16 +226,7 @@ def _find_first_unsanitized_sink(
             "MEMORY_WRITE", "POINTER_DEREF", "ARRAY_INDEX", "SYSTEM_CALL",
         }:
             sink_node = snapshot.nodes.get(sig.sink_id, {})
-            sink_target = sink_node.get("target_var")
-            # Sanitizer valid only when type matches sink AND guarded_target == sink target_var
-            is_valid_guard = (
-                sig.sanitizer_type is not None
-                and is_sanitizer_valid_for_sink(sig.sink_type, sig.sanitizer_type)
-                and bool(sig.guarded_target)
-                and bool(sink_target)
-                and sig.guarded_target == sink_target
-            )
-            if not is_valid_guard:
+            if not _is_flow_sanitized(sig, sink_node):
                 return sig
     return None
 
@@ -269,11 +267,54 @@ def _has_recognized_sink(graph_snapshot: FlowGraphSnapshot) -> bool:
     )
 
 
-def _has_tracked_source(graph_snapshot: FlowGraphSnapshot) -> bool:
-    """Return True if any signature has a tracked (non-UNKNOWN_ORIGIN) input source."""
+def _has_tracked_source_for_sinks(graph_snapshot: FlowGraphSnapshot) -> bool:
+    """Return True if at least one recognized sink signature has a tracked (non-UNKNOWN_ORIGIN) source."""
     return any(
         sig.source_type != "UNKNOWN_ORIGIN"
         for sig in graph_snapshot.signatures
+        if sig.sink_type in {"MEMORY_WRITE", "POINTER_DEREF", "ARRAY_INDEX", "SYSTEM_CALL"}
+    )
+
+
+def _build_source_missing_diagnostic(
+    first_sig: Optional[FlowSignature],
+    base_fields: Dict[str, Any],
+) -> GraphDiagnosticSignature:
+    """Construct a B_SOURCE_MISSING diagnostic signature."""
+    if first_sig is None:
+        return GraphDiagnosticSignature(failure_bucket="B_SOURCE_MISSING", **base_fields)
+    return GraphDiagnosticSignature(
+        failure_bucket="B_SOURCE_MISSING",
+        source_id=first_sig.source_id,
+        source_type=first_sig.source_type,
+        sink_id=first_sig.sink_id,
+        sink_type=first_sig.sink_type,
+        flow_type=first_sig.flow_type,
+        **base_fields,
+    )
+
+
+def _build_sanitized_flow_diagnostic(
+    first_sig: Optional[FlowSignature],
+    graph_snapshot: FlowGraphSnapshot,
+    base_fields: Dict[str, Any],
+) -> GraphDiagnosticSignature:
+    """Construct a B_LOGIC_ERROR diagnostic for a rejected attempt with a fully sanitized graph."""
+    if first_sig is None:
+        return GraphDiagnosticSignature(failure_bucket="B_LOGIC_ERROR", **base_fields)
+    sink_node = graph_snapshot.nodes.get(first_sig.sink_id, {})
+    return GraphDiagnosticSignature(
+        failure_bucket="B_LOGIC_ERROR",
+        source_id=first_sig.source_id,
+        source_type=first_sig.source_type,
+        sink_id=first_sig.sink_id,
+        sink_type=first_sig.sink_type,
+        flow_type=first_sig.flow_type,
+        target_var=sink_node.get("target_var"),
+        found_sanitizer=first_sig.sanitizer_type,
+        guarded_target=first_sig.guarded_target,
+        invalid_at=first_sig.invalid_at,
+        **base_fields,
     )
 
 
@@ -296,24 +337,30 @@ def _classify_sanitizer_diagnostic(
         return GraphDiagnosticSignature(
             failure_bucket="B_SANITIZER_MISMATCH",
             source_id=unsanitized.source_id,
+            source_type=unsanitized.source_type,
             sink_id=unsanitized.sink_id,
             sink_type=unsanitized.sink_type,
+            flow_type=unsanitized.flow_type,
             required_sanitizer=required,
             found_sanitizer=unsanitized.sanitizer_type,
             target_var=target_var,
             guarded_target=unsanitized.guarded_target,
+            invalid_at=unsanitized.invalid_at,
             **base_fields,
         )
 
     return GraphDiagnosticSignature(
         failure_bucket="B_SANITIZER_TARGET_MISMATCH",
         source_id=unsanitized.source_id,
+        source_type=unsanitized.source_type,
         sink_id=unsanitized.sink_id,
         sink_type=unsanitized.sink_type,
+        flow_type=unsanitized.flow_type,
         required_sanitizer=required,
         found_sanitizer=unsanitized.sanitizer_type,
         target_var=target_var,
         guarded_target=unsanitized.guarded_target,
+        invalid_at=unsanitized.invalid_at,
         **base_fields,
     )
 
@@ -381,14 +428,9 @@ def classify_graph_diagnostic(
 
     # ── Bucket 4: B_SOURCE_MISSING ──
     has_sink = _has_recognized_sink(graph_snapshot)
-    if has_sink and not _has_tracked_source(graph_snapshot) and graph_snapshot.signatures:
+    if has_sink and not _has_tracked_source_for_sinks(graph_snapshot) and graph_snapshot.signatures:
         first_sig = _find_first_sink_signature(graph_snapshot)
-        return GraphDiagnosticSignature(
-            failure_bucket="B_SOURCE_MISSING",
-            sink_id=first_sig.sink_id if first_sig else None,
-            sink_type=first_sig.sink_type if first_sig else None,
-            **base_fields,
-        )
+        return _build_source_missing_diagnostic(first_sig, base_fields)
 
     # ── Bucket 5: B_SINK_MISSING ──
     if not has_sink:
@@ -402,11 +444,10 @@ def classify_graph_diagnostic(
     if unsanitized is not None:
         return _classify_sanitizer_diagnostic(unsanitized, graph_snapshot, base_fields)
 
-    # Fallback: all flows are properly sanitized but still rejected
-    return GraphDiagnosticSignature(
-        failure_bucket="B_SINK_MISSING",
-        **base_fields,
-    )
+    # Fallback: if a recognized sink exists and all flows in the graph are sanitized,
+    # the rejection is a verification/reasoning contradiction rather than a missing sink.
+    first_sig = _find_first_sink_signature(graph_snapshot)
+    return _build_sanitized_flow_diagnostic(first_sig, graph_snapshot, base_fields)
 
 
 # ---------------------------------------------------------------------------

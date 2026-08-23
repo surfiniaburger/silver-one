@@ -22,8 +22,8 @@ from scripts.hub_common import (
     DEFAULT_LOCAL_PATH,
     DEFAULT_REPO_ID,
     compute_sha256,
-    log_provenance,
-    safe_resolve,
+    log_hub_event,
+    resolve_target_path,
 )
 
 
@@ -200,12 +200,7 @@ def main():
     )
     args = parser.parse_args()
 
-    workspace_root = Path.cwd().resolve()
-    try:
-        target_file = safe_resolve(args.file, workspace_root)
-    except ValueError as e:
-        print(f"Security error: {e}", file=sys.stderr)
-        sys.exit(1)
+    target_file, workspace_root = resolve_target_path(args.file)
 
     # 1. Validate seed corpus before making any Hub calls
     is_valid, reason, total_records = validate_seed_corpus(target_file, expected_count=args.expected_count)
@@ -217,18 +212,15 @@ def main():
     source_sha256 = compute_sha256(target_file)
 
     # 2. Log pre-operation started record
-    log_provenance(
-        {
-            "operation": "upload",
-            "phase": "upload_started",
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "repo_id": args.repo_id,
-            "filename": target_file.name,
-            "total_records": total_records,
-            "source_sha256": source_sha256,
-            "private": bool(args.private),
-        },
+    log_hub_event(
+        "upload",
+        "upload_started",
         workspace_root,
+        repo_id=args.repo_id,
+        filename=target_file.name,
+        total_records=total_records,
+        source_sha256=source_sha256,
+        private=bool(args.private),
     )
 
     token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN") or get_token()
@@ -245,15 +237,12 @@ def main():
     try:
         user_info = api.whoami()
     except Exception as e:
-        log_provenance(
-            {
-                "operation": "upload",
-                "phase": "auth_failed",
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                "repo_id": args.repo_id,
-                "error": str(e),
-            },
+        log_hub_event(
+            "upload",
+            "auth_failed",
             workspace_root,
+            repo_id=args.repo_id,
+            error=str(e),
         )
         print(f"Authentication failed: {e}", file=sys.stderr)
         sys.exit(1)
@@ -276,15 +265,12 @@ def main():
             if not info.private:
                 raise RuntimeError(f"Repository {args.repo_id} is not private as requested.")
     except Exception as e:
-        log_provenance(
-            {
-                "operation": "upload",
-                "phase": "repo_setup_failed",
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                "repo_id": args.repo_id,
-                "error": str(e),
-            },
+        log_hub_event(
+            "upload",
+            "repo_setup_failed",
             workspace_root,
+            repo_id=args.repo_id,
+            error=str(e),
         )
         print(f"Repository setup failed: {e}", file=sys.stderr)
         sys.exit(1)
@@ -303,27 +289,21 @@ def main():
             commit_message=f"Add {total_records} clean verified CVE debate seeds (GEPA-first)",
         )
         data_commit_oid = commit_data.oid if hasattr(commit_data, "oid") else str(commit_data)
-        log_provenance(
-            {
-                "operation": "upload",
-                "phase": "data_upload_success",
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                "repo_id": args.repo_id,
-                "data_commit_oid": data_commit_oid,
-                "source_sha256": source_sha256,
-            },
+        log_hub_event(
+            "upload",
+            "data_upload_success",
             workspace_root,
+            repo_id=args.repo_id,
+            data_commit_oid=data_commit_oid,
+            source_sha256=source_sha256,
         )
     except Exception as e:
-        log_provenance(
-            {
-                "operation": "upload",
-                "phase": "data_upload_failed",
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                "repo_id": args.repo_id,
-                "error": str(e),
-            },
+        log_hub_event(
+            "upload",
+            "data_upload_failed",
             workspace_root,
+            repo_id=args.repo_id,
+            error=str(e),
         )
         print(f"Data upload failed: {e}", file=sys.stderr)
         sys.exit(1)
@@ -339,32 +319,26 @@ def main():
             commit_message="Add dataset card and documentation",
         )
         card_commit_oid = commit_card.oid if hasattr(commit_card, "oid") else str(commit_card)
-        log_provenance(
-            {
-                "operation": "upload",
-                "phase": "upload_complete",
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                "repo_id": args.repo_id,
-                "filename": target_file.name,
-                "total_records": total_records,
-                "source_sha256": source_sha256,
-                "data_commit_oid": data_commit_oid,
-                "card_commit_oid": card_commit_oid,
-                "private": bool(args.private),
-            },
+        log_hub_event(
+            "upload",
+            "upload_complete",
             workspace_root,
+            repo_id=args.repo_id,
+            filename=target_file.name,
+            total_records=total_records,
+            source_sha256=source_sha256,
+            data_commit_oid=data_commit_oid,
+            card_commit_oid=card_commit_oid,
+            private=bool(args.private),
         )
     except Exception as e:
-        log_provenance(
-            {
-                "operation": "upload",
-                "phase": "card_upload_failed",
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                "repo_id": args.repo_id,
-                "data_commit_oid": data_commit_oid,
-                "error": str(e),
-            },
+        log_hub_event(
+            "upload",
+            "card_upload_failed",
             workspace_root,
+            repo_id=args.repo_id,
+            data_commit_oid=data_commit_oid,
+            error=str(e),
         )
         print(f"Dataset card upload failed: {e}", file=sys.stderr)
         sys.exit(1)

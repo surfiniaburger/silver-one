@@ -160,3 +160,25 @@ def test_provenance_logging(tmp_path: Path):
     assert len(lines) == 1
     assert lines[0]["operation"] == "download"
     assert lines[0]["phase"] == "download_started"
+
+
+def test_log_hub_event(tmp_path: Path):
+    from scripts.hub_common import log_hub_event
+    log_hub_event("upload", "upload_success", tmp_path, repo_id="test/repo", total=10)
+    log_file = tmp_path / "artifacts" / "provenance" / "hub_operations.jsonl"
+    assert log_file.exists()
+    with open(log_file, "r", encoding="utf-8") as f:
+        lines = [json.loads(line) for line in f]
+    assert len(lines) == 1
+    assert lines[0]["operation"] == "upload"
+    assert lines[0]["phase"] == "upload_success"
+    assert lines[0]["repo_id"] == "test/repo"
+    assert lines[0]["total"] == 10
+    assert "timestamp" in lines[0]
+
+
+def test_resolve_target_path(tmp_path: Path):
+    from scripts.hub_common import resolve_target_path
+    target, root = resolve_target_path("foo/bar.jsonl", tmp_path)
+    assert target == (tmp_path / "foo/bar.jsonl").resolve()
+    assert root == tmp_path.resolve()

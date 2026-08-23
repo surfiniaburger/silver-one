@@ -314,6 +314,52 @@ class TestClassifyGraphDiagnostic:
         assert diag.target_var == "buf"
         assert diag.guarded_target == "other_buf"
 
+    def test_bucket_4_mixed_signature_unknown_origin_recognized_sink(self) -> None:
+        """Recognized sink with UNKNOWN_ORIGIN alongside an unrelated tracked signature → B_SOURCE_MISSING."""
+        # Unrelated signature has tracked source, but is not a recognized sink
+        unrelated_sig = FlowSignature(
+            source_id="src_unrelated",
+            sink_id="sink_unrelated",
+            source_type="UNTRUSTED_INPUT",
+            sink_type="UNKNOWN_SINK",
+            flow_type="data_flow",
+        )
+        # Recognized sink has UNKNOWN_ORIGIN
+        rec_sig = _make_sig(
+            source_id="src_1",
+            sink_id="sink_1",
+            source_type="UNKNOWN_ORIGIN",
+            sink_type="MEMORY_WRITE",
+        )
+        snap = _make_snapshot(
+            nodes={"src_1": {"kind": "source"}, "sink_1": {"kind": "sink", "target_var": "buf"}},
+            signatures=[unrelated_sig, rec_sig],
+        )
+        debate = _make_debate_result()
+        diag = classify_graph_diagnostic(debate, snap)
+        assert diag.failure_bucket == "B_SOURCE_MISSING"
+        assert diag.sink_id == "sink_1"
+
+    def test_fully_sanitized_flow_rejected_reports_logic_error(self) -> None:
+        """Fully sanitized graph with valid sink rejected by verifier → B_LOGIC_ERROR, not B_SINK_MISSING."""
+        sig = _make_sig(
+            sink_type="MEMORY_WRITE",
+            sanitizer_type="BOUNDS_CHECK",
+            guarded_target="buf",
+        )
+        snap = _make_snapshot(
+            nodes={
+                "src_1": {"kind": "source", "target_var": "buf"},
+                "sink_1": {"kind": "sink", "target_var": "buf"},
+            },
+            signatures=[sig],
+        )
+        debate = _make_debate_result()  # rejected attempt (e.g. verifier failed)
+        diag = classify_graph_diagnostic(debate, snap)
+        assert diag.failure_bucket == "B_LOGIC_ERROR"
+        assert diag.sink_id == "sink_1"
+        assert diag.found_sanitizer == "BOUNDS_CHECK"
+
     def test_scenario_id_passthrough(self) -> None:
         """scenario_id from args is used; fallback to snapshot's scenario_id."""
         snap = _make_snapshot(is_complete=False, nodes={}, scenario_id="snap-id")
@@ -342,29 +388,46 @@ class TestGraphDiagnosticSignature:
     """Tests for the Pydantic GraphDiagnosticSignature model."""
 
     def test_to_flow_dict_shape(self) -> None:
-        """to_flow_dict produces backward-compatible FlowSignature dict keys."""
+        """to_flow_dict produces backward-compatible FlowSignature dict keys and roundtrips."""
         diag = GraphDiagnosticSignature(
             scenario_id="test",
             predicate_family="BUFFER_OVERFLOW",
             failure_bucket="B_SANITIZER_MISMATCH",
             source_id="src_1",
             sink_id="sink_1",
+            source_type="UNTRUSTED_INPUT",
             sink_type="MEMORY_WRITE",
+            flow_type="data_flow",
             required_sanitizer="BOUNDS_CHECK",
             found_sanitizer="NULL_CHECK",
             target_var="buf",
             guarded_target="other",
             failed_anchor_lines=["line 42"],
+            invalid_at=100.5,
         )
         d = diag.to_flow_dict()
         assert d["source_id"] == "src_1"
         assert d["sink_id"] == "sink_1"
+        assert d["source_type"] == "UNTRUSTED_INPUT"
         assert d["sink_type"] == "MEMORY_WRITE"
-        assert d["sanitizer_type"] == "NULL_CHECK"  # Maps found_sanitizer → sanitizer_type
+        assert d["flow_type"] == "data_flow"
+        assert d["sanitizer_type"] == "NULL_CHECK"
         assert d["target_var"] == "buf"
         assert d["guarded_target"] == "other"
         assert d["failure_bucket"] == "B_SANITIZER_MISMATCH"
-        assert d["invalid_at"] == ["line 42"]
+        assert d["failed_anchor_lines"] == ["line 42"]
+        assert d["invalid_at"] == 100.5
+
+        # Verify full round-trip through FlowSignature.from_dict()
+        flow_sig = FlowSignature.from_dict(d)
+        assert flow_sig.source_id == "src_1"
+        assert flow_sig.sink_id == "sink_1"
+        assert flow_sig.source_type == "UNTRUSTED_INPUT"
+        assert flow_sig.sink_type == "MEMORY_WRITE"
+        assert flow_sig.flow_type == "data_flow"
+        assert flow_sig.sanitizer_type == "NULL_CHECK"
+        assert flow_sig.guarded_target == "other"
+        assert flow_sig.invalid_at == 100.5
 
     def test_optional_fields_default_none(self) -> None:
         """Optional fields default to None/empty when not provided."""
