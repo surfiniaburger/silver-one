@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from agentbeats.clock import RunClock
 from scenarios.debate.pareto_registry import (
     GepaLockTimeoutError,
     ParetoRegistry,
@@ -37,6 +38,7 @@ from scenarios.debate.reflector_agent import (
     is_mutation_preferred,
     mutate_system_prompt,
     outcome_sign,
+    parse_datetime,
 )
 from scenarios.debate.reflector_schemas import (
     GraphDiagnosticSignature,
@@ -87,6 +89,41 @@ class TestWorkMemoryScoring:
         score = calculate_rule_score(records, now=now, half_life_days=30.0)
         assert pytest.approx(score, rel=1e-4) == 0.75
 
+    def test_parse_datetime_deterministic_invalid_and_run_clock(self) -> None:
+        """parse_datetime deterministically normalizes valid, empty, and invalid strings via RunClock."""
+        fixed_str = "2026-06-01T12:00:00Z"
+        clock = RunClock(fixed_now=fixed_str)
+
+        # 1. Valid ISO string
+        valid_dt = parse_datetime("2026-01-01T00:00:00Z", clock=clock)
+        assert valid_dt == datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+
+        # 2. None / Empty string -> uses clock
+        none_dt = parse_datetime(None, clock=clock)
+        assert none_dt == datetime(2026, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+        empty_dt = parse_datetime("   ", clock=clock)
+        assert empty_dt == datetime(2026, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+        # 3. Invalid non-empty string -> deterministically normalizes to clock fallback rather than wall-clock
+        invalid_dt = parse_datetime("corrupted-timestamp-string", clock=clock)
+        assert invalid_dt == datetime(2026, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    def test_calculate_rule_score_deterministic_run_clock(self) -> None:
+        """calculate_rule_score with RunClock yields identical deterministic score regardless of wall clock."""
+        clock = RunClock(fixed_now="2026-07-01T00:00:00Z")
+        records = [
+            {"outcome": "VALID_ACCEPT", "evaluated_at": "2026-07-01T00:00:00Z"},
+            {"outcome": "RETRYABLE_FAILURE", "evaluated_at": "2026-06-01T00:00:00Z"},
+            {"outcome": "LOGIC_ERROR", "evaluated_at": "invalid-timestamp"},  # Falls back to fixed clock (0 age)
+        ]
+        # VALID_ACCEPT (age 0d -> weight 1.0) = +1.0
+        # RETRYABLE_FAILURE (age 30d -> weight 0.5) = -0.5 * 0.5 = -0.25
+        # LOGIC_ERROR (fallback age 0d -> weight 1.0) = -1.5 * 1.0 = -1.5
+        # Total = 1.0 - 0.25 - 1.5 = -0.75
+        score1 = calculate_rule_score(records, clock=clock, half_life_days=30.0)
+        score2 = calculate_rule_score(records, clock=clock, half_life_days=30.0)
+        assert score1 == score2 == -0.75
+
     def test_corroboration_tracking(self) -> None:
         """Corroboration requires >= 2 distinct successful seeds."""
         single_seed = [
@@ -105,22 +142,22 @@ class TestWorkMemoryScoring:
 
     def test_cross_seed_dead_end_detection(self) -> None:
         """>= 3 consecutive failures across distinct seeds triggers DEAD_END_CHAIN."""
-        now = datetime.now(timezone.utc)
+        fixed_now = datetime(2026, 8, 23, 12, 0, 0, tzinfo=timezone.utc)
         traces = [
             {
                 "seed_id": "42",
                 "outcome": "RETRYABLE_FAILURE",
-                "evaluated_at": (now - timedelta(minutes=10)).isoformat(),
+                "evaluated_at": (fixed_now - timedelta(minutes=10)).isoformat(),
             },
             {
                 "seed_id": "43",
                 "outcome": "RETRYABLE_FAILURE",
-                "evaluated_at": (now - timedelta(minutes=5)).isoformat(),
+                "evaluated_at": (fixed_now - timedelta(minutes=5)).isoformat(),
             },
             {
                 "seed_id": "44",
                 "outcome": "RETRYABLE_FAILURE",
-                "evaluated_at": now.isoformat(),
+                "evaluated_at": fixed_now.isoformat(),
             },
         ]
         assert is_cross_seed_dead_end(traces)

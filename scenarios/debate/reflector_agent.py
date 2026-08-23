@@ -43,22 +43,23 @@ logger = logging.getLogger("gepa.reflector_agent")
 # ---------------------------------------------------------------------------
 
 
-def parse_datetime(dt_val: str | datetime | None) -> datetime:
+def parse_datetime(dt_val: str | datetime | None, clock: Optional[RunClock] = None) -> datetime:
     """Parse ISO datetime string or aware datetime object to UTC aware datetime."""
-    if dt_val is None:
-        dt_val = RunClock.from_env().now_iso()
+    if dt_val is None or (isinstance(dt_val, str) and not dt_val.strip()):
+        dt_val = (clock or RunClock.from_env()).now_iso()
     if isinstance(dt_val, datetime):
         if dt_val.tzinfo is None:
             return dt_val.replace(tzinfo=timezone.utc)
         return dt_val
     try:
-        clean_str = str(dt_val).replace("Z", "+00:00")
+        clean_str = str(dt_val).strip().replace("Z", "+00:00")
         dt = datetime.fromisoformat(clean_str)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt
     except (ValueError, TypeError):
-        return datetime.now(timezone.utc)
+        fallback = (clock or RunClock.from_env()).now_iso()
+        return datetime.fromisoformat(fallback.replace("Z", "+00:00")).replace(tzinfo=timezone.utc)
 
 
 def compute_time_decay(
@@ -96,6 +97,7 @@ def calculate_rule_score(
     history_records: List[Dict[str, Any]],
     now: Optional[datetime] = None,
     half_life_days: float = DEFAULT_HALF_LIFE_DAYS,
+    clock: Optional[RunClock] = None,
 ) -> float:
     """
     Calculate the aggregated, time-decayed signed score for a mutation rule:
@@ -104,7 +106,7 @@ def calculate_rule_score(
     if not history_records:
         return 0.0
 
-    current_time = now or datetime.now(timezone.utc)
+    current_time = now or parse_datetime(None, clock=clock)
     total_score = 0.0
 
     for rec in history_records:
@@ -396,7 +398,7 @@ def create_app(registry: Optional[ParetoRegistry] = None) -> FastAPI:
         all_traces = reg.get_recent_traces_for_mutation(
             req.taxonomy_bucket, req.canonical_mutation_id
         )
-        score = calculate_rule_score(all_traces)
+        score = calculate_rule_score(all_traces, now=parse_datetime(evaluated_ts))
         preferred = is_mutation_preferred(all_traces)
         seeds_count = count_corroborating_seeds(all_traces)
 
