@@ -134,3 +134,40 @@ def test_audit_attempt_records_missing_sha256_fails_identity_coverage():
         assert res["accepted_sha256_coverage"] == 0.50
         # Duplicate rate among identified rows is 0.0, but coverage is 50%
         assert res["duplicate_valid_accept_rate"] == 0.0
+
+
+def test_audit_attempt_records_near_complete_identity_coverage_unrounded():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        attempt_file = tmp_path / "pilot-v6-warmer.jsonl"
+        # 24,999 records with sha256, 1 record without sha256 (total 25,000)
+        records = [
+            {
+                "run_id": "pilot-v6-warmer",
+                "seed": i,
+                "decision": "accepted",
+                "sample_sha256": f"sha_{i}",
+                "anchor_stats": {"total": 2, "matched": 2},
+                "verifier": {"called": True, "parse_ok": True, "logic_error": None},
+                "llm_usage": {"totals": {"total_tokens": 100}},
+            }
+            for i in range(24999)
+        ]
+        records.append({
+            "run_id": "pilot-v6-warmer",
+            "seed": 25000,
+            "decision": "accepted",
+            # missing sample_sha256
+            "anchor_stats": {"total": 2, "matched": 2},
+            "verifier": {"called": True, "parse_ok": True, "logic_error": None},
+            "llm_usage": {"totals": {"total_tokens": 100}},
+        })
+        with open(attempt_file, "w", encoding="utf-8") as f:
+            for r in records:
+                f.write(json.dumps(r) + "\n")
+
+        res = audit_attempt_records(tmp_path)
+        assert res["accepted_attempts"] == 25000
+        # Raw coverage is 24999 / 25000 = 0.99996 (< 1.0)
+        assert res["accepted_sha256_coverage"] < 1.0
+        assert res["accepted_sha256_coverage"] == 24999 / 25000

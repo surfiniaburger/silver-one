@@ -45,6 +45,7 @@ packages = ["src/agentbeats"]
 
 [tool.pytest.ini_options]
 pythonpath = [
+    "src",
     ".",
     "scenarios/debate",
 ]

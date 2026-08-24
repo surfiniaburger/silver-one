@@ -226,7 +226,7 @@ def audit_attempt_records(attempts_dir: Path) -> Dict[str, Any]:
         "b2_strict_fail_rate": round(strict_fail_rate, 4),
         "verifier_parse_ok_rate": round(verifier_parse_ok_rate, 4),
         "duplicate_valid_accept_rate": round(dup_rate, 4),
-        "accepted_sha256_coverage": round(sha256_cov, 4),
+        "accepted_sha256_coverage": sha256_cov,
         "refinement_candidates": ref_cand,
         "refinement_successes": ref_succ,
         "refinement_correction_success_rate": round(ref_rate, 4),
