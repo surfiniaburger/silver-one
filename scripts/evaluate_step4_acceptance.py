@@ -56,11 +56,16 @@ INV7_SIG_COVERAGE_MIN = 0.55
 INV8_REFINEMENT_UPTAKE_MIN = 0.30
 INV9_TRIAGE_GAIN_MIN = 0.15
 
+BASELINE_RUN_PREFIXES = ("pilot-v1", "baseline-", "debate-baseline", "unadapted", "baseline")
+GEPA_RUN_PREFIXES = ("pilot-v2", "pilot-v3", "pilot-v4", "pilot-v5", "pilot-v6", "pilot-v7")
 
-def _load_jsonl(path: Path) -> List[Dict[str, Any]]:
+
+def _load_jsonl(path: Path) -> Tuple[List[Dict[str, Any]], int]:
+    """Loads JSONL records from a path and counts any malformed JSON parse errors."""
     records = []
+    malformed_lines = 0
     if not path.exists():
-        return records
+        return records, 0
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -68,8 +73,8 @@ def _load_jsonl(path: Path) -> List[Dict[str, Any]]:
                 try:
                     records.append(json.loads(line))
                 except json.JSONDecodeError:
-                    continue
-    return records
+                    malformed_lines += 1
+    return records, malformed_lines
 
 
 def _compute_logic_error_metrics(accepted_attempts: List[Dict[str, Any]]) -> Tuple[int, float]:
@@ -135,7 +140,9 @@ def _compute_duplicate_suppression_rate(accepted_attempts: List[Dict[str, Any]])
 
 
 def _compute_token_reduction(
-    all_attempts: List[Dict[str, Any]], gepa_prefixes: Tuple[str, ...]
+    all_attempts: List[Dict[str, Any]],
+    gepa_prefixes: Tuple[str, ...] = GEPA_RUN_PREFIXES,
+    baseline_prefixes: Tuple[str, ...] = BASELINE_RUN_PREFIXES,
 ) -> Tuple[float, float, float]:
     """Computes mean tokens per valid accept for unadapted baseline vs GEPA adapted runs."""
     run_attempts: Dict[str, List[Dict[str, Any]]] = {}
@@ -153,7 +160,7 @@ def _compute_token_reduction(
             tokens_per_accept = total_run_tokens / accepted_run_count
             if any(run_id.startswith(pfx) for pfx in gepa_prefixes):
                 gepa_run_efficiencies.append(tokens_per_accept)
-            else:
+            elif any(run_id.startswith(pfx) for pfx in baseline_prefixes):
                 baseline_run_efficiencies.append(tokens_per_accept)
 
     if not baseline_run_efficiencies or not gepa_run_efficiencies:
@@ -202,22 +209,28 @@ def _compute_refinement_metrics(
 def audit_attempt_records(attempts_dir: Path) -> Dict[str, Any]:
     """Scans all attempt files in attempts_dir and computes aggregate execution invariants."""
     all_attempts: List[Dict[str, Any]] = []
+    total_malformed_records = 0
     for p in attempts_dir.glob("*.jsonl"):
-        all_attempts.extend(_load_jsonl(p))
+        recs, malformed = _load_jsonl(p)
+        all_attempts.extend(recs)
+        total_malformed_records += malformed
 
     accepted_attempts = [a for a in all_attempts if a.get("decision") == "accepted"]
     rejected_attempts = [a for a in all_attempts if a.get("decision") == "rejected"]
-    gepa_run_prefixes = ("pilot-v2", "pilot-v3", "pilot-v4", "pilot-v5", "pilot-v6", "pilot-v7")
 
     logic_err_cnt, logic_err_rate = _compute_logic_error_metrics(accepted_attempts)
     anchor_match_rate, strict_fail_rate = _compute_anchor_grounding_metrics(all_attempts)
     verifier_parse_ok_rate = _compute_verifier_reliability(all_attempts)
     dup_rate, sha256_cov = _compute_duplicate_suppression_rate(accepted_attempts)
-    mean_unadapted, mean_adapted, token_reduc_pct = _compute_token_reduction(all_attempts, gepa_run_prefixes)
-    ref_cand, ref_succ, ref_rate, triage_gain = _compute_refinement_metrics(all_attempts, gepa_run_prefixes)
+    mean_unadapted, mean_adapted, token_reduc_pct = _compute_token_reduction(
+        all_attempts, GEPA_RUN_PREFIXES, BASELINE_RUN_PREFIXES
+    )
+    ref_cand, ref_succ, ref_rate, triage_gain = _compute_refinement_metrics(all_attempts, GEPA_RUN_PREFIXES)
 
     return {
         "total_attempts": len(all_attempts),
+        "malformed_records": total_malformed_records,
+        "parse_integrity_ok": total_malformed_records == 0,
         "accepted_attempts": len(accepted_attempts),
         "rejected_attempts": len(rejected_attempts),
         "accepted_logic_errors": logic_err_cnt,
@@ -362,13 +375,15 @@ def run_full_acceptance_audit() -> Dict[str, Any]:
         },
     ]
 
-    all_passed = all(inv["passed"] for inv in invariants)
+    all_passed = all(inv["passed"] for inv in invariants) and attempt_metrics["parse_integrity_ok"]
 
     report = {
         "status": "APPROVED_FOR_MERGE" if all_passed else "INVARIANTS_UNSATISFIED",
         "all_invariants_passed": all_passed,
         "dataset_summary": {
             "total_attempts_scanned": attempt_metrics["total_attempts"],
+            "malformed_records": attempt_metrics["malformed_records"],
+            "parse_integrity_ok": attempt_metrics["parse_integrity_ok"],
             "accepted_attempts": attempt_metrics["accepted_attempts"],
             "rejected_attempts": attempt_metrics["rejected_attempts"],
             "deduplicated_eval_samples": dataset.total_samples,

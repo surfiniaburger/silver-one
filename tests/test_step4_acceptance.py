@@ -171,3 +171,46 @@ def test_audit_attempt_records_near_complete_identity_coverage_unrounded():
         # Raw coverage is 24999 / 25000 = 0.99996 (< 1.0)
         assert res["accepted_sha256_coverage"] < 1.0
         assert res["accepted_sha256_coverage"] == 24999 / 25000
+
+
+def test_audit_attempt_records_malformed_json_surfaces_in_report():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        attempt_file = tmp_path / "pilot-corrupt.jsonl"
+        with open(attempt_file, "w", encoding="utf-8") as f:
+            f.write('{"run_id": "pilot-v6", "decision": "accepted", "sample_sha256": "sha_1"}\n')
+            f.write('INVALID JSON LINE HERE\n')
+            f.write('{"run_id": "pilot-v6", "decision": "rejected"}\n')
+
+        res = audit_attempt_records(tmp_path)
+        assert res["total_attempts"] == 2
+        assert res["malformed_records"] == 1
+        assert res["parse_integrity_ok"] is False
+
+
+def test_compute_token_reduction_excludes_unrecognized_runs():
+    from scripts.evaluate_step4_acceptance import _compute_token_reduction
+    attempts = [
+        # Valid baseline
+        {
+            "run_id": "pilot-v1-baseline",
+            "decision": "accepted",
+            "llm_usage": {"totals": {"total_tokens": 50000}},
+        },
+        # Valid GEPA
+        {
+            "run_id": "pilot-v7-poe",
+            "decision": "accepted",
+            "llm_usage": {"totals": {"total_tokens": 25000}},
+        },
+        # Unrecognized / malformed run_id - must be excluded from baseline
+        {
+            "run_id": "unknown_experimental_foo",
+            "decision": "accepted",
+            "llm_usage": {"totals": {"total_tokens": 100000}},
+        },
+    ]
+    mean_unadapted, mean_adapted, reduction = _compute_token_reduction(attempts)
+    assert mean_unadapted == 50000.0  # not skewed by the 100k unknown run
+    assert mean_adapted == 25000.0
+    assert reduction == 50.0
