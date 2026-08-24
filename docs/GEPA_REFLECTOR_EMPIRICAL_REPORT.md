@@ -48,15 +48,15 @@ In accordance with [`SPEC_GRAPH_POWERED_GEPA_REFLECTOR.md`](SPEC_GRAPH_POWERED_G
 
 | Invariant | Description | Target Bound | Measured Value | Verdict |
 | :--- | :--- | :---: | :---: | :---: |
-| **INV-1** | Zero Logic Errors in Accepted Corpus | $= 0.0$ | **`0.0000`** | **PASS** |
-| **INV-2** | Strict Anchor Grounding Rate / Strict Fail Rate | Match $\ge 0.85$, Fail $\le 0.20$ | Match: **`1.0000`**, Fail: **`0.0805`** | **PASS** |
-| **INV-3** | Verifier Parse Reliability | $\ge 0.95$ | **`0.9940`** | **PASS** |
+| **INV-1** | Zero Logic Errors in Accepted Corpus | $= 0.0$ | **`0.0000` (233 accepted rows)** | **PASS** |
+| **INV-2** | Strict Anchor Grounding Rate / Strict Fail Rate | Match $\ge 0.80$, Fail $\le 0.20$ | Match: **`1.0000`**, Fail: **`0.0805`** | **PASS** |
+| **INV-3** | Verifier Parse Reliability | $\ge 0.95$ | **`0.9944`** | **PASS** |
 | **INV-4** | Leak-Proof Stratified CV Partition Audit | 0 scenario overlap across folds | **`0 Overlaps` (25/25 splits)** | **PASS** |
-| **INV-5** | Token Efficiency Superiority ($H_{1,Y}$) | $\ge 20\%$ reduction / valid accept | **`57.12% Reduction`** | **PASS** |
-| **INV-6** | Duplicate Variant Suppression | $\le 0.20$ duplicate rate | **`0.0140` (1.4%)** | **PASS** |
-| **INV-7** | Tree-sitter AST Extraction Coverage ($H_{1,T}$) | Parse $\ge 60\%$, Sig $\ge 50\%$ | Parse: **`70.98%`**, Sig: **`62.05%`** | **PASS** |
-| **INV-8** | Refinement Correction Uptake ($H_{1,C}$) | $\ge 0.30$ | **`0.3243` (32.4%)** | **PASS** |
-| **INV-9** | Diagnostic Triage Gain ($H_{1,C}$) | $\ge 0.15$ | **`0.1622` (16.2%)** | **PASS** |
+| **INV-5** | Token Efficiency Superiority ($H_{1,Y}$) | $\ge 25.0\%$ reduction / valid accept | **`59.45% Reduction`** | **PASS** |
+| **INV-6** | Duplicate Variant Suppression | $\le 0.20$ duplicate rate | **`0.0129` (1.3%)** | **PASS** |
+| **INV-7** | Graph Pre-Filter AST Coverage ($H_{1,T}$) | Parse $\ge 0.65$, Sig $\ge 0.55$ | Parse: **`69.76%`**, Sig: **`61.69%`** | **PASS** |
+| **INV-8** | Refinement Correction Uptake ($H_{1,C}$) | $\ge 0.30$ | **`0.3778` (37.8%)** | **PASS** |
+| **INV-9** | Diagnostic Triage Gain ($H_{1,C}$) | $\ge 0.15$ | **`0.1889` (18.9%)** | **PASS** |
 
 **Audit Status**: **`APPROVED FOR MERGE` (9/9 Invariants Passed)**
 

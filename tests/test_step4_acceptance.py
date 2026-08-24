@@ -22,7 +22,10 @@ def test_audit_attempt_records_empty_dir():
         res = audit_attempt_records(Path(tmp_dir))
         assert res["total_attempts"] == 0
         assert res["accepted_logic_error_rate"] == 0.0
-        assert res["b2_anchor_match_rate"] == 1.0
+        assert res["b2_anchor_match_rate"] == 0.0
+        assert res["verifier_parse_ok_rate"] == 0.0
+        assert res["token_reduction_pct"] == 0.0
+        assert res["refinement_correction_success_rate"] == 0.0
 
 
 def test_audit_attempt_records_with_mock_data():
@@ -72,3 +75,27 @@ def test_audit_leak_proof_partitions():
     res = audit_leak_proof_partitions(dataset, seeds=[42, 43])
     assert res["all_leak_free"] is True
     assert res["total_folds_audited"] == 10
+    assert len(res["details"]) == 10
+
+
+def test_audit_leak_proof_partitions_detects_scenario_leak_with_distinct_texts():
+    dataset = EvaluationDataset(
+        texts=["text A", "text B", "text C", "text D", "text E"],
+        labels=[1, 0, 1, 0, 1],
+        scenario_ids=["scen_1", "scen_2", "scen_3", "scen_4", "scen_5"],
+    )
+    # Mock partitioner to return a fold with leaked scenario_id but completely different text
+    leaked_folds = [
+        {
+            "train_texts": ["completely different text 1"],
+            "test_texts": ["completely different text 2"],
+            "train_scenario_ids": ["scen_LEAK", "scen_OTHER"],
+            "test_scenario_ids": ["scen_LEAK", "scen_ANOTHER"],
+        }
+        for _ in range(5)
+    ]
+    with patch("scripts.evaluate_step4_acceptance.partition_dataset_by_scenario_stratified", return_value=leaked_folds):
+        res = audit_leak_proof_partitions(dataset, seeds=[42])
+        assert res["all_leak_free"] is False
+        assert res["details"][0]["overlap_count"] == 1
+        assert res["details"][0]["is_leak_free"] is False

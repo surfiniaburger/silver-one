@@ -34,6 +34,20 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("step4_acceptance")
 
 
+# Invariant Acceptance Threshold Constants (§7.1)
+INV1_LOGIC_ERROR_RATE_MAX = 0.0
+INV2_ANCHOR_MATCH_MIN = 0.80
+INV2_STRICT_FAIL_MAX = 0.20
+INV3_VERIFIER_PARSE_MIN = 0.95
+INV4_LEAK_FREE_REQUIRED = True
+INV5_TOKEN_REDUCTION_MIN = 25.0
+INV6_DUPLICATE_RATE_MAX = 0.20
+INV7_PARSE_COVERAGE_MIN = 0.65
+INV7_SIG_COVERAGE_MIN = 0.55
+INV8_REFINEMENT_UPTAKE_MIN = 0.30
+INV9_TRIAGE_GAIN_MIN = 0.15
+
+
 def _load_jsonl(path: Path) -> List[Dict[str, Any]]:
     records = []
     if not path.exists():
@@ -69,15 +83,20 @@ def _compute_anchor_grounding_metrics(all_attempts: List[Dict[str, Any]]) -> Tup
         stats = a.get("anchor_stats") or {}
         total = stats.get("total", 0)
         matched = stats.get("matched", 0)
+        is_strict_fail = False
         if total > 0:
             total_anchor_checks += total
             matched_anchor_checks += matched
-            if matched < total or a.get("reject_reason") == "anchors_too_few_after_normalization":
-                strict_fails += 1
+            if matched < total:
+                is_strict_fail = True
+        if a.get("reject_reason") == "anchors_too_few_after_normalization":
+            is_strict_fail = True
+        if is_strict_fail:
+            strict_fails += 1
 
     b2_anchor_match_rate = (
-        matched_anchor_checks / max(total_anchor_checks, 1)
-        if total_anchor_checks > 0 else 1.0
+        matched_anchor_checks / total_anchor_checks
+        if total_anchor_checks > 0 else 0.0
     )
     b2_strict_fail_rate = strict_fails / max(len(all_attempts), 1)
     return b2_anchor_match_rate, b2_strict_fail_rate
@@ -86,11 +105,10 @@ def _compute_anchor_grounding_metrics(all_attempts: List[Dict[str, Any]]) -> Tup
 def _compute_verifier_reliability(all_attempts: List[Dict[str, Any]]) -> float:
     """Computes verifier parse reliability across verifier invocations."""
     verifier_calls = [a for a in all_attempts if a.get("verifier", {}).get("called", False)]
+    if not verifier_calls:
+        return 0.0
     verifier_parse_oks = sum(1 for a in verifier_calls if a.get("verifier", {}).get("parse_ok", False))
-    return (
-        verifier_parse_oks / max(len(verifier_calls), 1)
-        if verifier_calls else 1.0
-    )
+    return verifier_parse_oks / len(verifier_calls)
 
 
 def _compute_duplicate_suppression_rate(accepted_attempts: List[Dict[str, Any]]) -> float:
@@ -125,8 +143,11 @@ def _compute_token_reduction(
             else:
                 baseline_run_efficiencies.append(tokens_per_accept)
 
-    mean_tokens_unadapted = float(np.mean(baseline_run_efficiencies)) if baseline_run_efficiencies else 45000.0
-    mean_tokens_adapted = float(np.mean(gepa_run_efficiencies)) if gepa_run_efficiencies else 24000.0
+    if not baseline_run_efficiencies or not gepa_run_efficiencies:
+        return 0.0, 0.0, 0.0
+
+    mean_tokens_unadapted = float(np.mean(baseline_run_efficiencies))
+    mean_tokens_adapted = float(np.mean(gepa_run_efficiencies))
     token_reduction_pct = (
         (mean_tokens_unadapted - mean_tokens_adapted) / max(mean_tokens_unadapted, 1.0)
     ) * 100.0
@@ -152,10 +173,10 @@ def _compute_refinement_metrics(
                 if any(r.get("decision") == "accepted" for r in sorted_records[1:]):
                     refinement_successes += 1
 
-    refinement_correction_success_rate = (
-        refinement_successes / max(refinement_candidates, 1)
-        if refinement_candidates > 0 else 0.40
-    )
+    if refinement_candidates == 0:
+        return 0, 0, 0.0, 0.0
+
+    refinement_correction_success_rate = refinement_successes / refinement_candidates
     diagnostic_triage_efficiency_gain = refinement_correction_success_rate * 0.50
     return (
         refinement_candidates,
@@ -211,14 +232,12 @@ def audit_leak_proof_partitions(dataset: EvaluationDataset, seeds: List[int]) ->
         folds = partition_dataset_by_scenario_stratified(
             dataset.texts, dataset.labels, dataset.scenario_ids, n_splits=5, seed=seed
         )
+        if len(folds) != 5:
+            all_leak_free = False
+
         for fold_idx, fold in enumerate(folds):
-            # Extract scenario IDs for train and test
-            train_scenarios = set()
-            test_scenarios = set()
-            for txt in fold["train_texts"]:
-                train_scenarios.add(hashlib.sha256(txt.encode("utf-8")).hexdigest()[:16])
-            for txt in fold["test_texts"]:
-                test_scenarios.add(hashlib.sha256(txt.encode("utf-8")).hexdigest()[:16])
+            train_scenarios = set(fold.get("train_scenario_ids", []))
+            test_scenarios = set(fold.get("test_scenario_ids", []))
 
             overlap = train_scenarios.intersection(test_scenarios)
             if overlap:
@@ -226,16 +245,16 @@ def audit_leak_proof_partitions(dataset: EvaluationDataset, seeds: List[int]) ->
             fold_audits.append({
                 "seed": seed,
                 "fold": fold_idx,
-                "train_count": len(fold["train_texts"]),
-                "test_count": len(fold["test_texts"]),
+                "train_count": len(fold.get("train_texts", [])),
+                "test_count": len(fold.get("test_texts", [])),
                 "overlap_count": len(overlap),
-                "is_leak_free": len(overlap) == 0,
+                "is_leak_free": len(overlap) == 0 and len(folds) == 5,
             })
 
     return {
         "all_leak_free": all_leak_free,
         "total_folds_audited": len(fold_audits),
-        "details": fold_audits[:5],
+        "details": fold_audits,
     }
 
 
@@ -263,65 +282,65 @@ def run_full_acceptance_audit() -> Dict[str, Any]:
         {
             "id": "INV-1",
             "name": "Zero Logic Errors",
-            "condition": "accepted_logic_errors == 0 with >= 1 accepted row",
+            "condition": f"accepted_logic_errors == 0 with >= 1 accepted row",
             "measured": f"{attempt_metrics['accepted_logic_error_rate']} ({attempt_metrics['accepted_attempts']} accepted rows)",
             "passed": attempt_metrics["accepted_logic_errors"] == 0 and attempt_metrics["accepted_attempts"] >= 1,
         },
         {
             "id": "INV-2",
             "name": "Strict Anchor Grounding",
-            "condition": "b2_anchor_match_rate >= 0.80 and b2_strict_fail_rate <= 0.20",
+            "condition": f"b2_anchor_match_rate >= {INV2_ANCHOR_MATCH_MIN} and b2_strict_fail_rate <= {INV2_STRICT_FAIL_MAX}",
             "measured": f"match_rate={attempt_metrics['b2_anchor_match_rate']:.2f}, fail_rate={attempt_metrics['b2_strict_fail_rate']:.2f}",
-            "passed": attempt_metrics["b2_anchor_match_rate"] >= 0.80 and attempt_metrics["b2_strict_fail_rate"] <= 0.20,
+            "passed": attempt_metrics["b2_anchor_match_rate"] >= INV2_ANCHOR_MATCH_MIN and attempt_metrics["b2_strict_fail_rate"] <= INV2_STRICT_FAIL_MAX,
         },
         {
             "id": "INV-3",
             "name": "Verifier Parse Reliability",
-            "condition": "verifier_parse_ok_rate >= 0.95",
+            "condition": f"verifier_parse_ok_rate >= {INV3_VERIFIER_PARSE_MIN}",
             "measured": f"{attempt_metrics['verifier_parse_ok_rate']:.4f}",
-            "passed": attempt_metrics["verifier_parse_ok_rate"] >= 0.95,
+            "passed": attempt_metrics["verifier_parse_ok_rate"] >= INV3_VERIFIER_PARSE_MIN,
         },
         {
             "id": "INV-4",
             "name": "Leak-Proof Partition Audit",
-            "condition": "Zero scenario-predicate overlap across 5 folds via SHA-256",
+            "condition": "Zero scenario-predicate overlap across exactly 5 folds per seed",
             "measured": f"overlap=0 across {partition_audit['total_folds_audited']} fold splits",
             "passed": partition_audit["all_leak_free"],
         },
         {
             "id": "INV-5",
             "name": "Token Efficiency Superiority (H_1,Y)",
-            "condition": ">= 25.0% reduction in tokens_per_valid_accept",
+            "condition": f">= {INV5_TOKEN_REDUCTION_MIN}% reduction in tokens_per_valid_accept",
             "measured": f"{attempt_metrics['token_reduction_pct']:.2f}% ({attempt_metrics['mean_tokens_unadapted']} -> {attempt_metrics['mean_tokens_adapted']} tokens)",
-            "passed": attempt_metrics["token_reduction_pct"] >= 25.0,
+            "passed": attempt_metrics["token_reduction_pct"] >= INV5_TOKEN_REDUCTION_MIN,
         },
         {
             "id": "INV-6",
             "name": "Duplicate Candidate Suppression",
-            "condition": "duplicate_valid_accept_rate <= 0.20",
+            "condition": f"duplicate_valid_accept_rate <= {INV6_DUPLICATE_RATE_MAX}",
             "measured": f"{attempt_metrics['duplicate_valid_accept_rate']:.4f}",
-            "passed": attempt_metrics["duplicate_valid_accept_rate"] <= 0.20,
+            "passed": attempt_metrics["duplicate_valid_accept_rate"] <= INV6_DUPLICATE_RATE_MAX,
         },
         {
             "id": "INV-7",
             "name": "Graph Pre-Filter AST Coverage (H_1,T)",
-            "condition": "AST Parse Coverage >= 0.6500 and Signature Extraction >= 0.5500",
+            "condition": f"AST Parse Coverage >= {INV7_PARSE_COVERAGE_MIN:.4f} and Signature Extraction >= {INV7_SIG_COVERAGE_MIN:.4f}",
             "measured": f"parse_coverage={cv_results['mean_parse_coverage']:.4f}, sig_coverage={cv_results['mean_signatures_coverage']:.4f}",
-            "passed": cv_results["mean_parse_coverage"] >= 0.65 and cv_results["mean_signatures_coverage"] >= 0.55,
+            "passed": cv_results["mean_parse_coverage"] >= INV7_PARSE_COVERAGE_MIN and cv_results["mean_signatures_coverage"] >= INV7_SIG_COVERAGE_MIN,
         },
         {
             "id": "INV-8",
             "name": "Refinement Correction Uptake (H_1,C)",
-            "condition": "refinement_correction_success_rate >= 0.30",
+            "condition": f"refinement_correction_success_rate >= {INV8_REFINEMENT_UPTAKE_MIN}",
             "measured": f"{attempt_metrics['refinement_correction_success_rate']:.4f} ({attempt_metrics['refinement_successes']}/{attempt_metrics['refinement_candidates']})",
-            "passed": attempt_metrics["refinement_correction_success_rate"] >= 0.30,
+            "passed": attempt_metrics["refinement_correction_success_rate"] >= INV8_REFINEMENT_UPTAKE_MIN,
         },
         {
             "id": "INV-9",
             "name": "Diagnostic Triage Gain (H_1,C)",
-            "condition": "diagnostic_triage_efficiency_gain >= 0.15",
+            "condition": f"diagnostic_triage_efficiency_gain >= {INV9_TRIAGE_GAIN_MIN}",
             "measured": f"{attempt_metrics['diagnostic_triage_efficiency_gain']:.4f}",
-            "passed": attempt_metrics["diagnostic_triage_efficiency_gain"] >= 0.15,
+            "passed": attempt_metrics["diagnostic_triage_efficiency_gain"] >= INV9_TRIAGE_GAIN_MIN,
         },
     ]
 
@@ -338,6 +357,7 @@ def run_full_acceptance_audit() -> Dict[str, Any]:
             "unique_scenarios": dataset.unique_scenarios,
         },
         "invariants": invariants,
+        "partition_audit": partition_audit,
         "graph_pre_filter_cv": cv_results,
     }
 

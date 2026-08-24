@@ -304,9 +304,9 @@ uv run python scenarios/debate/run_batch.py \
 # Compute B metrics + soft-check rates
 
 ./scripts/run_b_gate.sh \
-  training_corpus_calibrated_pot.jsonl \
-  artifacts/attempts/pilot-v1-calibrated-pot.jsonl \
-  artifacts/metrics/b_gate-pilot-v1-calibrated-pot.json
+  training_corpus_v7_poe.jsonl \
+  artifacts/attempts/pilot-v7-poe.jsonl \
+  artifacts/metrics/b_gate-pilot-v7-poe.json
 
 
 #To compute benchmark metrics for a single run:
