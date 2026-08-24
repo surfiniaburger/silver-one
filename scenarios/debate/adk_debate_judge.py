@@ -29,8 +29,12 @@ from agentbeats.structured_output import (
     strip_markdown_fence,
     escape_invalid_backslashes,
 )
-from debate_judge_common import DebateEval, VerifierReport, debate_judge_agent_card
-from data_generator import BarredDataGenerator
+try:
+    from scenarios.debate.debate_judge_common import DebateEval, VerifierReport, debate_judge_agent_card
+    from scenarios.debate.data_generator import BarredDataGenerator
+except ModuleNotFoundError:
+    from debate_judge_common import DebateEval, VerifierReport, debate_judge_agent_card
+    from data_generator import BarredDataGenerator
 from agentbeats.replay import ReplayManager, OfflineReplayError, ReplayError
 from agentbeats.checkpoint import (
     CheckpointError,
