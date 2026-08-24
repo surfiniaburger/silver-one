@@ -99,3 +99,38 @@ def test_audit_leak_proof_partitions_detects_scenario_leak_with_distinct_texts()
         assert res["all_leak_free"] is False
         assert res["details"][0]["overlap_count"] == 1
         assert res["details"][0]["is_leak_free"] is False
+
+
+def test_audit_attempt_records_missing_sha256_fails_identity_coverage():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        attempt_file = tmp_path / "pilot-v6-warmer.jsonl"
+        records = [
+            {
+                "run_id": "pilot-v6-warmer",
+                "seed": 42,
+                "decision": "accepted",
+                # sample_sha256 missing
+                "anchor_stats": {"total": 2, "matched": 2},
+                "verifier": {"called": True, "parse_ok": True, "logic_error": None},
+                "llm_usage": {"totals": {"total_tokens": 10000}},
+            },
+            {
+                "run_id": "pilot-v6-warmer",
+                "seed": 43,
+                "decision": "accepted",
+                "sample_sha256": "sha_valid_1",
+                "anchor_stats": {"total": 2, "matched": 2},
+                "verifier": {"called": True, "parse_ok": True, "logic_error": None},
+                "llm_usage": {"totals": {"total_tokens": 10000}},
+            },
+        ]
+        with open(attempt_file, "w", encoding="utf-8") as f:
+            for r in records:
+                f.write(json.dumps(r) + "\n")
+
+        res = audit_attempt_records(tmp_path)
+        assert res["accepted_attempts"] == 2
+        assert res["accepted_sha256_coverage"] == 0.50
+        # Duplicate rate among identified rows is 0.0, but coverage is 50%
+        assert res["duplicate_valid_accept_rate"] == 0.0

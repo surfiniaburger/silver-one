@@ -20,8 +20,17 @@ import hashlib
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
+
+# Ensure repository root and scenarios are available in sys.path
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+_SCENARIOS_DIR = _REPO_ROOT / "scenarios" / "debate"
+if str(_SCENARIOS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCENARIOS_DIR))
 
 import numpy as np
 
@@ -111,14 +120,18 @@ def _compute_verifier_reliability(all_attempts: List[Dict[str, Any]]) -> float:
     return verifier_parse_oks / len(verifier_calls)
 
 
-def _compute_duplicate_suppression_rate(accepted_attempts: List[Dict[str, Any]]) -> float:
-    """Computes duplicate candidate rate among accepted attempts."""
+def _compute_duplicate_suppression_rate(accepted_attempts: List[Dict[str, Any]]) -> Tuple[float, float]:
+    """Computes duplicate candidate rate and sample_sha256 identity coverage among accepted attempts."""
+    if not accepted_attempts:
+        return 0.0, 0.0
     accepted_sha256s = [a.get("sample_sha256") for a in accepted_attempts if a.get("sample_sha256")]
     unique_accepted_sha256s = set(accepted_sha256s)
-    return (
-        (len(accepted_sha256s) - len(unique_accepted_sha256s)) / max(len(accepted_sha256s), 1)
+    coverage = len(accepted_sha256s) / len(accepted_attempts)
+    dup_rate = (
+        (len(accepted_sha256s) - len(unique_accepted_sha256s)) / len(accepted_sha256s)
         if accepted_sha256s else 0.0
     )
+    return dup_rate, coverage
 
 
 def _compute_token_reduction(
@@ -199,7 +212,7 @@ def audit_attempt_records(attempts_dir: Path) -> Dict[str, Any]:
     logic_err_cnt, logic_err_rate = _compute_logic_error_metrics(accepted_attempts)
     anchor_match_rate, strict_fail_rate = _compute_anchor_grounding_metrics(all_attempts)
     verifier_parse_ok_rate = _compute_verifier_reliability(all_attempts)
-    dup_rate = _compute_duplicate_suppression_rate(accepted_attempts)
+    dup_rate, sha256_cov = _compute_duplicate_suppression_rate(accepted_attempts)
     mean_unadapted, mean_adapted, token_reduc_pct = _compute_token_reduction(all_attempts, gepa_run_prefixes)
     ref_cand, ref_succ, ref_rate, triage_gain = _compute_refinement_metrics(all_attempts, gepa_run_prefixes)
 
@@ -213,6 +226,7 @@ def audit_attempt_records(attempts_dir: Path) -> Dict[str, Any]:
         "b2_strict_fail_rate": round(strict_fail_rate, 4),
         "verifier_parse_ok_rate": round(verifier_parse_ok_rate, 4),
         "duplicate_valid_accept_rate": round(dup_rate, 4),
+        "accepted_sha256_coverage": round(sha256_cov, 4),
         "refinement_candidates": ref_cand,
         "refinement_successes": ref_succ,
         "refinement_correction_success_rate": round(ref_rate, 4),
@@ -282,7 +296,7 @@ def run_full_acceptance_audit() -> Dict[str, Any]:
         {
             "id": "INV-1",
             "name": "Zero Logic Errors",
-            "condition": f"accepted_logic_errors == 0 with >= 1 accepted row",
+            "condition": "accepted_logic_errors == 0 with >= 1 accepted row",
             "measured": f"{attempt_metrics['accepted_logic_error_rate']} ({attempt_metrics['accepted_attempts']} accepted rows)",
             "passed": attempt_metrics["accepted_logic_errors"] == 0 and attempt_metrics["accepted_attempts"] >= 1,
         },
@@ -317,9 +331,13 @@ def run_full_acceptance_audit() -> Dict[str, Any]:
         {
             "id": "INV-6",
             "name": "Duplicate Candidate Suppression",
-            "condition": f"duplicate_valid_accept_rate <= {INV6_DUPLICATE_RATE_MAX}",
-            "measured": f"{attempt_metrics['duplicate_valid_accept_rate']:.4f}",
-            "passed": attempt_metrics["duplicate_valid_accept_rate"] <= INV6_DUPLICATE_RATE_MAX,
+            "condition": f"duplicate_valid_accept_rate <= {INV6_DUPLICATE_RATE_MAX} with full identity coverage",
+            "measured": f"{attempt_metrics['duplicate_valid_accept_rate']:.4f} (identity_coverage={attempt_metrics['accepted_sha256_coverage']:.4f})",
+            "passed": (
+                attempt_metrics["accepted_attempts"] > 0
+                and attempt_metrics["accepted_sha256_coverage"] >= 1.0
+                and attempt_metrics["duplicate_valid_accept_rate"] <= INV6_DUPLICATE_RATE_MAX
+            ),
         },
         {
             "id": "INV-7",

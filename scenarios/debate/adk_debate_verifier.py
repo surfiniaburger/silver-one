@@ -17,6 +17,7 @@ from agentbeats.green_executor import GreenAgent, GreenExecutor
 from agentbeats.models import EvalRequest, EvalResult
 from agentbeats.tool_provider import ToolProvider
 from agentbeats.structured_output import call_structured
+from agentbeats.replay import ReplayManager, ReplayError
 try:
     from scenarios.debate.debate_judge_common import VerifierReport, debate_judge_agent_card
 except ModuleNotFoundError:
