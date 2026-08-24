@@ -71,7 +71,11 @@ def _load_jsonl(path: Path) -> Tuple[List[Dict[str, Any]], int]:
             line = line.strip()
             if line:
                 try:
-                    records.append(json.loads(line))
+                    record = json.loads(line)
+                    if not isinstance(record, dict):
+                        malformed_lines += 1
+                        continue
+                    records.append(record)
                 except json.JSONDecodeError:
                     malformed_lines += 1
     return records, malformed_lines

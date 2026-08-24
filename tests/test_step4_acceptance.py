@@ -214,3 +214,23 @@ def test_compute_token_reduction_excludes_unrecognized_runs():
     assert mean_unadapted == 50000.0  # not skewed by the 100k unknown run
     assert mean_adapted == 25000.0
     assert reduction == 50.0
+
+
+def test_audit_attempt_records_rejects_non_object_json_lines():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        attempt_file = tmp_path / "pilot-non-objects.jsonl"
+        with open(attempt_file, "w", encoding="utf-8") as f:
+            f.write('{"run_id": "pilot-v6", "decision": "accepted", "sample_sha256": "sha_1"}\n')
+            f.write('null\n')
+            f.write('["not", "a", "dict"]\n')
+            f.write('12345\n')
+            f.write('true\n')
+            f.write('{"run_id": "pilot-v6", "decision": "rejected"}\n')
+
+        res = audit_attempt_records(tmp_path)
+        assert res["total_attempts"] == 2
+        assert res["accepted_attempts"] == 1
+        assert res["rejected_attempts"] == 1
+        assert res["malformed_records"] == 4
+        assert res["parse_integrity_ok"] is False
