@@ -12,7 +12,7 @@ The main implemented scenario builds upon **BARRED** (*Boundary Adversarial Reas
 - an optional Verifier agent (`adk_debate_verifier.py`) audits groundedness,
 - outputs are written as training corpus rows and audited with an offline B-gate.
 
-### The BARRED Swarm Architecture
+## The BARRED Swarm Architecture
 
 The six core architectural pillars extending the original debate formulation are:
 
