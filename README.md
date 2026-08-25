@@ -6,11 +6,24 @@
 
 The project is a continuation of the In-Varia metacognitive-control research direction and the Google DeepMind/Kaggle AGI hackathon work behind MCSB v2. That earlier work showed that models can look calibrated in static settings while failing to update beliefs correctly under adversarial code-security evidence. `silver-one` moves from measuring that failure mode toward producing better training data for it.
 
-The main implemented scenario is **BARRED** (Boundary Adversarial Reasoning for Reproducible Evaluation and Dataset generation):
+The main implemented scenario builds upon **BARRED** (*Boundary Adversarial Reasoning for Reproducible Evaluation and Dataset generation*), the foundational multi-agent security debate paradigm from Plural AI literature. In `silver-one`, this is evolved into **BARRED-Swarm** (*Boundary-Aware Reflective Robust Exploration & Debate*):
 - a Green agent (`adk_debate_judge.py`) orchestrates debate rounds,
 - two Purple agents (`debater.py`) argue opposite sides,
 - an optional Verifier agent (`adk_debate_verifier.py`) audits groundedness,
 - outputs are written as training corpus rows and audited with an offline B-gate.
+
+### The BARRED Swarm Architecture
+
+The six core architectural pillars extending the original debate formulation are:
+
+| Letter | Architectural Component | Role in the Swarm |
+| :---: | :--- | :--- |
+| **B** | **Boundary-Aware** | Extracts vulnerability dimensions (CVE predicates, boundary conditions, reachability constraints) and synthesizes edge-case code samples. |
+| **A** | **Asymmetric** | Orchestrates opposing purple agents (Pro-Attacker vs. Con-Defender) supervised by a green judge to eliminate hallucinated consensus. |
+| **R** | **Reflective** | Executes iterative refinement via the GEPA Reflector (reflective meta-prompt mutation and diagnostic triage across refinement rounds). |
+| **R** | **Robust** | Enforces deterministic quality floors via the B-Gate (AST parse coverage, strict anchor grounding, zero logic errors, and parse reliability). |
+| **E** | **Exploration** | Drives stratified, scenario-grouped cross-validation across holdouts to ensure zero data leakage between train/test partitions. |
+| **D** | **Debate / Dataset** | Generates verified, high-fidelity synthetic training corpora used to train and evaluate code-security guardrail models. |
 
 ## Why This Matters
 
