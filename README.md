@@ -6,7 +6,7 @@
 
 The project is a continuation of the In-Varia metacognitive-control research direction and the Google DeepMind/Kaggle AGI hackathon work behind MCSB v2. That earlier work showed that models can look calibrated in static settings while failing to update beliefs correctly under adversarial code-security evidence. `silver-one` moves from measuring that failure mode toward producing better training data for it.
 
-The main implemented scenario builds upon **BARRED** (*Boundary Adversarial Reasoning for Reproducible Evaluation and Dataset generation*), the foundational multi-agent security debate paradigm from Plural AI literature. In `silver-one`, this is evolved into **BARRED-Swarm** (*Boundary-Aware Reflective Robust Exploration & Debate*):
+The main implemented scenario builds upon **BARRED** (*Boundary Alignment Refinement through REflection and Debate*), the foundational multi-agent security debate paradigm from Plural AI literature. In `silver-one`, this is evolved into **BARRED-Swarm** (*Boundary-Aware Reflective Robust Exploration & Debate*):
 - a Green agent (`adk_debate_judge.py`) orchestrates debate rounds,
 - two Purple agents (`debater.py`) argue opposite sides,
 - an optional Verifier agent (`adk_debate_verifier.py`) audits groundedness,
