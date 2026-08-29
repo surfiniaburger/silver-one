@@ -3,7 +3,7 @@
 - **Document ID:** `REPORT_ADK_OPTIMIZE_VS_GRAPH_GEPA_V1`
 - **Target Subsystem:** `barred-fleet` Evaluation & Optimization Engine
 - **Evaluation Sandbox:** Google ADK Evaluation Harness (`agents-cli eval`)
-- **Dataset:** 11-CVE Real Security Evaluation Benchmark (`cve_sample_10_eval.json`) & 83 CLI-Graded Multi-Round Graph GEPA Traces
+- **Dataset:** 10-Case Baseline Comparison Set (`cve_sample_10_eval.json`, evaluated in `cve_sample_10_trace.json` and `cve_sample_10_candidate_v1.json`), 11-Case Compiled Memory Generalization Set (`baseline_new/results_20260826_004955.json`), and 83 CLI-Graded Multi-Round Graph GEPA Traces (`graph_gepa_multi_round_traces.json`)
 - **Date:** August 2026
 
 ---
@@ -23,7 +23,7 @@ This report documents the empirical comparison between the **Built-in Google ADK
 3. **Multi-Round Rescue Success ($H_{1,C}$)**:
    - Graph-Powered GEPA achieves **$71.4\%$ (5/7)** single-round recovery in Refinement Round 1 via deterministic micro-directives.
 4. **Invariant Integrity**:
-   - Zero logic error contamination (**$0.0000$ logic error rate**) across all accepted rows (§7.1, INV-1).
+   - Zero logic error contamination (**$0.0000$ logic error rate**) across all accepted rows (verifying Anti-Gaming Invariant INV-1 from [EVALUATION_DISCIPLINE_GUIDE.md](EVALUATION_DISCIPLINE_GUIDE.md#2-the-4-anti-gaming-quality-invariants) and [MULTIAGENT_VULNERABILITY_SWARM_HYPOTHESES.md](MULTIAGENT_VULNERABILITY_SWARM_HYPOTHESES.md#51-evaluation-populations--the-4-hard-anti-gaming-invariants); documented in [`artifacts/grade_results/graph_gepa_graded/results_20260826_011010.json`](../artifacts/grade_results/graph_gepa_graded/results_20260826_011010.json)).
 
 ---
 
@@ -47,17 +47,17 @@ All evaluation traces and grade receipts are self-contained in `barred-fleet/art
 
 | Artifact File | Description | Trace Count & Status |
 | :--- | :--- | :---: |
-| [`artifacts/traces/cve_sample_10_trace.json`](../artifacts/traces/cve_sample_10_trace.json) | Unadapted Baseline Debate Traces | 10 baseline CVE cases |
-| [`artifacts/traces/cve_sample_10_candidate_v1.json`](../artifacts/traces/cve_sample_10_candidate_v1.json) | Standard LLM-as-Optimizer Traces | 10 candidate cases |
+| [`artifacts/traces/cve_sample_10_trace.json`](../artifacts/traces/cve_sample_10_trace.json) | Unadapted Baseline Debate Traces (from 10-case comparative evaluation) | 10 baseline CVE cases |
+| [`artifacts/traces/cve_sample_10_candidate_v1.json`](../artifacts/traces/cve_sample_10_candidate_v1.json) | Standard LLM-as-Optimizer Traces (from 10-case comparative evaluation) | 10 candidate cases |
 | [`artifacts/traces/graph_gepa_multi_round_traces.json`](../artifacts/traces/graph_gepa_multi_round_traces.json) | **Exported Multi-Round Graph GEPA Traces** | **83 full attempt records** |
 | [`artifacts/grade_results/graph_gepa_graded/results_20260826_011010.json`](../artifacts/grade_results/graph_gepa_graded/results_20260826_011010.json) | **ADK CLI Graded Graph GEPA Results** | **83 cases evaluated via `agents-cli`** |
-| [`artifacts/grade_results/baseline_new/results_20260826_004955.json`](../artifacts/grade_results/baseline_new/results_20260826_004955.json) | ADK Eval Run with Compiled Pareto Memory | 11 new CVE cases |
+| [`artifacts/grade_results/baseline_new/results_20260826_004955.json`](../artifacts/grade_results/baseline_new/results_20260826_004955.json) | ADK Eval Run with Compiled Pareto Memory (new generalization holdout) | 11 new CVE cases |
 
 ---
 
 ## 4. Official ADK CLI Summary (`agents-cli eval grade` & `compare`)
 
-```
+```text
 ======================================================================
 ADK EVAL GRADE: Graph-GEPA Multi-Round Suite (83 Cases)
 ======================================================================
@@ -79,4 +79,4 @@ HTML Scorecard: artifacts/grade_results/graph_gepa_graded/results_20260826_01101
 
 ## 5. Strategic Conclusion
 
-By running both pipelines directly through `agents-cli eval grade` and `agents-cli eval compare`, `barred-fleet` provides verifiable proof that **Graph-Powered GEPA delivers 66.30% token reduction with $0$ LLM diagnostic overhead and zero logic error contamination**, while remaining 100% compliant with the official Google ADK evaluation standard.
+By evaluating both pipelines directly through `agents-cli eval grade` and `agents-cli eval compare`, the measured execution receipts demonstrate that **Graph-Powered GEPA achieved a 66.30% token reduction on this benchmark with $0$ LLM diagnostic overhead and zero logic error contamination**, satisfying the Google ADK evaluation grading schema (specifically the `b_gate_decision` and `turn_count` grading contracts recorded in `artifacts/grade_results/graph_gepa_graded/`).
